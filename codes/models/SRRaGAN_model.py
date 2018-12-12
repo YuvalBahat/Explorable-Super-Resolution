@@ -8,6 +8,7 @@ from torch.optim import lr_scheduler
 import models.networks as networks
 from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss
+from torch.nn import Upsample
 
 
 class SRRaGANModel(BaseModel):
@@ -109,7 +110,8 @@ class SRRaGANModel(BaseModel):
 
             input_ref = data['ref'] if 'ref' in data else data['HR']
             self.var_ref = input_ref.to(self.device)
-
+    def Convert_2_LR(self,size):
+        return Upsample(size=size,mode='bilinear')
     def optimize_parameters(self, step):
         # G
         for p in self.netD.parameters():
@@ -122,11 +124,20 @@ class SRRaGANModel(BaseModel):
         l_g_total = 0
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
             if self.cri_pix:  # pixel loss
-                l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
+                if 'pixel_domain' in self.opt['train'] and self.opt['train']['pixel_domain']=='LR':
+                    LR_size = list(self.var_L.size()[-2:])
+                    l_g_pix = self.l_pix_w * self.cri_pix(self.Convert_2_LR(LR_size)(self.fake_H), self.Convert_2_LR(LR_size)(self.var_H))
+                else:
+                    l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
                 l_g_total += l_g_pix
             if self.cri_fea:  # feature loss
-                real_fea = self.netF(self.var_H).detach()
-                fake_fea = self.netF(self.fake_H)
+                if 'feature_domain' in self.opt['train'] and self.opt['train']['feature_domain']=='LR':
+                    LR_size = list(self.var_L.size()[-2:])
+                    real_fea = self.netF(self.Convert_2_LR(LR_size)(self.var_H)).detach()
+                    fake_fea = self.netF(self.Convert_2_LR(LR_size)(self.fake_H))
+                else:
+                    real_fea = self.netF(self.var_H).detach()
+                    fake_fea = self.netF(self.fake_H)
                 l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
                 l_g_total += l_g_fea
             # G gan + cls loss

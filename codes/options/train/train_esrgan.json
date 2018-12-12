@@ -1,5 +1,5 @@
 {
-  "name": "RRDB_ESRGAN_x4_DIV2K" //  please remove "debug_" during training
+  "name": "RRDB_ESRGAN_x4_DIV2K_HR" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -9,11 +9,11 @@
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub.lmdb"
-      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb"
+      , "dataroot_HR": "DIV2K/DIV2K_train_HR_sub.lmdb"
+      , "dataroot_LR": "DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 0
+      , "n_workers": 8
       , "batch_size": 16
       , "HR_size": 128
       , "use_flip": true
@@ -22,15 +22,15 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/Set14"
-      , "dataroot_LR": "/home/ybahat/Datasets/Set14_bicLRx4"
+      , "dataroot_HR": "Set14"
+      , "dataroot_LR": "Set14_bicLRx4"
     }
   }
 
   , "path": {
     "root": "/home/ybahat/PycharmProjects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
-    , "commented_model": "pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "pretrained_models/RRDB_PSNR_x4.pth"
   }
 
   , "network_G": {
@@ -63,9 +63,10 @@
     , "lr_scheme": "MultiStepLR"
     , "lr_steps": [50000, 100000, 200000, 300000]
     , "lr_gamma": 0.5
-
+    , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "pixel_weight": 1e-2
+    , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "feature_weight": 1
     , "gan_type": "vanilla"

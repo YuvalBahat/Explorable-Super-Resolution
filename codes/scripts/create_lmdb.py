@@ -4,13 +4,15 @@ import glob
 import pickle
 import lmdb
 import cv2
+from socket import gethostname
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
 # configurations
-img_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4/*'  # glob matching pattern
-lmdb_save_path = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb'  # must end with .lmdb
+dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/ybahat/data/Databases'
+img_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4/*')  # glob matching pattern
+lmdb_save_path = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb')  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
 dataset = []

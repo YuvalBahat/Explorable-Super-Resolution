@@ -2,11 +2,33 @@ import os
 from collections import OrderedDict
 from datetime import datetime
 import json
+from socket import gethostname
+import GPUtil
+import time
 
+
+running_on_Technion = gethostname()=='ybahat-System-Product-Name'
+def Assign_GPU():
+    excluded_IDs = [2]
+    GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
+    if len(GPU_2_use) == 0:
+        print('No available GPUs. waiting...')
+        while len(GPU_2_use) == 0:
+            time.sleep(10)
+            GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
+    print('Using GPU #%d' % (GPU_2_use[0]))
+    return GPU_2_use
+
+
+# RELATIVE_PATH_FIELDS_DATABASE = [['datasets','train','dataroot_HR'],['datasets','train','dataroot_LR'],['datasets','val','dataroot_HR'],['datasets','val','dataroot_LR']]
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
+# def Return_Field(opts,field):
+#     if len(field)>1:
+#         opts = Return_Field(opts,field[:-1])
+#     return opts[field[-1]]
 
 def parse(opt_path, is_train=True):
     # remove comments starting with '//'
@@ -20,7 +42,11 @@ def parse(opt_path, is_train=True):
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
     scale = opt['scale']
-
+    dataset_root_path = '/home/ybahat/Datasets' if running_on_Technion else '/home/ybahat/data/Databases'
+    if 'root' not in opt['path']:
+        opt['path']['root'] = '/home/ybahat/PycharmProjects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
+    if running_on_Technion:
+        opt['datasets']['train']['n_workers'] = 0
     # datasets
     for phase, dataset in opt['datasets'].items():
         phase = phase.split('_')[0]
@@ -28,17 +54,18 @@ def parse(opt_path, is_train=True):
         dataset['scale'] = scale
         is_lmdb = False
         if 'dataroot_HR' in dataset and dataset['dataroot_HR'] is not None:
-            dataset['dataroot_HR'] = os.path.expanduser(dataset['dataroot_HR'])
+            dataset['dataroot_HR'] = os.path.expanduser(os.path.join(dataset_root_path,dataset['dataroot_HR']))
             if dataset['dataroot_HR'].endswith('lmdb'):
                 is_lmdb = True
         if 'dataroot_HR_bg' in dataset and dataset['dataroot_HR_bg'] is not None:
-            dataset['dataroot_HR_bg'] = os.path.expanduser(dataset['dataroot_HR_bg'])
+            dataset['dataroot_HR_bg'] = os.path.expanduser(os.path.join(dataset_root_path,dataset['dataroot_HR_bg']))
         if 'dataroot_LR' in dataset and dataset['dataroot_LR'] is not None:
-            dataset['dataroot_LR'] = os.path.expanduser(dataset['dataroot_LR'])
+            dataset['dataroot_LR'] = os.path.expanduser(os.path.join(dataset_root_path,dataset['dataroot_LR']))
             if dataset['dataroot_LR'].endswith('lmdb'):
                 is_lmdb = True
         dataset['data_type'] = 'lmdb' if is_lmdb else 'img'
-
+        if any([field in opt['train'] for field in ['pixel_domain','feature_domain']]):
+            assert opt['model']=='srragan','Unsupported'
         if phase == 'train' and 'subset_file' in dataset and dataset['subset_file'] is not None:
             dataset['subset_file'] = os.path.expanduser(dataset['subset_file'])
 
@@ -68,12 +95,15 @@ def parse(opt_path, is_train=True):
     opt['network_G']['scale'] = scale
 
     # export CUDA_VISIBLE_DEVICES
-    gpu_list = ','.join(str(x) for x in opt['gpu_ids'])
+    # gpu_list = ','.join(str(x) for x in opt['gpu_ids'])
+    gpu_list = ','.join(str(x) for x in Assign_GPU())
     os.environ['CUDA_VISIBLE_DEVICES'] = gpu_list
     print('export CUDA_VISIBLE_DEVICES=' + gpu_list)
-
+    # if len(RELATIVE_PATH_FIELDS_DATABASE)>0:
+        # for rel_path in RELATIVE_PATH_FIELDS_DATABASE:
+        #     cur_field = Return_Field(opt,rel_path)
+        #     cur_field = os.path.join(dataset_root_path,cur_field)
     return opt
-
 
 def save(opt):
     dump_dir = opt['path']['experiments_root'] if opt['is_train'] else opt['path']['results_root']

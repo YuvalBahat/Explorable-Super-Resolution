@@ -4,14 +4,16 @@ import sys
 from multiprocessing import Pool
 import numpy as np
 import cv2
+from socket import gethostname
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
 
 def main():
     """A multi-thread tool to crop sub imags."""
-    input_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_valid_HR'
-    save_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_valid_HR_sub'
+    dataset_root_path = '/home/ybahat/Datasets' if gethostname()=='ybahat-System-Product-Name' else '/home/ybahat/data/Databases'
+    input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR')
+    save_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
     n_thread = 20
     crop_sz = 480
     step = 240

@@ -3,9 +3,13 @@ import sys
 import numpy as np
 from tqdm import tqdm
 import cv2
+from socket import gethostname
 
-input_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub'
-save_LR_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4'
+dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/ybahat/data/Databases'
+# input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
+# save_LR_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4')
+input_folder = os.path.join(dataset_root_path,'Set14')
+save_LR_folder = os.path.join(dataset_root_path,'Set14_bicLRx4')
 
 up_scale = 4
 mod_scale = 4
