@@ -9,8 +9,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
 # configurations
-img_folder = '/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800/*'  # glob matching pattern
-lmdb_save_path = '/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800.lmdb'  # must end with .lmdb
+img_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4/*'  # glob matching pattern
+lmdb_save_path = '/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb'  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
 dataset = []
@@ -18,12 +18,13 @@ data_size = 0
 
 print('Read images...')
 pbar = ProgressBar(len(img_list))
-for i, v in enumerate(img_list):
+portion_4_low_mem = len(img_list)//10
+for i, v in enumerate(img_list[:10]):
     pbar.update('Read {}'.format(v))
     img = cv2.imread(v, cv2.IMREAD_UNCHANGED)
     dataset.append(img)
     data_size += img.nbytes
-env = lmdb.open(lmdb_save_path, map_size=data_size * 10)
+env = lmdb.open(lmdb_save_path, map_size=data_size *portion_4_low_mem* 10)
 print('Finish reading {} images.\nWrite lmdb...'.format(len(img_list)))
 
 pbar = ProgressBar(len(img_list))
@@ -32,12 +33,13 @@ with env.begin(write=True) as txn:  # txn is a Transaction object
         pbar.update('Write {}'.format(v))
         base_name = os.path.splitext(os.path.basename(v))[0]
         key = base_name.encode('ascii')
-        data = dataset[i]
-        if dataset[i].ndim == 2:
-            H, W = dataset[i].shape
+        # data = dataset[i]
+        data = cv2.imread(v, cv2.IMREAD_UNCHANGED)
+        if data.ndim == 2:
+            H, W = data.shape
             C = 1
         else:
-            H, W, C = dataset[i].shape
+            H, W, C = data.shape
         meta_key = (base_name + '.meta').encode('ascii')
         meta = '{:d}, {:d}, {:d}'.format(H, W, C)
         # The encode is only essential in Python 3

@@ -1,6 +1,6 @@
 {
-  "name": "debug_002_RRDB_ESRGAN_x4_DIV2K" //  please remove "debug_" during training
-  , "use_tb_logger": true
+  "name": "RRDB_ESRGAN_x4_DIV2K" //  please remove "debug_" during training
+  , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
   , "gpu_ids": [0]
@@ -9,11 +9,11 @@
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
-      , "dataroot_HR": "/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800_sub.lmdb"
-      , "dataroot_LR": "/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800_sub_bicLRx4.lmdb"
+      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub.lmdb"
+      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 8
+      , "n_workers": 0
       , "batch_size": 16
       , "HR_size": 128
       , "use_flip": true
@@ -22,14 +22,15 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "LRHR"
-      , "dataroot_HR": "/mnt/SSD/xtwang/BasicSR_datasets/val_set14_part/Set14"
-      , "dataroot_LR": "/mnt/SSD/xtwang/BasicSR_datasets/val_set14_part/Set14_bicLRx4"
+      , "dataroot_HR": "/home/ybahat/Datasets/Set14"
+      , "dataroot_LR": "/home/ybahat/Datasets/Set14_bicLRx4"
     }
   }
 
   , "path": {
-    "root": "/home/xtwang/Projects/BasicSR"
-    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_PSNR_x4.pth"
+    "root": "/home/ybahat/PycharmProjects/SRGAN"
+    , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
+    , "commented_model": "pretrained_models/RRDB_PSNR_x4.pth"
   }
 
   , "network_G": {

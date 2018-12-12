@@ -6,6 +6,7 @@ import numpy as np
 import lmdb
 import torch
 import cv2
+from skimage import io
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
 
@@ -72,6 +73,7 @@ def read_img(env, path):
     # return: Numpy float32, HWC, BGR, [0,1]
     if env is None:  # img
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        # img = io.imread(path)
     else:
         img = _read_lmdb_img(env, path)
     img = img.astype(np.float32) / 255.

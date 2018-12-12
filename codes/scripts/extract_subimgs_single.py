@@ -10,8 +10,8 @@ from utils.progress_bar import ProgressBar
 
 def main():
     """A multi-thread tool to crop sub imags."""
-    input_folder = '/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800'
-    save_folder = '/mnt/SSD/xtwang/BasicSR_datasets/DIV2K800/DIV2K800_sub'
+    input_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_valid_HR'
+    save_folder = '/home/ybahat/Datasets/DIV2K/DIV2K_valid_HR_sub'
     n_thread = 20
     crop_sz = 480
     step = 240
