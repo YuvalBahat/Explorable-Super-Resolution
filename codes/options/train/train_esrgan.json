@@ -1,5 +1,5 @@
 {
-  "name": "RRDB_ESRGAN_x4_DIV2K_HR" //  please remove "debug_" during training
+  "name": "debug_RRDB_ESRGAN_x4_DIV2K_HR" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4

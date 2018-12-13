@@ -35,8 +35,8 @@ else:
 progress_bar = tqdm(os.listdir(input_folder))
 for file_name in progress_bar:
     cur_im = mod_img(cv2.imread(os.path.join(input_folder,file_name)),mod_scale)
-    dsize = tuple((np.array(cur_im.shape[:2])/up_scale).astype(np.int32))
-    cur_im = cv2.resize(cur_im,dsize,interpolation = cv2.INTER_CUBIC)
+    # dsize = tuple((np.array(cur_im.shape[:2])/up_scale).astype(np.int32))
+    cur_im = cv2.resize(cur_im,dsize=(0,0),fx=1/up_scale,fy=1/up_scale,interpolation = cv2.INTER_CUBIC)
     cv2.imwrite(os.path.join(save_LR_folder,file_name),cur_im)
 
 
