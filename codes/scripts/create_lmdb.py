@@ -11,8 +11,8 @@ from utils.progress_bar import ProgressBar
 
 # configurations
 dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/ybahat/data/Databases'
-img_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4/*')  # glob matching pattern
-lmdb_save_path = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4.lmdb')  # must end with .lmdb
+img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_bicLRx4/*')  # glob matching pattern
+lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb')  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
 dataset = []

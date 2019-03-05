@@ -4,7 +4,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
-
+import re
 import models.networks as networks
 from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss
@@ -195,6 +195,7 @@ class SRRaGANModel(BaseModel):
         # D outputs
         self.log_dict['D_real'] = torch.mean(pred_d_real.detach())
         self.log_dict['D_fake'] = torch.mean(pred_d_fake.detach())
+        self.log_dict['D_logits_diff'] = torch.mean(pred_d_real.detach()-pred_d_fake.detach())
 
     def test(self):
         self.netG.eval()
@@ -220,32 +221,48 @@ class SRRaGANModel(BaseModel):
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
             network_path = os.path.join(self.save_dir, '../', 'network.txt')
-            with open(network_path, 'w') as f:
-                f.write(message)
+            if not self.opt['train']['resume']:
+                with open(network_path, 'w') as f:
+                    f.write(message)
 
             # Discriminator
             s, n = self.get_network_description(self.netD)
             print('Number of parameters in D: {:,d}'.format(n))
             message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
-            with open(network_path, 'a') as f:
-                f.write(message)
+            if not self.opt['train']['resume']:
+                with open(network_path, 'a') as f:
+                    f.write(message)
 
             if self.cri_fea:  # F, Perceptual Network
                 s, n = self.get_network_description(self.netF)
                 print('Number of parameters in F: {:,d}'.format(n))
                 message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'
-                with open(network_path, 'a') as f:
-                    f.write(message)
+                if not self.opt['train']['resume']:
+                    with open(network_path, 'a') as f:
+                        f.write(message)
 
     def load(self):
+        resume_training = self.opt['train']['resume']
         load_path_G = self.opt['path']['pretrain_model_G']
-        if load_path_G is not None:
-            print('loading model for G [{:s}] ...'.format(load_path_G))
-            self.load_network(load_path_G, self.netG)
-        load_path_D = self.opt['path']['pretrain_model_D']
-        if self.opt['is_train'] and load_path_D is not None:
-            print('loading model for D [{:s}] ...'.format(load_path_D))
-            self.load_network(load_path_D, self.netD)
+        if resume_training is not None and resume_training:
+            model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
+            model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))[-1]
+            print('Resuming training with model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
+            self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
+            if self.opt['is_train']:
+                model_name = [name for name in os.listdir(self.opt['path']['models']) if '_D.pth' in name]
+                model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_D.pth)', x).group(0)))[-1]
+                print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
+                self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD)
+
+        else:
+            if load_path_G is not None:
+                print('loading model for G [{:s}] ...'.format(load_path_G))
+                self.load_network(load_path_G, self.netG)
+            load_path_D = self.opt['path']['pretrain_model_D']
+            if self.opt['is_train'] and load_path_D is not None:
+                print('loading model for D [{:s}] ...'.format(load_path_D))
+                self.load_network(load_path_D, self.netD)
 
     def save(self, iter_label):
         self.save_network(self.save_dir, self.netG, 'G', iter_label)

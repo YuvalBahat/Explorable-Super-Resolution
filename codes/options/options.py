@@ -3,7 +3,7 @@ from collections import OrderedDict
 from datetime import datetime
 import json
 from socket import gethostname
-import GPUtil
+# import GPUtil
 import time
 
 
@@ -96,7 +96,7 @@ def parse(opt_path, is_train=True):
 
     # export CUDA_VISIBLE_DEVICES
     # gpu_list = ','.join(str(x) for x in opt['gpu_ids'])
-    gpu_list = ','.join(str(x) for x in Assign_GPU())
+    gpu_list = ','.join(str(x) for x in (opt['gpu_ids'] if running_on_Technion else Assign_GPU()))
     os.environ['CUDA_VISIBLE_DEVICES'] = gpu_list
     print('export CUDA_VISIBLE_DEVICES=' + gpu_list)
     # if len(RELATIVE_PATH_FIELDS_DATABASE)>0:

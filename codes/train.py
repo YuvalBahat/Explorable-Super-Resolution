@@ -5,7 +5,7 @@ import argparse
 import time
 import random
 from collections import OrderedDict
-
+import re
 import torch
 
 import options.options as option
@@ -21,9 +21,10 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     opt = option.parse(parser.parse_args().opt, is_train=True)
 
-    util.mkdir_and_rename(opt['path']['experiments_root'])  # rename old experiments if exists
-    util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root' and \
-        not key == 'pretrain_model_G' and not key == 'pretrain_model_D'))
+    if not opt['train']['resume']:
+        util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists
+        util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root' and \
+            not key == 'pretrain_model_G' and not key == 'pretrain_model_D'))
     option.save(opt)
     opt = option.dict_to_nonedict(opt)  # Convert to NoneDict, which return None for missing key.
 
@@ -44,7 +45,12 @@ def main():
             train_set = create_dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['batch_size']))
             print('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
-            total_iters = int(opt['train']['niter'])
+            current_step = 0
+            if opt['train']['resume']:
+                model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
+                model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
+                current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))
+            total_iters = int(opt['train']['niter'])-current_step
             total_epoches = int(math.ceil(total_iters / train_size))
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
             train_loader = create_dataloader(train_set, dataset_opt)
@@ -61,8 +67,6 @@ def main():
     model = create_model(opt)
     # create logger
     logger = Logger(opt)
-
-    current_step = 0
     start_time = time.time()
     print('---------- Start training -------------')
     for epoch in range(total_epoches):
