@@ -6,7 +6,7 @@ import cv2
 from socket import gethostname
 from DTE.imresize_DTE import imresize
 
-dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/ybahat/data/Databases'
+dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/data/Databases'
 # input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
 # save_LR_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4')
 scale_factor = 4
