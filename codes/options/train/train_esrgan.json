@@ -30,15 +30,16 @@
   , "path": {
     "root": "/home/ybahat/PycharmProjects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
-    , "pretrain_model_G": "pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-  }
+    //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+}
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
-    , "nb": 16 //23
+    , "nb": 23
     , "in_nc": 3
     , "out_nc": 3
     , "gc": 32
@@ -49,7 +50,7 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "nf": 16 //64
+    , "nf": 64
     , "in_nc": 3
   }
 
