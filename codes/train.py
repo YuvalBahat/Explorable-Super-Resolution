@@ -71,7 +71,7 @@ def main():
     print('---------- Start training -------------')
     for epoch in range(total_epoches):
         for i, train_data in enumerate(train_loader):
-            current_step += 1
+            # current_step += 1
             if current_step > total_iters:
                 break
 
@@ -99,9 +99,10 @@ def main():
             if current_step % opt['logger']['save_checkpoint_freq'] == 0:
                 print('Saving the model at the end of iter {:d}.'.format(current_step))
                 model.save(current_step)
+                model.save_log()
 
             # validation
-            if current_step % opt['train']['val_freq'] == 0:
+            if (current_step) % opt['train']['val_freq'] == 0 and current_step>=opt['train']['D_init_iters']:
                 print('---------- validation -------------')
                 start_time = time.time()
 
@@ -142,11 +143,14 @@ def main():
                 print_rlt['iters'] = current_step
                 print_rlt['time'] = time_elapsed
                 print_rlt['psnr'] = avg_psnr
+                model.log_dict['psnr_val'].append((current_step,avg_psnr))
+                model.display_log_figure()
                 logger.print_format_results('val', print_rlt)
                 print('-----------------------------------')
 
             # update learning rate
-            model.update_learning_rate()
+            model.update_learning_rate(current_step)
+            current_step += 1
 
     print('Saving the final model.')
     model.save('latest')

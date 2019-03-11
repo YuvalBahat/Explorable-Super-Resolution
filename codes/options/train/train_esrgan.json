@@ -1,9 +1,10 @@
 {
-  "name": "SR_resnet_Dnf16_ESRGAN_x4_DIV2K_LR" //  please remove "debug_" during training
+  "name": "OrgWeights_0Dinit_1Dupdate_DTE_Range_FastForward_batch5" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
   , "gpu_ids": [0]
+  , "range": [0,1]
 
   , "datasets": {
     "train": {
@@ -14,16 +15,16 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 16
-      , "HR_size": 128
+      , "batch_size": 5 //3
+      , "HR_size": 128 //256
       , "use_flip": true
       , "use_rot": true
     }
     , "val": {
       "name": "val_set14_part"
       , "mode": "LRHR"
-      , "dataroot_HR": "DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
-      , "dataroot_LR": "DIV2K_valid/DIV2K_valid_bicLRx4"//,"Set14_bicLRx4"
+      , "dataroot_HR": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
+      , "dataroot_LR": "Set14/Set14_bicLRx4" //,"DIV2K_valid/DIV2K_valid_bicLRx4"//,"Set14_bicLRx4"
     }
   }
 
@@ -36,6 +37,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
+    , "DTE_arch": 1
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -63,7 +65,7 @@
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
-    , "lr_steps": [50000, 100000, 200000, 300000]
+    , "lr_steps": [5000, 10000, 20000, 30000] //[50000, 100000, 200000, 300000]
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
@@ -73,19 +75,22 @@
     , "feature_weight": 1
     , "gan_type": "vanilla"
     , "gan_weight": 5e-3
+    , "range_weight": 1
+    , "D_update_ratio": 1
+    , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
     // , "D_update_ratio": 1
-    // , "D_init_iters": 0
+     , "D_init_iters": 0
     // , "gp_weigth": 10
 
     , "manual_seed": 0
-    , "niter": 5e5
-    , "val_freq": 5e3
+    , "niter": 5e4 //5e5
+    , "val_freq": 5e1 //5e3
   }
 
   , "logger": {
-    "print_freq": 200
-    , "save_checkpoint_freq": 5e3
+    "print_freq": 10 //200
+    , "save_checkpoint_freq": 1e3 //5e3
   }
 }

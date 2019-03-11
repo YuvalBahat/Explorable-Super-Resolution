@@ -10,8 +10,8 @@ dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-P
 # input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
 # save_LR_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4')
 scale_factor = 4
-dataset_name = 'DIV2K_train'#'Set14'
-data_category_string = '_sub'#'_train'
+dataset_name = 'Synthetic'#'DIV2K_train'#'Set14'
+data_category_string = ''#'_sub'#'_train'
 input_folder = os.path.join(dataset_root_path,'%s/%s%s_HR'%(dataset_name,dataset_name,data_category_string))
 save_HR_folder = os.path.join(dataset_root_path,'%s/%s%s_HRx%d'%(dataset_name,dataset_name,data_category_string,scale_factor))
 save_LR_folder = os.path.join(dataset_root_path,'%s/%s%s_bicLRx%d'%(dataset_name,dataset_name,data_category_string,scale_factor))

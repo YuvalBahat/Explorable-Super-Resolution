@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-
+import DTE.DTEnet as DTEnet
 
 class BaseModel():
     def __init__(self, opt):
@@ -33,9 +33,9 @@ class BaseModel():
     def load(self):
         pass
 
-    def update_learning_rate(self):
+    def update_learning_rate(self,cur_step=None):
         for scheduler in self.schedulers:
-            scheduler.step()
+            scheduler.step(cur_step)
 
     def get_current_learning_rate(self):
         return self.optimizers[0].param_groups[0]['lr']
@@ -63,4 +63,7 @@ class BaseModel():
     def load_network(self, load_path, network, strict=True):
         if isinstance(network, nn.DataParallel):
             network = network.module
-        network.load_state_dict(torch.load(load_path), strict=strict)
+        loaded_state_dict = torch.load(load_path)
+        if self.opt['network_G']['DTE_arch']:
+            loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
+        network.load_state_dict(loaded_state_dict, strict=strict)

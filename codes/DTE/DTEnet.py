@@ -13,7 +13,8 @@ try:
 except:
     pass
 import copy
-from imresize_DTE import imresize,calc_strides
+from DTE.imresize_DTE import imresize,calc_strides
+import collections
 
 class DTEnet:
     NFFT_add = 36
@@ -27,13 +28,13 @@ class DTEnet:
             # ds_kernel = np.rot90(imresize(None,[self.ds_factor,self.ds_factor],return_upscale_kernel=True),2).astype(np.float32)/(self.ds_factor**2)
             ds_kernel = Return_Default_kernel(self.ds_factor)
         self.ds_kernel = ds_kernel
-        self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel')
+        self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel',self.conf.filter_pertubation_limit)
         # self.ds_kernel_invalidity_half_size = np.argwhere(Return_Filter_Energy_Distribution(self.ds_kernel)[::-1]>=self.conf.filter_pertubation_limit)[0][0]
         self.compute_inv_hTh()
         self.invalidity_margins_LR = 2* self.ds_kernel_invalidity_half_size_LR + self.inv_hTh_invalidity_half_size
         self.invalidity_margins_HR = self.ds_factor * self.invalidity_margins_LR
 
-    def Return_Invalid_Margin_Size_in_LR(self,filter):
+    def Return_Invalid_Margin_Size_in_LR(self,filter,max_allowed_perturbation):
         TEST_IM_SIZE = 100
         assert filter in ['ds_kernel','inv_hTh']
         if filter=='ds_kernel':
@@ -41,11 +42,11 @@ class DTEnet:
         elif filter=='inv_hTh':
             output_im = conv2(np.ones([TEST_IM_SIZE,TEST_IM_SIZE]), self.inv_hTh,mode='same')
         output_im /= output_im[int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)]
-        invalidity_mask = np.exp(-np.abs(np.log(output_im)))<self.conf.filter_pertubation_limit
+        invalidity_mask = np.exp(-np.abs(np.log(output_im)))<max_allowed_perturbation
         margin_sizes = [len(np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])),
                         len(np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)]))]
-        assert margin_sizes[0]==margin_sizes[1],'Different margins for each axis. Currently not supporting non-isotropic filters'
-        return margin_sizes[0]
+        assert np.abs(margin_sizes[0]-margin_sizes[1])<=1,'Different margins for each axis. Currently not supporting non-isotropic filters'
+        return np.max(margin_sizes)
 
     def Pad_LR_Batch(self,batch,num_recursion=1):
         # margin_size = 2*self.ds_kernel_invalidity_half_size_LR+self.inv_hTh_invalidity_half_size
@@ -63,13 +64,30 @@ class DTEnet:
         HR_image = imresize(np.stack([conv2(LR_image[:,:,channel_num],self.inv_hTh,mode='same') for channel_num in range(LR_image.shape[-1])],-1),scale_factor=[self.ds_factor])
         return Unpad_Image(HR_image,self.ds_factor*margin_size)
 
-    def WrapArchitecture_PyTorch(self,generated_image=None):
+    def WrapArchitecture_PyTorch(self,generated_image=None,training_patch_size=None,only_padders=False):
         assert pytorch_loaded,'Failed to load PyTorch - Necessary for this function of DTE'
-        model =  DTE_PyTorch(self,generated_image)
-        self.wraped_model = generated_image
+        # self.DTEnet = DTEnet.DTEnet(DTEnet.Get_DTE_Conf(self.args.scale[0]))
+        invalidity_margins_4_test_LR = self.invalidity_margins_LR
+        invalidity_margins_4_test_HR = self.ds_factor*invalidity_margins_4_test_LR
+        self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
+        self.HR_unpadder = lambda x: x[:, :, invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR,invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR]
+        self.LR_unpadder = lambda x:x[:,:,invalidity_margins_4_test_LR:-invalidity_margins_4_test_LR,invalidity_margins_4_test_LR:-invalidity_margins_4_test_LR]#Debugging tool
+        self.loss_mask = None
+        if training_patch_size is not None:
+            self.loss_mask = np.zeros([1,1,training_patch_size,training_patch_size])
+            invalidity_margins = self.invalidity_margins_HR
+            self.loss_mask[:,:,invalidity_margins:-invalidity_margins,invalidity_margins:-invalidity_margins] = 1
+            assert np.mean(self.loss_mask) > 0, 'Loss mask completely nullifies image.'
+            print('Using only only %.3f of patch area for learning. The rest is considered to have boundary effects' % (np.mean(self.loss_mask)))
+            self.loss_mask = torch.from_numpy(self.loss_mask).type(torch.cuda.FloatTensor)
+        if only_padders:
+            return
+        else:
+            return DTE_PyTorch(self,generated_image)
 
-        return model
-
+    def Mask_Invalid_Regions_PyTorch(self,im1,im2):
+        assert self.loss_mask is not None,'Mask not defined, probably didn''t pass patch size'
+        return self.loss_mask*im1,self.loss_mask*im2
 
     def WrapArchitecture(self,model,unpadded_input_t,generated_image_t=None):
         assert tf_loaded,'Failed to load TensorFlow - Necessary for this function of DTE'
@@ -174,12 +192,15 @@ class DTEnet:
         if not np.all(np.equal(np.ceil(np.array(self.inv_hTh.shape)/2),np.array([max_row,max_col])-1)):
             half_filter_size = np.min([self.inv_hTh.shape[0]-max_row-1,self.inv_hTh.shape[0]-max_col-1,max_row,max_col])
             self.inv_hTh = self.inv_hTh[max_row-half_filter_size:max_row+half_filter_size+1,max_col-half_filter_size:max_col+half_filter_size+1]
-        filter_energy = Return_Filter_Energy_Distribution(self.inv_hTh)
+        # filter_energy = Return_Filter_Energy_Distribution(self.inv_hTh)
         # self.inv_hTh_invalidity_half_size = np.argwhere(filter_energy[::-1]>=self.conf.filter_pertubation_limit)[0][0]
-        self.inv_hTh_invalidity_half_size = self.Return_Invalid_Margin_Size_in_LR('inv_hTh')
-        if self.conf.desired_inv_hTh_energy_portion<1:
-            desired_half_filter_size = np.argwhere(filter_energy>=self.conf.desired_inv_hTh_energy_portion)[-1][0]
-            self.inv_hTh = self.inv_hTh[desired_half_filter_size:-desired_half_filter_size,desired_half_filter_size:-desired_half_filter_size]
+        self.inv_hTh_invalidity_half_size = self.Return_Invalid_Margin_Size_in_LR('inv_hTh',self.conf.filter_pertubation_limit)
+        margins_2_drop = self.inv_hTh.shape[0]//2-self.Return_Invalid_Margin_Size_in_LR('inv_hTh',self.conf.desired_inv_hTh_energy_portion)
+        if margins_2_drop>0:
+            self.inv_hTh = self.inv_hTh[margins_2_drop:-margins_2_drop,margins_2_drop:-margins_2_drop]
+        # if self.conf.desired_inv_hTh_energy_portion<1:
+        #     desired_half_filter_size = np.argwhere(filter_energy>=self.conf.desired_inv_hTh_energy_portion)[-1][0]
+        #     self.inv_hTh = self.inv_hTh[desired_half_filter_size:-desired_half_filter_size,desired_half_filter_size:-desired_half_filter_size]
 
     def compute_conv_with_inv_hTh_OP(self):
         self.inv_hTh_t = tf.constant(np.tile(np.expand_dims(np.expand_dims(self.inv_hTh,axis=2),axis=3),reps=[1,1,3,1]))
@@ -237,13 +258,25 @@ class DTE_PyTorch(nn.Module):
         Reshaped_input = lambda x:x.view([x.size()[0],x.size()[1],int(x.size()[2]/self.ds_factor),self.ds_factor,int(x.size()[3]/self.ds_factor),self.ds_factor])
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
         self.DownscaleOP = lambda x:Aliased_Downscale_OP(nn.functional.conv2d(input=antialiasing_Padder(x),weight=downscale_antialiasing,groups=3))
-    def forward(self, x):
+    #     Padding:
+    #     invalidity_margins_4_test_LR = 2 * DTEnet.invalidity_margins_LR
+    #     invalidity_margins_4_test_HR = DTEnet.ds_factor * invalidity_margins_4_test_LR
+    #     self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
+    #     self.HR_unpadder = lambda x: x[:, :, invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR,invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR]
+        self.LR_padder = DTEnet.LR_padder
+        self.HR_unpadder = DTEnet.HR_unpadder
+        self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
+
+    def forward(self, x,pre_pad=False):
+        if pre_pad:
+            x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
         projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
         projected_generated_im = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(generated_image)))
         projected_2_ortho_generated_im = generated_image - projected_generated_im
-        return projected_upscaled_input+projected_2_ortho_generated_im
+        output = projected_upscaled_input+projected_2_ortho_generated_im
+        return self.HR_unpadder(output) if pre_pad else output
 
 def Aliased_Down_Sampling(array,factor):
     pre_stride,post_stride = calc_strides(array,1/factor,align_center=True)
@@ -289,12 +322,6 @@ def Aliased_Down_Up_Sampling(array,factor):
 
 def Return_Default_kernel(ds_factor):
     return np.rot90(imresize(None, [ds_factor, ds_factor], return_upscale_kernel=True), 2).astype(np.float32) / (ds_factor ** 2)
-#     DELTA_SIZE = 11
-#     delta_im = np.zeros([DELTA_SIZE,DELTA_SIZE])
-#     delta_im[np.ceil(DELTA_SIZE/2).astype(np.int32)-1,np.ceil(DELTA_SIZE/2).astype(np.int32)-1] = 1
-#     kernel = imresize(delta_im,scale_factor=[ds_factor,ds_factor],align_center=True)/(ds_factor**2)
-#     kernel_support = np.nonzero(kernel[ds_factor*np.ceil(DELTA_SIZE/2).astype(np.int32)-1,:])[0]
-#     return kernel[kernel_support[0]:kernel_support[-1]+1,kernel_support[0]:kernel_support[-1]+1]
 
 def Return_Filter_Energy_Distribution(filter):
     sqrt_energy =  [np.sqrt(np.sum(filter**2))]+[np.sqrt(np.sum(filter[frame_num:-frame_num,frame_num:-frame_num]**2)) for frame_num in range(1,int(np.ceil(filter.shape[0]/2)))]
@@ -322,6 +349,14 @@ def Get_DTE_Conf(sf):
         avoid_skip_connections = False
         generate_HR_image = False
         pseudo_DTE_supplement = False
-        desired_inv_hTh_energy_portion = 1 - 1e-10
+        desired_inv_hTh_energy_portion = 1 - 1e-6#1-1e-10
         filter_pertubation_limit = 0.999
     return conf
+def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
+    if all(['generated_image_model' in key for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch
+        modified_names_dict = collections.OrderedDict()
+        for key in loaded_state_dict:
+            modified_names_dict['generated_image_model.' + key] = loaded_state_dict[key]
+        return modified_names_dict
+    else:
+        return loaded_state_dict

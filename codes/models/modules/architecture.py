@@ -4,6 +4,7 @@ import torch.nn as nn
 import torchvision
 from . import block as B
 from . import spectral_norm as SN
+import numpy as np
 
 ####################
 # Generator
@@ -85,15 +86,13 @@ class RRDBNet(nn.Module):
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA'):
+    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128):
         super(Discriminator_VGG_128, self).__init__()
         # features
         # hxw, c
         # 128, 64
-        conv0 = B.conv_block(in_nc, base_nf, kernel_size=3, norm_type=None, act_type=act_type, \
-            mode=mode)
-        conv1 = B.conv_block(base_nf, base_nf, kernel_size=4, stride=2, norm_type=norm_type, \
-            act_type=act_type, mode=mode)
+        conv0 = B.conv_block(in_nc, base_nf, kernel_size=3, norm_type=None, act_type=act_type,mode=mode)
+        conv1 = B.conv_block(base_nf, base_nf, kernel_size=4, stride=2, norm_type=norm_type,act_type=act_type, mode=mode)
         # 64, 64
         conv2 = B.conv_block(base_nf, base_nf*2, kernel_size=3, stride=1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
@@ -119,8 +118,9 @@ class Discriminator_VGG_128(nn.Module):
             conv9)
 
         # classifier
+        FC_end_patch_size = input_patch_size//(2**5)
         self.classifier = nn.Sequential(
-            nn.Linear(base_nf*8 * 4 * 4, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
+            nn.Linear(base_nf*8 * FC_end_patch_size**2, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
 
     def forward(self, x):
         x = self.features(x)

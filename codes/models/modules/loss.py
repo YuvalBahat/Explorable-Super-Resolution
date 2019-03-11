@@ -37,6 +37,12 @@ class GANLoss(nn.Module):
         loss = self.loss(input, target_label)
         return loss
 
+def CreateRangeLoss(legit_range):
+    dtype = torch.cuda.FloatTensor
+    legit_range = torch.FloatTensor(legit_range).type(dtype)
+    def RangeLoss(x):
+        return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).max()
+    return RangeLoss
 
 class GradientPenaltyLoss(nn.Module):
     def __init__(self, device=torch.device('cpu')):

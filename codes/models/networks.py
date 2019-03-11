@@ -5,6 +5,7 @@ from torch.nn import init
 
 import models.modules.architecture as arch
 import models.modules.sft_arch as sft_arch
+import DTE.DTEnet as DTEnet
 
 ####################
 # initialize
@@ -79,7 +80,7 @@ def init_weights(net, init_type='kaiming', scale=1, std=0.02):
 
 
 # Generator
-def define_G(opt):
+def define_G(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
@@ -98,7 +99,8 @@ def define_G(opt):
             act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv')
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
-
+    if opt['network_G']['DTE_arch']:
+        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['HR_size'])
     if opt['is_train']:
         init_weights(netG, init_type='kaiming', scale=0.1)
     if gpu_ids:
@@ -108,14 +110,16 @@ def define_G(opt):
 
 
 # Discriminator
-def define_D(opt):
+def define_D(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_D']
     which_model = opt_net['which_model_D']
-
+    input_patch_size = opt['datasets']['train']['HR_size']
+    if DTE is not None:
+        input_patch_size -= 2*DTE.invalidity_margins_HR
     if which_model == 'discriminator_vgg_128':
         netD = arch.Discriminator_VGG_128(in_nc=opt_net['in_nc'], base_nf=opt_net['nf'], \
-            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
+            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size)
 
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
