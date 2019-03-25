@@ -32,8 +32,9 @@ def mkdir_and_rename(path):
         # new_name = path + '_archived_' + get_timestamp()
         # print('Path already exists. Rename it to [{:s}]'.format(new_name))
         # os.rename(path, new_name)
-        path = path + '_' + get_timestamp()
-        print('Path already exists. Creating [{:s}] instead'.format(path))
+        renamed_path = path + '_Renamed' + get_timestamp()
+        os.rename(path,renamed_path)
+        print('Path already exists. Changing to [{:s}]'.format(renamed_path))
     os.makedirs(path)
 
 

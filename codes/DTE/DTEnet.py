@@ -19,15 +19,15 @@ import collections
 class DTEnet:
     NFFT_add = 36
 
-    def __init__(self,conf,ds_kernel=None):
+    def __init__(self,conf,upscale_kernel=None):
         self.conf = conf
         self.ds_factor = np.array(conf.scale_factor,dtype=np.int32)
         assert np.round(self.ds_factor)==self.ds_factor,'Currently only supporting integer scale factors'
-        assert ds_kernel is None,'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
-        if ds_kernel is None:
-            # ds_kernel = np.rot90(imresize(None,[self.ds_factor,self.ds_factor],return_upscale_kernel=True),2).astype(np.float32)/(self.ds_factor**2)
-            ds_kernel = Return_Default_kernel(self.ds_factor)
-        self.ds_kernel = ds_kernel
+        assert upscale_kernel is None,'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
+        # if ds_kernel is None:
+        #     # ds_kernel = np.rot90(imresize(None,[self.ds_factor,self.ds_factor],return_upscale_kernel=True),2).astype(np.float32)/(self.ds_factor**2)
+        self.ds_kernel = Return_kernel(self.ds_factor,upscale_kernel=upscale_kernel)
+        # self.ds_kernel = ds_kernel
         self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel',self.conf.filter_pertubation_limit)
         # self.ds_kernel_invalidity_half_size = np.argwhere(Return_Filter_Energy_Distribution(self.ds_kernel)[::-1]>=self.conf.filter_pertubation_limit)[0][0]
         self.compute_inv_hTh()
@@ -91,6 +91,7 @@ class DTEnet:
 
     def WrapArchitecture(self,model,unpadded_input_t,generated_image_t=None):
         assert tf_loaded,'Failed to load TensorFlow - Necessary for this function of DTE'
+        assert not self.conf.sigmoid_range_limit,'Unsupported yet'
         PAD_GENRATED_TOO = True
         self.model = model
         with model.as_default():
@@ -242,6 +243,7 @@ class DTE_PyTorch(nn.Module):
     def __init__(self, DTEnet, generated_image):
         super(DTE_PyTorch, self).__init__()
         self.ds_factor = DTEnet.ds_factor
+        self.conf = DTEnet.conf
         self.generated_image_model = generated_image
         inv_hTh_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(DTEnet.inv_hTh,0),0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
         inv_hTh_padding = np.floor(np.array(DTEnet.inv_hTh.shape)/2).astype(np.int32)
@@ -258,6 +260,7 @@ class DTE_PyTorch(nn.Module):
         Reshaped_input = lambda x:x.view([x.size()[0],x.size()[1],int(x.size()[2]/self.ds_factor),self.ds_factor,int(x.size()[3]/self.ds_factor),self.ds_factor])
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
         self.DownscaleOP = lambda x:Aliased_Downscale_OP(nn.functional.conv2d(input=antialiasing_Padder(x),weight=downscale_antialiasing,groups=3))
+
     #     Padding:
     #     invalidity_margins_4_test_LR = 2 * DTEnet.invalidity_margins_LR
     #     invalidity_margins_4_test_HR = DTEnet.ds_factor * invalidity_margins_4_test_LR
@@ -267,7 +270,8 @@ class DTE_PyTorch(nn.Module):
         self.HR_unpadder = DTEnet.HR_unpadder
         self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
 
-    def forward(self, x,pre_pad=False):
+    def forward(self, x,pre_pad=False,return_2_components=False):
+        assert not (pre_pad and return_2_components),'Unsupported'
         if pre_pad:
             x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
@@ -275,8 +279,18 @@ class DTE_PyTorch(nn.Module):
         projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
         projected_generated_im = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(generated_image)))
         projected_2_ortho_generated_im = generated_image - projected_generated_im
-        output = projected_upscaled_input+projected_2_ortho_generated_im
+        if self.conf.sigmoid_range_limit:
+            projected_2_ortho_generated_im = torch.tanh(projected_2_ortho_generated_im)*(self.conf.input_range[1]-self.conf.input_range[0])
+        output = (projected_upscaled_input,projected_2_ortho_generated_im) if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
         return self.HR_unpadder(output) if pre_pad else output
+    def Image_2_Sigmoid_Range_Converter(self,images,opposite_direction=False):
+        if opposite_direction:
+            return images*(self.conf.input_range[1]-self.conf.input_range[0])+self.conf.input_range[0]
+        else:
+            images = torch.clamp(images,min=self.conf.input_range[0],max=self.conf.input_range[1])
+            return (images-self.conf.input_range[0])/(self.conf.input_range[1] - self.conf.input_range[0])
+    def Inverse_Sigmoid(self,images):
+        return torch.log(self.Image_2_Sigmoid_Range_Converter(images)/(1.-self.Image_2_Sigmoid_Range_Converter(images)))
 
 def Aliased_Down_Sampling(array,factor):
     pre_stride,post_stride = calc_strides(array,1/factor,align_center=True)
@@ -288,7 +302,7 @@ def Aliased_Down_Sampling(array,factor):
 
 def Return_Downscale_OP(ds_factor,ds_kernel=None):
     if ds_kernel is None:
-        ds_kernel = Return_Default_kernel(ds_factor)
+        ds_kernel = Return_kernel(ds_factor)
     downscale_antialiasing = tf.constant(np.tile(np.expand_dims(np.expand_dims(np.rot90(ds_kernel, 2), axis=2), axis=3), reps=[1, 1, 3, 1]))
     pre_stride, post_stride = calc_strides(None, ds_factor)
     # Cropped_2_Integer_Factors = lambda x: tf.slice(x, begin=[0, 0, 0, 0],size=tf.stack([-1, tf.cast(
@@ -320,8 +334,8 @@ def Aliased_Down_Up_Sampling(array,factor):
     return np.reshape(array,newshape=input_shape)
 
 
-def Return_Default_kernel(ds_factor):
-    return np.rot90(imresize(None, [ds_factor, ds_factor], return_upscale_kernel=True), 2).astype(np.float32) / (ds_factor ** 2)
+def Return_kernel(ds_factor,upscale_kernel=None):
+    return np.rot90(imresize(None, [ds_factor, ds_factor], return_upscale_kernel=True,kernel=upscale_kernel), 2).astype(np.float32) / (ds_factor ** 2)
 
 def Return_Filter_Energy_Distribution(filter):
     sqrt_energy =  [np.sqrt(np.sum(filter**2))]+[np.sqrt(np.sum(filter[frame_num:-frame_num,frame_num:-frame_num]**2)) for frame_num in range(1,int(np.ceil(filter.shape[0]/2)))]
@@ -351,6 +365,8 @@ def Get_DTE_Conf(sf):
         pseudo_DTE_supplement = False
         desired_inv_hTh_energy_portion = 1 - 1e-6#1-1e-10
         filter_pertubation_limit = 0.999
+        sigmoid_range_limit = False
+        # input_range = np.array([0.,1.])
     return conf
 def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
     if all(['generated_image_model' in key for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch

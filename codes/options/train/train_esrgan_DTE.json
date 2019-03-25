@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_1Dupdate_noDTE_OrgWeights_batchD24G6_debug" //  please remove "debug_" during training
+  "name": "100Dinit_2Dupdate_DTE_batchD24G24_LR1e-4_SIG_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -16,7 +16,7 @@
       , "use_shuffle": true
       , "n_workers": 8
       , "batch_size": 3
-      , "batch_size_4_grads_G": 6
+      , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
       , "use_flip": true
@@ -39,8 +39,8 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 0
-    , "sigmoid_range_limit": 0
+    , "DTE_arch": 1
+    , "sigmoid_range_limit": 1
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -61,7 +61,7 @@
 
   , "train": {
     "resume": 0
-    ,"lr_G": 1e-4
+    ,"lr_G": 1e-4 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-4
@@ -72,19 +72,19 @@
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
-    , "pixel_weight": 1e-2
+    , "pixel_weight": 0 //1e-2
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "feature_weight": 1
+    , "feature_weight": 0 //1
     , "gan_type": "vanilla"
-    , "gan_weight": 5e-3
+    , "gan_weight": 1 //5e-3
     , "range_weight": 0 //1
-    , "D_update_ratio": 1
+    , "D_update_ratio": 2
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0
+     , "D_init_iters": 100
     // , "gp_weigth": 10
 
     , "manual_seed": 0

@@ -7,12 +7,13 @@ import random
 from collections import OrderedDict
 import re
 import torch
-
+import numpy as np
 import options.options as option
 from utils import util
 from data import create_dataloader, create_dataset
 from models import create_model
 from utils.logger import Logger, PrintLogger
+import tqdm
 
 
 def main():
@@ -40,6 +41,7 @@ def main():
     torch.manual_seed(seed)
 
     # create train and val dataloader
+    max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
             train_set = create_dataset(dataset_opt)
@@ -48,9 +50,9 @@ def main():
             current_step = 0
             if opt['train']['resume']:
                 model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
-                model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
-                current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))
-            total_iters = int(opt['train']['niter'])-current_step
+                model_name = sorted([m for m in model_name if re.search('(\d)+(?=_G.pth)', m) is not None], key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
+                current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))*max_accumulation_steps
+            total_iters = int(opt['train']['niter'])#-current_step
             total_epoches = int(math.ceil(total_iters / train_size))
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
             train_loader = create_dataloader(train_set, dataset_opt)
@@ -67,12 +69,24 @@ def main():
     model = create_model(opt)
     # create logger
     logger = Logger(opt)
+    # Save validation set results as image collage:
+    SAVE_IMAGE_COLLAGE = True
+    per_image_saved_patch = min([min(im['HR'].shape[1:]) for im in val_loader.dataset])-2
+    num_val_images = len(val_loader.dataset)
+    val_images_collage_rows = int(np.floor(np.sqrt(num_val_images)))
+    while val_images_collage_rows>1:
+        if np.round(num_val_images/val_images_collage_rows)==num_val_images/val_images_collage_rows:
+            break
+        val_images_collage_rows -= 1
     start_time = time.time()
+    min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
+    save_GT_HR = True
     print('---------- Start training -------------')
-    for epoch in range(total_epoches):
+    for epoch in range(int(math.floor(current_step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
-            # current_step += 1
-            if current_step > total_iters:
+            gradient_step_num = current_step // max_accumulation_steps
+            not_within_batch = current_step % max_accumulation_steps == (max_accumulation_steps - 1)
+            if gradient_step_num > total_iters:
                 break
 
             # training
@@ -80,15 +94,15 @@ def main():
             model.optimize_parameters(current_step)
 
             time_elapsed = time.time() - start_time
-            start_time = time.time()
+            if not_within_batch:    start_time = time.time()
 
             # log
-            if current_step % opt['logger']['print_freq'] == 0:
+            if gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
                 logs = model.get_current_log()
                 print_rlt = OrderedDict()
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
-                print_rlt['iters'] = current_step
+                print_rlt['iters'] = gradient_step_num
                 print_rlt['time'] = time_elapsed
                 for k, v in logs.items():
                     print_rlt[k] = v
@@ -96,64 +110,96 @@ def main():
                 logger.print_format_results('train', print_rlt)
 
             # save models
-            if current_step % opt['logger']['save_checkpoint_freq'] == 0:
-                print('Saving the model at the end of iter {:d}.'.format(current_step))
-                model.save(current_step)
+            if gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch:
+                print('Saving the model at the end of iter {:d}.'.format(gradient_step_num))
+                model.save(gradient_step_num)
                 model.save_log()
 
             # validation
-            if (current_step) % opt['train']['val_freq'] == 0 and current_step>=opt['train']['D_init_iters']:
+            if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:
                 print('---------- validation -------------')
                 start_time = time.time()
 
                 avg_psnr = 0.0
                 idx = 0
-                for val_data in val_loader:
+                if SAVE_IMAGE_COLLAGE:
+                    image_collage,GT_image_collage = [],[]
+                    cur_train_results = model.get_current_visuals(entire_batch=True)
+                    train_psnrs = [
+                        util.calculate_psnr(util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255,
+                                            util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255) for
+                        im_num in range(len(cur_train_results['SR']))]
+                    #Save latest training batch output:
+                    save_img_path = os.path.join(os.path.join(opt['path']['val_images']),
+                                                 '{:d}_Tr_PSNR{:.3f}.png'.format(gradient_step_num, np.mean(train_psnrs)))
+                    util.save_img(np.clip(np.concatenate(
+                        (np.concatenate(
+                            [util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255 for im_num in
+                             range(len(cur_train_results['SR']))],
+                            0), np.concatenate(
+                            [util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
+                             range(len(cur_train_results['SR']))],
+                            0)), 1), 0, 255).astype(np.uint8), save_img_path)
+                for val_data in tqdm.tqdm(val_loader):
+                    if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
                     idx += 1
                     img_name = os.path.splitext(os.path.basename(val_data['LR_path'][0]))[0]
                     img_dir = os.path.join(opt['path']['val_images'], img_name)
                     util.mkdir(img_dir)
-
                     model.feed_data(val_data)
                     model.test()
 
                     visuals = model.get_current_visuals()
-                    sr_img = util.tensor2img(visuals['SR'])  # uint8
-                    gt_img = util.tensor2img(visuals['HR'])  # uint8
-
-                    # Save SR images for reference
-                    save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(\
-                        img_name, current_step))
-                    util.save_img(sr_img, save_img_path)
+                    sr_img = util.tensor2img(visuals['SR'],out_type=np.float32)  # float32
+                    gt_img = util.tensor2img(visuals['HR'],out_type=np.float32)  # float32
 
                     # calculate PSNR
                     crop_size = opt['scale']
-                    gt_img = gt_img / 255.
-                    sr_img = sr_img / 255.
-                    cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                    cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                    avg_psnr += util.calculate_psnr(cropped_sr_img * 255, cropped_gt_img * 255)
+                    gt_img *= 255.
+                    sr_img *= 255.
+                    # cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size, :]
+                    # cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size, :]
+                    # avg_psnr += util.calculate_psnr(cropped_sr_img, cropped_gt_img)
+                    avg_psnr += util.calculate_psnr(sr_img, gt_img)
+
+                    if SAVE_IMAGE_COLLAGE:
+                        margins2crop = ((np.array(sr_img.shape[:2])-per_image_saved_patch)/2).astype(np.int32)
+                        image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
+                        if save_GT_HR:#Save GT HR images
+                            GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
+                    else:
+                        # Save SR images for reference
+                        save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
+                        util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
 
                 avg_psnr = avg_psnr / idx
+                if SAVE_IMAGE_COLLAGE:
+                    save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_PSNR{:.3f}.png'.format(gradient_step_num,avg_psnr))
+                    util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
+                    if save_GT_HR:  # Save GT HR images
+                        util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
+                            os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
+                        save_GT_HR = False
                 time_elapsed = time.time() - start_time
                 # Save to log
                 print_rlt = OrderedDict()
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
-                print_rlt['iters'] = current_step
+                print_rlt['iters'] = gradient_step_num
                 print_rlt['time'] = time_elapsed
                 print_rlt['psnr'] = avg_psnr
-                model.log_dict['psnr_val'].append((current_step,avg_psnr))
+                model.log_dict['psnr_val'].append((gradient_step_num,avg_psnr))
                 model.display_log_figure()
                 logger.print_format_results('val', print_rlt)
                 print('-----------------------------------')
 
             # update learning rate
-            model.update_learning_rate(current_step)
+            if not_within_batch:
+                model.update_learning_rate(gradient_step_num)
             current_step += 1
 
     print('Saving the final model.')
-    model.save('latest')
+    model.save(gradient_step_num)
     print('End of training.')
 
 

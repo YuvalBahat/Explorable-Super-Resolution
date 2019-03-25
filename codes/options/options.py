@@ -48,8 +48,8 @@ def parse(opt_path, is_train=True):
     dataset_root_path =  '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/Datasets' if running_on_Technion else '/home/ybahat/data/Databases'
     if 'root' not in opt['path']:
         opt['path']['root'] = '/home/ybahat/PycharmProjects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
-    if running_on_Technion:
-        opt['datasets']['train']['n_workers'] = 0
+    # if running_on_Technion:
+    #     opt['datasets']['train']['n_workers'] = 0
     # datasets
     for phase, dataset in opt['datasets'].items():
         phase = phase.split('_')[0]
@@ -67,7 +67,7 @@ def parse(opt_path, is_train=True):
             if dataset['dataroot_LR'].endswith('lmdb'):
                 is_lmdb = True
         dataset['data_type'] = 'lmdb' if is_lmdb else 'img'
-        if any([field in opt['train'] for field in ['pixel_domain','feature_domain']]):
+        if 'train' in opt.keys() and any([field in opt['train'] for field in ['pixel_domain','feature_domain']]):
             assert opt['model']=='srragan','Unsupported'
         if phase == 'train' and 'subset_file' in dataset and dataset['subset_file'] is not None:
             dataset['subset_file'] = os.path.expanduser(dataset['subset_file'])
@@ -84,13 +84,18 @@ def parse(opt_path, is_train=True):
         opt['path']['models'] = os.path.join(experiments_root, 'models')
         opt['path']['log'] = experiments_root
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
-
+        assert opt['datasets']['train']['batch_size_4_grads_G']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
+        assert opt['datasets']['train']['batch_size_4_grads_D']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
+        assert opt['datasets']['train']['batch_size_4_grads_D']>=opt['datasets']['train']['batch_size_4_grads_G'],'Currently not supporting G_batch>D_batch'
+        opt['train']['grad_accumulation_steps_G'] = opt['datasets']['train']['batch_size_4_grads_G']//opt['datasets']['train']['batch_size']
+        opt['train']['grad_accumulation_steps_D'] = opt['datasets']['train']['batch_size_4_grads_D']//opt['datasets']['train']['batch_size']
+        assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
         # change some options for debug mode
-        if 'debug' in opt['name']:
-            opt['train']['val_freq'] = 8
-            opt['logger']['print_freq'] = 2
-            opt['logger']['save_checkpoint_freq'] = 8
-            opt['train']['lr_decay_iter'] = 10
+        # if 'debug' in opt['name']:
+        #     opt['train']['val_freq'] = 8
+        #     opt['logger']['print_freq'] = 2
+        #     opt['logger']['save_checkpoint_freq'] = 8
+        #     opt['train']['lr_decay_iter'] = 10
     else:  # test
         results_root = os.path.join(opt['path']['root'], 'results', opt['name'])
         opt['path']['results_root'] = results_root

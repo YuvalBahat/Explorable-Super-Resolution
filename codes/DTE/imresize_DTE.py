@@ -3,13 +3,16 @@ import numpy as np
 from scipy.signal import convolve2d as conv2
 
 def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=False, return_upscale_kernel=False,use_zero_padding=False,antialiasing=True, kernel_shift_flag=False):
+    assert kernel is None or kernel=='cubic' or isinstance(kernel,np.ndarray)
     imresize.kernels = getattr(imresize,'kernels',{})
     # imresize.sf = getattr(imresize,'sf',0)
     if scale_factor is None:
         scale_factor = [output_shape[0]/im.shape[0]]
     sf_4_kernel = np.maximum(scale_factor[0], 1 / scale_factor[0]).astype(np.int32)
-    # if len(imresize.kernel)==0:
-    if str(sf_4_kernel) not in imresize.kernels.keys():
+    if isinstance(kernel,np.ndarray):
+        assert str(sf_4_kernel) not in imresize.kernels.keys() or np.all(np.equal(kernel,imresize.kernels[str(sf_4_kernel)])),'If using non-default kernel, make sure I always use it.'
+        imresize.kernels[str(sf_4_kernel)] = kernel
+    elif str(sf_4_kernel) not in imresize.kernels.keys():
         DELTA_SIZE = 11
         # imresize.sf = sf_4_kernel
         delta_im = np.zeros([DELTA_SIZE, DELTA_SIZE])
@@ -20,7 +23,6 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
         imresize.kernels[str(sf_4_kernel)] = upscale_kernel[kernel_support[0]:kernel_support[1] + 1, kernel_support[0]:kernel_support[1] + 1]
     # else:
     #     assert np.all(scale_factor==imresize.sf) or np.all(scale_factor==1/imresize.sf)
-    assert kernel is None or kernel=='cubic'
     assert len(scale_factor)==1 or scale_factor[0]==scale_factor[1]
     scale_factor = scale_factor[0]
     pre_stride,post_stride = calc_strides(im,scale_factor,align_center)

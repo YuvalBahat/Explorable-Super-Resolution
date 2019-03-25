@@ -6,17 +6,17 @@
   , "gpu_ids": [0]
 
   , "datasets": {
-    "test_1": { // the 1st test dataset
-      "name": "set5"
+    "test_2": { // the 2nd test dataset
+      "name": "DIV2K"
       , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/Set5"
-      , "dataroot_LR": "/home/ybahat/Datasets/Set5_bicLRx4"
+      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_HRx4"
+      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_bicLRx4"
     }
-    , "test_2": { // the 2nd test dataset
+    , "test_1": { // the 1st test dataset
       "name": "set14"
       , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/Set14"
-      , "dataroot_LR": "/home/ybahat/Datasets/Set14_bicLRx4"
+      , "dataroot_HR": "/home/ybahat/Datasets/Set14/Set14_HRx4"
+      , "dataroot_LR": "/home/ybahat/Datasets/Set14/Set14_bicLRx4"
     }
   }
 
