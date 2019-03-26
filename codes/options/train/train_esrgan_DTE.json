@@ -79,7 +79,7 @@
     , "gan_type": "vanilla"
     , "gan_weight": 1 //5e-3
     , "range_weight": 0 //1
-    , "D_update_ratio": 2
+    , "D_update_ratio": 10
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp

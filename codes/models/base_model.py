@@ -66,4 +66,6 @@ class BaseModel():
         loaded_state_dict = torch.load(load_path)
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
+        # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))
         network.load_state_dict(loaded_state_dict, strict=strict)
+

@@ -32,7 +32,6 @@ class SRRaGANModel(BaseModel):
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
-        self.DTE_arch = opt['network_G']['DTE_arch']
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
@@ -282,7 +281,10 @@ class SRRaGANModel(BaseModel):
         self.netG.eval()
         with torch.no_grad():
             if self.DTE_arch:
-                self.fake_H = self.netG(self.var_L,pre_pad=True)
+                # self.fake_H = self.netG(self.var_L,pre_pad=True)
+                self.netG.module.pre_pad = True
+                self.fake_H = self.netG(self.var_L)
+                self.netG.module.pre_pad = False
             else:
                 self.fake_H = self.netG(self.var_L)
         self.netG.train()

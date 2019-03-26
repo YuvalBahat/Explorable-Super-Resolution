@@ -4,7 +4,7 @@ import re
 import tqdm
 import matplotlib.pyplot as plt
 
-exp_name = '0Dinit_1Dupdate_noDTE_OrgWeights_batchD24G6_debug'
+exp_name = '100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_debug'
 
 images_folder = '../../experiments/'+exp_name+'/val_images'
 video_name = os.path.join(images_folder,'video.mp4')

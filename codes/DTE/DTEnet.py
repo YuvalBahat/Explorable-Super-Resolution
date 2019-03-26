@@ -238,6 +238,17 @@ class DTEnet:
                         filter=tf.get_variable(shape=downscale_antialiasing.get_shape(),name='pseudo_downscale_filter',
                         initializer=tf.random_normal_initializer(stddev=np.sqrt(self.conf.init_variance / np.prod(downscale_antialiasing.get_shape().as_list()[0:3])))),strides=[1,1,1,1],padding='SAME'))
 
+class Filter_Layer(nn.Module):
+    def __init__(self,filter,pre_filter_func,post_filter_func=None):
+        super(Filter_Layer, self).__init__()
+        self.Filter_OP = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
+        self.Filter_OP.weight = nn.Parameter(data=torch.from_numpy(
+            np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+        self.Filter_OP.filter_layer = True
+        self.pre_filter_func = pre_filter_func
+        self.post_filter_func = (lambda x:x) if post_filter_func is None else post_filter_func
+    def forward(self, x):
+        return self.post_filter_func(self.Filter_OP(self.pre_filter_func(x)))
 
 class DTE_PyTorch(nn.Module):
     def __init__(self, DTEnet, generated_image):
@@ -245,44 +256,42 @@ class DTE_PyTorch(nn.Module):
         self.ds_factor = DTEnet.ds_factor
         self.conf = DTEnet.conf
         self.generated_image_model = generated_image
-        inv_hTh_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(DTEnet.inv_hTh,0),0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
         inv_hTh_padding = np.floor(np.array(DTEnet.inv_hTh.shape)/2).astype(np.int32)
         Replication_Padder = nn.ReplicationPad2d((inv_hTh_padding[1],inv_hTh_padding[1],inv_hTh_padding[0],inv_hTh_padding[0]))
-        self.Conv_LR_with_Inv_hTh_OP = lambda x: nn.functional.conv2d(Replication_Padder(x), weight= inv_hTh_t, groups=3)
-        downscale_antialiasing = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(np.rot90(DTEnet.ds_kernel,2),axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
-        upscale_antialiasing = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(DTEnet.ds_kernel*DTEnet.ds_factor**2,axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
+        self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(DTEnet.inv_hTh,pre_filter_func=Replication_Padder)
+        downscale_antialiasing = np.rot90(DTEnet.ds_kernel,2)
+        # downscale_antialiasing_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(downscale_antialiasing,axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
+        upscale_antialiasing = DTEnet.ds_kernel*DTEnet.ds_factor**2
+        # upscale_antialiasing_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(upscale_antialiasing,axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
         pre_stride, post_stride = calc_strides(None, DTEnet.ds_factor)
         Upscale_Padder = lambda x: nn.functional.pad(x,(pre_stride[1],post_stride[1],0,0,pre_stride[0],post_stride[0]))
         Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],DTEnet.ds_factor*x.size()[2],DTEnet.ds_factor*x.size()[3]])
         antialiasing_padding = np.floor(np.array(DTEnet.ds_kernel.shape)/2).astype(np.int32)
         antialiasing_Padder = nn.ReplicationPad2d((antialiasing_padding[1],antialiasing_padding[1],antialiasing_padding[0],antialiasing_padding[0]))
-        self.Upscale_OP = lambda x:nn.functional.conv2d(input=antialiasing_Padder(Aliased_Upscale_OP(x)),weight=upscale_antialiasing,groups=3)
+        self.Upscale_OP = Filter_Layer(upscale_antialiasing,pre_filter_func=lambda x:antialiasing_Padder(Aliased_Upscale_OP(x)))
         Reshaped_input = lambda x:x.view([x.size()[0],x.size()[1],int(x.size()[2]/self.ds_factor),self.ds_factor,int(x.size()[3]/self.ds_factor),self.ds_factor])
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
-        self.DownscaleOP = lambda x:Aliased_Downscale_OP(nn.functional.conv2d(input=antialiasing_Padder(x),weight=downscale_antialiasing,groups=3))
-
-    #     Padding:
-    #     invalidity_margins_4_test_LR = 2 * DTEnet.invalidity_margins_LR
-    #     invalidity_margins_4_test_HR = DTEnet.ds_factor * invalidity_margins_4_test_LR
-    #     self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
-    #     self.HR_unpadder = lambda x: x[:, :, invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR,invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR]
+        self.DownscaleOP = Filter_Layer(downscale_antialiasing,pre_filter_func=antialiasing_Padder,post_filter_func=lambda x:Aliased_Downscale_OP(x))
         self.LR_padder = DTEnet.LR_padder
         self.HR_unpadder = DTEnet.HR_unpadder
         self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
+        self.pre_pad = False #Using a variable as flag because I couldn't pass it as argument to forward function when using the DataParallel module with more than 1 GPU
 
-    def forward(self, x,pre_pad=False,return_2_components=False):
-        assert not (pre_pad and return_2_components),'Unsupported'
-        if pre_pad:
+    def forward(self, x,return_2_components=False):
+        assert not (self.pre_pad and return_2_components),'Unsupported'
+        if self.pre_pad:
             x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
         projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
-        projected_generated_im = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(generated_image)))
+        projected_generated_im = self.DownscaleOP(generated_image)
+        projected_generated_im = self.Conv_LR_with_Inv_hTh_OP(projected_generated_im)
+        projected_generated_im = self.Upscale_OP(projected_generated_im)
         projected_2_ortho_generated_im = generated_image - projected_generated_im
         if self.conf.sigmoid_range_limit:
             projected_2_ortho_generated_im = torch.tanh(projected_2_ortho_generated_im)*(self.conf.input_range[1]-self.conf.input_range[0])
         output = (projected_upscaled_input,projected_2_ortho_generated_im) if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
-        return self.HR_unpadder(output) if pre_pad else output
+        return self.HR_unpadder(output) if self.pre_pad else output
     def Image_2_Sigmoid_Range_Converter(self,images,opposite_direction=False):
         if opposite_direction:
             return images*(self.conf.input_range[1]-self.conf.input_range[0])+self.conf.input_range[0]
@@ -369,10 +378,12 @@ def Get_DTE_Conf(sf):
         # input_range = np.array([0.,1.])
     return conf
 def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
-    if all(['generated_image_model' in key for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch
+    if all([('generated_image_model' in key or 'Filter' in key) for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch
         modified_names_dict = collections.OrderedDict()
         for key in loaded_state_dict:
             modified_names_dict['generated_image_model.' + key] = loaded_state_dict[key]
+        for key in [k for k in current_state_dict.keys() if 'Filter' in k]:
+            modified_names_dict[key] = current_state_dict[key]
         return modified_names_dict
     else:
         return loaded_state_dict
