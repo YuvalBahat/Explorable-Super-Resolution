@@ -28,6 +28,8 @@ def weights_init_normal(m, std=0.02):
 
 
 def weights_init_kaiming(m, scale=1):
+    if 'filter_layer' in m.__dict__ and m.__getattribute__('filter_layer'):
+        return
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
         init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
@@ -84,6 +86,9 @@ def define_G(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
+    # if opt['network_G']['DTE_arch']:#Prevent a bug when using DTE, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
+    #     import os
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     if which_model == 'sr_resnet':  # SRResNet
         netG = arch.SRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \

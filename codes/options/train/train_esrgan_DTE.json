@@ -1,5 +1,5 @@
 {
-  "name": "100Dinit_2Dupdate_DTE_batchD24G24_LR1e-4_SIG_debug" //  please remove "debug_" during training
+  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 3
+      , "batch_size": 12
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -60,8 +60,8 @@
   }
 
   , "train": {
-    "resume": 0
-    ,"lr_G": 1e-4 //1e-4
+    "resume": 1
+    ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-4
@@ -79,7 +79,7 @@
     , "gan_type": "vanilla"
     , "gan_weight": 1 //5e-3
     , "range_weight": 0 //1
-    , "D_update_ratio": 2
+    , "D_update_ratio": 10
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
