@@ -1,5 +1,5 @@
 {
-  "name": "100Dinit_2Dupdate_DTE_batchD24G24_LR1e-4_SIG_debug" //  please remove "debug_" during training
+  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_PatchD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -51,7 +51,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128"
+    "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
@@ -61,7 +61,7 @@
 
   , "train": {
     "resume": 0
-    ,"lr_G": 1e-4 //1e-4
+    ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-4
