@@ -90,6 +90,7 @@ def parse(opt_path, is_train=True):
         opt['train']['grad_accumulation_steps_G'] = opt['datasets']['train']['batch_size_4_grads_G']//opt['datasets']['train']['batch_size']
         opt['train']['grad_accumulation_steps_D'] = opt['datasets']['train']['batch_size_4_grads_D']//opt['datasets']['train']['batch_size']
         assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
+        assert (opt['network_D']['which_model_D']=='PatchGAN')==(opt['train']['gan_type']=='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
         # change some options for debug mode
         # if 'debug' in opt['name']:
         #     opt['train']['val_freq'] = 8

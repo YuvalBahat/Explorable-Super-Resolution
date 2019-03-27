@@ -4,6 +4,7 @@ import torch.nn as nn
 import torchvision
 from . import block as B
 from . import spectral_norm as SN
+import functools
 import numpy as np
 
 ####################

@@ -37,6 +37,14 @@ def mkdir_and_rename(path):
         print('Path already exists. Changing to [{:s}]'.format(renamed_path))
     os.makedirs(path)
 
+def calc_receptive_field(kernel_sizes,strides):
+    assert len(kernel_sizes)==len(strides),'Parameter lists must have same length'
+    if strides[-1]>1:
+        print('Stride %d in top layer is not taken into account in receptive field size'%(strides[-1]))
+    field_size = kernel_sizes[0]
+    for i in range(1,len(kernel_sizes)):
+        field_size += (kernel_sizes[i]-1)*int(np.prod([stride for stride in strides[:i]]))
+    return field_size
 
 ####################
 # image convert

@@ -1,5 +1,5 @@
 {
-  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_PatchD_debug" //  please remove "debug_" during training
+  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_PatchD_debug" //  please remove "debug_" during training 100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_noRangeSig_debug
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -60,7 +60,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -76,7 +76,7 @@
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "feature_weight": 0 //1
-    , "gan_type": "vanilla"
+    , "gan_type": "lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
     , "range_weight": 0 //1
     , "D_update_ratio": 10
