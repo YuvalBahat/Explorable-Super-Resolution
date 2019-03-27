@@ -1,5 +1,5 @@
 {
-  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_SIG_debug" //  please remove "debug_" during training
+  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_NoRangeSig_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -40,7 +40,7 @@
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
-    , "sigmoid_range_limit": 1
+    , "sigmoid_range_limit": 0
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -60,7 +60,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
