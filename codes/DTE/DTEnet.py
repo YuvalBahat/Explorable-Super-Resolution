@@ -292,6 +292,11 @@ class DTE_PyTorch(nn.Module):
             projected_2_ortho_generated_im = torch.tanh(projected_2_ortho_generated_im)*(self.conf.input_range[1]-self.conf.input_range[0])
         output = (projected_upscaled_input,projected_2_ortho_generated_im) if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
         return self.HR_unpadder(output) if self.pre_pad else output
+
+    def train(self,mode=True):
+        super(DTE_PyTorch,self).train(mode=mode)
+        self.pre_pad = not mode
+
     def Image_2_Sigmoid_Range_Converter(self,images,opposite_direction=False):
         if opposite_direction:
             return images*(self.conf.input_range[1]-self.conf.input_range[0])+self.conf.input_range[0]

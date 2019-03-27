@@ -52,7 +52,7 @@ def main():
                 model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
                 model_name = sorted([m for m in model_name if re.search('(\d)+(?=_G.pth)', m) is not None], key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
                 current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))*max_accumulation_steps
-            total_iters = int(opt['train']['niter'])#-current_step
+            total_iters = int(opt['train']['niter']*max_accumulation_steps)#-current_step
             total_epoches = int(math.ceil(total_iters / train_size))
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
             train_loader = create_dataloader(train_set, dataset_opt)

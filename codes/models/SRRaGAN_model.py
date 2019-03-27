@@ -280,13 +280,7 @@ class SRRaGANModel(BaseModel):
     def test(self):
         self.netG.eval()
         with torch.no_grad():
-            if self.DTE_arch:
-                # self.fake_H = self.netG(self.var_L,pre_pad=True)
-                self.netG.module.pre_pad = True
-                self.fake_H = self.netG(self.var_L)
-                self.netG.module.pre_pad = False
-            else:
-                self.fake_H = self.netG(self.var_L)
+            self.fake_H = self.netG(self.var_L)
         self.netG.train()
 
     def get_current_log(self):
