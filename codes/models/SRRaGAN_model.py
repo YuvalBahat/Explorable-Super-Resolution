@@ -148,6 +148,8 @@ class SRRaGANModel(BaseModel):
 
         # G
         generator_step = (gradient_step_num) % max([1,self.D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
+        if generator_step and self.opt['train']['D_validity_4_G_update'] and len(self.log_dict['D_logits_diff'])>=self.opt['train']['D_update_ratio']:
+            generator_step = all([val[1]>0 for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_update_ratio']:]])
         # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
         generator_step = generator_step and step%self.grad_accumulation_steps_D>=self.grad_accumulation_steps_D-self.grad_accumulation_steps_G
         if generator_step:

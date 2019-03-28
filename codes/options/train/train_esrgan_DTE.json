@@ -1,5 +1,5 @@
 {
-  "name": "100Dinit_10Dupdate_DTE_batchD24G24_LR1e-5_NoRangeSig_debug" //  please remove "debug_" during training
+  "name": "50Dinit_V5Dupdate_DTE_batchD24G24_LR1e-5_Range_PatchD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -51,7 +51,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128"
+    "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
@@ -60,7 +60,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -76,15 +76,16 @@
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "feature_weight": 0 //1
-    , "gan_type": "vanilla"
+    , "gan_type": "lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
-    , "range_weight": 0 //1
-    , "D_update_ratio": 10
+    , "range_weight": 1
+    , "D_update_ratio": 5
+    , "D_validity_4_G_update": 1 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 100
+     , "D_init_iters": 50
     // , "gp_weigth": 10
 
     , "manual_seed": 0
