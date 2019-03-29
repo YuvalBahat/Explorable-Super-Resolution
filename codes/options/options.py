@@ -107,9 +107,9 @@ def parse(opt_path, is_train=True):
 
     # export CUDA_VISIBLE_DEVICES
     # gpu_list = ','.join(str(x) for x in opt['gpu_ids'])
-    gpu_list = ','.join(str(x) for x in (GPUtil.getAvailable(order='memory',limit=2) if 'tiras' in os.getcwd() else opt['gpu_ids'] if running_on_Technion else Assign_GPU()))
-    os.environ['CUDA_VISIBLE_DEVICES'] = gpu_list
-    print('export CUDA_VISIBLE_DEVICES=' + gpu_list)
+    # gpu_list = ','.join(str(x) for x in (GPUtil.getAvailable(order='memory',limit=2) if 'tiras' in os.getcwd() else opt['gpu_ids'] if running_on_Technion else Assign_GPU()))
+    # os.environ['CUDA_VISIBLE_DEVICES'] = gpu_list
+    # print('export CUDA_VISIBLE_DEVICES=' + gpu_list)
     # if len(RELATIVE_PATH_FIELDS_DATABASE)>0:
         # for rel_path in RELATIVE_PATH_FIELDS_DATABASE:
         #     cur_field = Return_Field(opt,rel_path)
