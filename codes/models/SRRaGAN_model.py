@@ -390,8 +390,8 @@ class SRRaGANModel(BaseModel):
                     f.write(message)
 
             # Discriminator
-            s, n = self.get_network_description(self.netD)
-            print('Number of parameters in D: {:,d}'.format(n))
+            s, n,receptive_field = self.get_network_description(self.netD)
+            print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n,receptive_field))
             message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
             if not self.opt['train']['resume']:
                 with open(network_path, 'a') as f:

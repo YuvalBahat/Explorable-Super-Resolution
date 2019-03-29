@@ -20,6 +20,9 @@ def main():
     # options
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
+    parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
+    if parser.parse_args().single_GPU:
+        util.Assign_GPU()
     opt = option.parse(parser.parse_args().opt, is_train=True)
 
     if not opt['train']['resume']:

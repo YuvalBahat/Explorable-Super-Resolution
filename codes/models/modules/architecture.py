@@ -85,7 +85,8 @@ class RRDBNet(nn.Module):
 ####################
 
 class PatchGAN_Discriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+    DEFAULT_N_LAYERS = 3
+    def __init__(self, input_nc, ndf=64, n_layers=DEFAULT_N_LAYERS, norm_layer=nn.BatchNorm2d):
         """Construct a PatchGAN discriminator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -106,11 +107,10 @@ class PatchGAN_Discriminator(nn.Module):
         nf_mult_prev = 1
         for n in range(1, n_layers):  # gradually increase the number of filters
             nf_mult_prev = nf_mult
-            nf_mult = min(2 ** n, 8)
+            nf_mult = min(2 ** max(0,n-n_layers+self.DEFAULT_N_LAYERS), 8)
             sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                norm_layer(ndf * nf_mult),
-                nn.LeakyReLU(0.2, True)
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2 if n>n_layers-self.DEFAULT_N_LAYERS else 1,
+                          padding=padw, bias=use_bias),norm_layer(ndf * nf_mult),nn.LeakyReLU(0.2, True)
             ]
 
         nf_mult_prev = nf_mult

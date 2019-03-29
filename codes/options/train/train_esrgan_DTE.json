@@ -1,5 +1,5 @@
 {
-  "name": "50Dinit_V5Dupdate_DTE_batchD24G24_LR1e-5_Range_PatchD_debug" //  please remove "debug_" during training
+  "name": "50Dinit_V5Dupdate_DTE_batchD24G24_LR1e-5_Range_PatchD6L_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 12
+      , "batch_size": 6
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -55,6 +55,7 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
+    , "n_layers": 6
     , "nf": 64
     , "in_nc": 3
   }

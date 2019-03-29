@@ -2,6 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import DTE.DTEnet as DTEnet
+import numpy as np
 
 class BaseModel():
     def __init__(self, opt):
@@ -46,7 +47,34 @@ class BaseModel():
             network = network.module
         s = str(network)
         n = sum(map(lambda x: x.numel(), network.parameters()))
-        return s, n
+        if 'Discriminator' in str(network.__class__):
+            kernel_size,strides = self.return_kernel_sizes_and_strides(network)
+            receptive_field = self.calc_receptive_field(kernel_size,strides)
+            return s,n,receptive_field
+        else:
+            return s, n
+
+    def return_kernel_sizes_and_strides(self,network):
+        kernel_sizes,strides = [],[]
+        children = [child for child in network.children()]
+        if len(children)>0:
+            for child in children:
+                temp = self.return_kernel_sizes_and_strides(child)
+                kernel_sizes += temp[0]
+                strides += temp[1]
+        if 'Conv' in str(network.__class__):
+            kernel_sizes.append(network.kernel_size[0])
+            strides.append(network.stride[0])
+        return (kernel_sizes,strides)
+
+    def calc_receptive_field(self,kernel_sizes, strides):
+        assert len(kernel_sizes) == len(strides), 'Parameter lists must have same length'
+        if strides[-1] > 1:
+            print('Stride %d in top layer is not taken into account in receptive field size' % (strides[-1]))
+        field_size = kernel_sizes[0]
+        for i in range(1, len(kernel_sizes)):
+            field_size += (kernel_sizes[i] - 1) * int(np.prod([stride for stride in strides[:i]]))
+        return field_size
 
     # helper saving function that can be used by subclasses
     def save_network(self, save_dir, network, network_label, iter_label):
