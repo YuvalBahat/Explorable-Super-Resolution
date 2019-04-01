@@ -120,22 +120,25 @@ def define_D(opt,DTE=None):
     opt_net = opt['network_D']
     which_model = opt_net['which_model_D']
     input_patch_size = opt['datasets']['train']['HR_size']
+    # in_nc = opt_net['in_nc']*(2 if opt['network_D']['decomposed_input'] else 1)
+    in_nc = opt_net['in_nc']
+    assert not ((opt_net['pre_clipping'] or opt_net['decomposed_input']) and which_model!='PatchGAN'),'Unsupported yet'
     if DTE is not None:
         input_patch_size -= 2*DTE.invalidity_margins_HR
     if which_model == 'discriminator_vgg_128':
-        netD = arch.Discriminator_VGG_128(in_nc=opt_net['in_nc'], base_nf=opt_net['nf'], \
+        netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size)
 
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
     elif which_model=='PatchGAN':
         norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-        netD = arch.PatchGAN_Discriminator(input_nc=opt_net['in_nc'], ndf=opt_net['nf'], n_layers=opt_net['n_layers'], norm_layer=norm_layer)
+        netD = arch.PatchGAN_Discriminator(input_nc=in_nc, opt_net=opt_net,ndf=opt_net['nf'], n_layers=opt_net['n_layers'], norm_layer=norm_layer)
     elif which_model == 'discriminator_vgg_96':
-        netD = arch.Discriminator_VGG_96(in_nc=opt_net['in_nc'], base_nf=opt_net['nf'], \
+        netD = arch.Discriminator_VGG_96(in_nc=in_nc, base_nf=opt_net['nf'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
     elif which_model == 'discriminator_vgg_192':
-        netD = arch.Discriminator_VGG_192(in_nc=opt_net['in_nc'], base_nf=opt_net['nf'], \
+        netD = arch.Discriminator_VGG_192(in_nc=in_nc, base_nf=opt_net['nf'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
     elif which_model == 'discriminator_vgg_128_SN':
         netD = arch.Discriminator_VGG_128_SN()

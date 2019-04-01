@@ -56,9 +56,12 @@ class BaseModel():
 
     def return_kernel_sizes_and_strides(self,network):
         kernel_sizes,strides = [],[]
+        if 'num_modules' not in self.__dir__():
+            self.num_modules = network.num_modules if 'num_modules' in network.__dir__() else None
         children = [child for child in network.children()]
         if len(children)>0:
-            for child in children:
+            last_child = self.num_modules if (isinstance(network,nn.ModuleList) and self.num_modules is not None) else len(children)
+            for child in children[:last_child]:
                 temp = self.return_kernel_sizes_and_strides(child)
                 kernel_sizes += temp[0]
                 strides += temp[1]

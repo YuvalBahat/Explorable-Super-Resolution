@@ -1,5 +1,5 @@
 {
-  "name": "50Dinit_V5Dupdate_DTE_batchD24G24_LR1e-5_Range_PatchD6L_debug" //  please remove "debug_" during training
+  "name": "50Dinit_10V0Dupdate_DTE_batchD24G24_LR1e-5_Range500_DecompClippedPatchD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 6
+      , "batch_size": 3
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -41,6 +41,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
+    , "noise_input":  0
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -52,16 +53,18 @@
   }
   , "network_D": {
     "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
+    , "decomposed_input": 1
+    , "pre_clipping": 1
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "n_layers": 6
+    , "n_layers": 3
     , "nf": 64
     , "in_nc": 3
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -79,9 +82,9 @@
     , "feature_weight": 0 //1
     , "gan_type": "lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
-    , "range_weight": 1
-    , "D_update_ratio": 5
-    , "D_validity_4_G_update": 1 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
+    , "range_weight": 500
+    , "D_update_ratio": 0
+    , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp

@@ -84,9 +84,58 @@ class RRDBNet(nn.Module):
 # Discriminator
 ####################
 
+# class PatchGAN_Discriminator(nn.Module):
+#     DEFAULT_N_LAYERS = 3
+#     def __init__(self, input_nc, ndf=64, n_layers=DEFAULT_N_LAYERS, norm_layer=nn.BatchNorm2d):
+#         """Construct a PatchGAN discriminator
+#         Parameters:
+#             input_nc (int)  -- the number of channels in input images
+#             ndf (int)       -- the number of filters in the last conv layer
+#             n_layers (int)  -- the number of conv layers in the discriminator
+#             norm_layer      -- normalization layer
+#         """
+#         super(PatchGAN_Discriminator, self).__init__()
+#         if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+#             use_bias = norm_layer.func != nn.BatchNorm2d
+#         else:
+#             use_bias = norm_layer != nn.BatchNorm2d
+#
+#         kw = 4
+#         padw = 1
+#         max_out_channels = 512
+#         sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+#         nf_mult = 1
+#         nf_mult_prev = 1
+#         for n in range(1, n_layers):  # gradually increase the number of filters
+#             # nf_mult_prev = nf_mult
+#             # nf_mult = min(2 ** max(0,n-n_layers+self.DEFAULT_N_LAYERS), 8)
+#             nf_mult_prev = min(max_out_channels, ndf * nf_mult) // ndf
+#             nf_mult = min(2 ** n, 8)
+#             sequence += [
+#                 nn.Conv2d(ndf * nf_mult_prev, min(max_out_channels,ndf * nf_mult), kernel_size=kw, stride=2 if n>n_layers-self.DEFAULT_N_LAYERS else 1,
+#                           padding=padw, bias=use_bias),norm_layer(ndf * nf_mult),nn.LeakyReLU(0.2, True)
+#             ]
+#
+#         # nf_mult_prev = nf_mult
+#         nf_mult_prev = min(max_out_channels,ndf * nf_mult)//ndf
+#         nf_mult = min(2 ** n_layers, 8)
+#         sequence += [
+#             nn.Conv2d(ndf * nf_mult_prev, min(max_out_channels,ndf * nf_mult), kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+#             norm_layer(ndf * nf_mult),
+#             nn.LeakyReLU(0.2, True)
+#         ]
+#
+#         sequence += [
+#             nn.Conv2d(min(max_out_channels,ndf * nf_mult), 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+#         self.model = nn.Sequential(*sequence)
+#     def forward(self, input):
+#         """Standard forward."""
+#         return self.model(input)
+
 class PatchGAN_Discriminator(nn.Module):
     DEFAULT_N_LAYERS = 3
-    def __init__(self, input_nc, ndf=64, n_layers=DEFAULT_N_LAYERS, norm_layer=nn.BatchNorm2d):
+
+    def __init__(self, input_nc, opt_net,ndf=64, n_layers=DEFAULT_N_LAYERS, norm_layer=nn.BatchNorm2d):
         """Construct a PatchGAN discriminator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -100,10 +149,17 @@ class PatchGAN_Discriminator(nn.Module):
         else:
             use_bias = norm_layer != nn.BatchNorm2d
 
+        self.decomposed_input = bool(opt_net['decomposed_input'])
+        self.pre_clipping = bool(opt_net['pre_clipping'])
+        projected_component_sequences = []
+        in_ch_addition = input_nc if self.decomposed_input else 0
         kw = 4
         padw = 1
         max_out_channels = 512
-        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        sequences = [nn.Sequential(*[nn.Conv2d(input_nc+in_ch_addition, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)])]
+        # if self.decomposed_input:
+        #     projected_component_sequences = [nn.Conv2d(input_nc, input_nc, kernel_size=kw, stride=2, padding=padw)]
+
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):  # gradually increase the number of filters
@@ -111,27 +167,57 @@ class PatchGAN_Discriminator(nn.Module):
             # nf_mult = min(2 ** max(0,n-n_layers+self.DEFAULT_N_LAYERS), 8)
             nf_mult_prev = min(max_out_channels, ndf * nf_mult) // ndf
             nf_mult = min(2 ** n, 8)
-            sequence += [
-                nn.Conv2d(ndf * nf_mult_prev, min(max_out_channels,ndf * nf_mult), kernel_size=kw, stride=2 if n>n_layers-self.DEFAULT_N_LAYERS else 1,
-                          padding=padw, bias=use_bias),norm_layer(ndf * nf_mult),nn.LeakyReLU(0.2, True)
-            ]
+            sequences.append(nn.Sequential(*[
+                nn.Conv2d(ndf * nf_mult_prev+in_ch_addition, min(max_out_channels, ndf * nf_mult), kernel_size=kw,
+                          stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
+                          padding=padw, bias=use_bias), norm_layer(ndf * nf_mult), nn.LeakyReLU(0.2, True)]))
+            # if self.decomposed_input:
+            #     projected_component_sequences.append(
+            #         nn.Conv2d(input_nc,input_nc, kernel_size=kw,
+            #                   stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
+            #                   padding=padw, bias=use_bias))
 
         # nf_mult_prev = nf_mult
-        nf_mult_prev = min(max_out_channels,ndf * nf_mult)//ndf
+        nf_mult_prev = min(max_out_channels, ndf * nf_mult) // ndf
         nf_mult = min(2 ** n_layers, 8)
-        sequence += [
-            nn.Conv2d(ndf * nf_mult_prev, min(max_out_channels,ndf * nf_mult), kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+        sequences.append(nn.Sequential(*[
+            nn.Conv2d(ndf * nf_mult_prev+in_ch_addition, min(max_out_channels, ndf * nf_mult), kernel_size=kw, stride=1,
+                      padding=padw, bias=use_bias),
             norm_layer(ndf * nf_mult),
-            nn.LeakyReLU(0.2, True)
-        ]
-
-        sequence += [
-            nn.Conv2d(min(max_out_channels,ndf * nf_mult), 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
-        self.model = nn.Sequential(*sequence)
+            nn.LeakyReLU(0.2, True)]))
+        # if self.decomposed_input:
+        #     projected_component_sequences.append(
+        #     nn.Conv2d(input_nc,input_nc, kernel_size=kw, stride=1,
+        #               padding=padw, bias=use_bias))
+        sequences.append(nn.Sequential(*[
+            nn.Conv2d(min(max_out_channels, ndf * nf_mult)+in_ch_addition, 1, kernel_size=kw, stride=1,
+                      padding=padw)]))  # output 1 channel prediction map
+        self.num_modules = len(sequences)
+        if self.decomposed_input:
+            for seq in sequences:
+                conv_stride = [child.stride[0] for child in seq.children() if 'Conv2d' in str(child.__class__)]
+                assert len(conv_stride)<=1,'More than one conv layer in seq?'
+                if len(conv_stride)>0:
+                    projected_component_sequences.append(nn.Conv2d(input_nc,input_nc, kernel_size=kw, stride=conv_stride[0],
+                      padding=padw, bias=use_bias))
+        self.model = nn.ModuleList(sequences+projected_component_sequences)
 
     def forward(self, input):
-        """Standard forward."""
-        return self.model(input)
+        if self.decomposed_input:
+            projected_component = input[0]
+            input = input[1]
+            if self.pre_clipping:
+                input = torch.max(input=torch.min(input=input,other=1-projected_component),other=-projected_component)
+        elif self.pre_clipping:
+            input = torch.clamp(input=input,min=0,max=1)
+        for i,seq in enumerate(self.model[:self.num_modules]):
+            if i>0:
+                projected_component = self.model[self.num_modules+i-1](projected_component)
+            if self.decomposed_input:
+                input = seq(torch.cat([projected_component,input],dim=1))
+            else:
+                input = seq(input)
+        return input
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):

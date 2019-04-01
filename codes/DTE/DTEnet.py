@@ -276,9 +276,11 @@ class DTE_PyTorch(nn.Module):
         self.HR_unpadder = DTEnet.HR_unpadder
         self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
         self.pre_pad = False #Using a variable as flag because I couldn't pass it as argument to forward function when using the DataParallel module with more than 1 GPU
+        self.return_2_components = self.conf.decomposed_output
 
-    def forward(self, x,return_2_components=False):
-        assert not (self.pre_pad and return_2_components),'Unsupported'
+    def forward(self, x):
+        # assert not (self.pre_pad and self.return_2_components),'Unsupported'
+        return_2_components = self.return_2_components and not self.pre_pad
         if self.pre_pad:
             x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
@@ -290,7 +292,7 @@ class DTE_PyTorch(nn.Module):
         projected_2_ortho_generated_im = generated_image - projected_generated_im
         if self.conf.sigmoid_range_limit:
             projected_2_ortho_generated_im = torch.tanh(projected_2_ortho_generated_im)*(self.conf.input_range[1]-self.conf.input_range[0])
-        output = (projected_upscaled_input,projected_2_ortho_generated_im) if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
+        output = [projected_upscaled_input,projected_2_ortho_generated_im] if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
         return self.HR_unpadder(output) if self.pre_pad else output
 
     def train(self,mode=True):
