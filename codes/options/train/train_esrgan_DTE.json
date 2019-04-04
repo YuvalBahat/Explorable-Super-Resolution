@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRGD1e-5_Range5e3_DecompClippedNoisedPatchD_debug" //  please remove "debug_" during training
+  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRGD1e-5D1e-4on10K_Range5e3_DecompClippedNoisedPatchD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -69,7 +69,7 @@
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
-    , "lr_D": 1e-5 //1e-4
+    , "lr_D": 1e-4 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
