@@ -108,12 +108,18 @@ class SRRaGANModel(BaseModel):
                     optim_params.append(v)
                 else:
                     print('WARNING: params [{:s}] will not optimize.'.format(k))
-            self.optimizer_G = torch.optim.Adam(optim_params, lr=train_opt['lr_G'], \
+            if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
+                lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
+                lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
+            else:
+                lr_G = train_opt['lr_G']
+                lr_D = train_opt['lr_D']
+            self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G, \
                 weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
             self.optimizers.append(self.optimizer_G)
             # D
             wd_D = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
-            self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=train_opt['lr_D'], \
+            self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr_D, \
                 weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
             self.optimizers.append(self.optimizer_D)
 
@@ -338,6 +344,16 @@ class SRRaGANModel(BaseModel):
         with torch.no_grad():
             self.fake_H = self.netG(self.var_L)
         self.netG.train()
+
+    def update_learning_rate(self,cur_step=None):
+        if self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:
+            return
+        relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0]>=cur_step-self.opt['train']['steps_4_lr_std']]
+        if np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']:
+            for optimizer in [self.optimizer_G,self.optimizer_D]:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= self.opt['train']['lr_gamma']
+            np.savez(os.path.join(self.log_path,'lr.npz'),lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
 
     def get_current_log(self):
         dict_2_return = OrderedDict()
