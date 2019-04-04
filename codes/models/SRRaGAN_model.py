@@ -128,6 +128,7 @@ class SRRaGANModel(BaseModel):
             self.max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
+            self.generator_step = False
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -168,14 +169,15 @@ class SRRaGANModel(BaseModel):
                 if log_mean_D_diff<-2:
                     self.cur_D_update_ratio = -2*int(np.ceil(log_mean_D_diff))
                 else:
-                    self.cur_D_update_ratio = max(1/50,np.floor(100*(log_mean_D_diff+1))/-100)
+                    self.cur_D_update_ratio = 1/max(1,int(np.floor((log_mean_D_diff+2)*20)))
+                    # self.cur_D_update_ratio = max(1/50,np.floor(100*(log_mean_D_diff+1))/-100)
         # G
-        # if generator_step:
-        for p in self.netG.parameters():
-            p.requires_grad = True
-        # else:
-        #     for p in self.netG.parameters():
-        #         p.requires_grad = False
+        if first_grad_accumulation_step_D or self.generator_step:
+            for p in self.netG.parameters():
+                p.requires_grad = True
+        else:
+            for p in self.netG.parameters():
+                p.requires_grad = False
         self.fake_H = self.netG(self.var_L)
         if self.DTE_net is not None:
             if self.decomposed_output:
@@ -188,6 +190,8 @@ class SRRaGANModel(BaseModel):
         if (gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and gradient_step_num > -self.D_init_iters:
             for p in self.netD.parameters():
                 p.requires_grad = True
+            for p in self.netG.parameters():
+                p.requires_grad = False
             if first_grad_accumulation_step_D:
                 self.optimizer_D.zero_grad()
                 self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
@@ -216,12 +220,23 @@ class SRRaGANModel(BaseModel):
                 l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
                 l_d_total += l_d_gp
 
-            l_d_total.backward(retain_graph=True)
             self.l_d_real_grad_step.append(l_d_real.item())
             self.l_d_fake_grad_step.append(l_d_fake.item())
             self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
             self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
             self.D_logits_diff_grad_step.append(torch.mean(pred_d_real.detach()-pred_d_fake.detach()).item())
+            if first_grad_accumulation_step_D:
+                self.generator_step = (gradient_step_num) % max(
+                    [1, self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
+                if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(
+                        self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
+                    self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
+                                          self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                self.generator_step = self.generator_step and step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+                if not self.generator_step:# Freeing up the unnecessary gradients memory:
+                    self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
+            l_d_total.backward(retain_graph=self.generator_step)
             if last_grad_accumulation_step_D:
                 self.optimizer_D.step()
                 # set log
@@ -237,15 +252,12 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['D_update_ratio'].append((gradient_step_num,self.cur_D_update_ratio))
 
         # G step:
-        generator_step = (gradient_step_num) % max([1,self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
-        if generator_step and self.opt['train']['D_valid_Steps_4_G_update']>0 and len(self.log_dict['D_logits_diff'])>=self.opt['train']['D_valid_Steps_4_G_update']:
-            generator_step = all([val[1]>np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
-        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-        generator_step = generator_step and step%self.grad_accumulation_steps_D>=self.grad_accumulation_steps_D-self.grad_accumulation_steps_G
         l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
-        if generator_step:
+        if self.generator_step:
             for p in self.netD.parameters():
                 p.requires_grad = False
+            for p in self.netG.parameters():
+                p.requires_grad = True
             if first_grad_accumulation_step_G:
                 self.optimizer_G.zero_grad()
                 self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step = [],[],[],[]
