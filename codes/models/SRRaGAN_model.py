@@ -167,7 +167,7 @@ class SRRaGANModel(BaseModel):
             else:#Varying update ratio:
                 log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
                 if log_mean_D_diff<-2:
-                    self.cur_D_update_ratio = -2*int(np.ceil(log_mean_D_diff))
+                    self.cur_D_update_ratio = int(-2*np.ceil((log_mean_D_diff+1)*2)/2)
                 else:
                     self.cur_D_update_ratio = 1/max(1,int(np.floor((log_mean_D_diff+2)*20)))
                     # self.cur_D_update_ratio = max(1/50,np.floor(100*(log_mean_D_diff+1))/-100)
