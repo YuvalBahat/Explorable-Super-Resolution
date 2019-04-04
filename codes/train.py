@@ -141,7 +141,7 @@ def main():
                             [util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
                              range(len(cur_train_results['SR']))],
                             0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                Z_noise = [0]+([-1,1] if opt['network_G']['noise_input'] else [])
+                Z_noise = [0]+([-1,1] if opt['network_G']['noise_input'] is not None else [])
                 for cur_Z in Z_noise:
                     avg_psnr = 0.0
                     idx = 0
@@ -181,7 +181,7 @@ def main():
 
                     avg_psnr = avg_psnr / idx
                     if SAVE_IMAGE_COLLAGE:
-                        save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_{}PSNR{:.3f}.png'.format(gradient_step_num,('Z'+str(cur_Z)) if opt['network_G']['noise_input'] else '',avg_psnr))
+                        save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_{}PSNR{:.3f}.png'.format(gradient_step_num,('Z'+str(cur_Z)) if opt['network_G']['noise_input'] is not None else '',avg_psnr))
                         util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
                         if save_GT_HR:  # Save GT HR images
                             util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),

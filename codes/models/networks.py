@@ -86,6 +86,7 @@ def define_G(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
+    opt_net['noise_input'] = opt_net['noise_input'] if opt_net['noise_input']!="None" else None
     # if opt['network_G']['DTE_arch']:#Prevent a bug when using DTE, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
     #     import os
     #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"

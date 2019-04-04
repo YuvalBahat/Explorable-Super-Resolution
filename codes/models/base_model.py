@@ -99,7 +99,7 @@ class BaseModel():
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
         # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))
-        if self.noise_input:
+        if self.noise_input is not None:
             loaded_state_dict = self.add_random_noise_weights_2_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 

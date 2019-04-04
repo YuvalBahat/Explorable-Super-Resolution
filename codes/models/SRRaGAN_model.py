@@ -137,7 +137,7 @@ class SRRaGANModel(BaseModel):
     def feed_data(self, data, need_HR=True):
         # LR
         self.var_L = data['LR'].to(self.device)
-        if self.noise_input:
+        if self.noise_input is not None:
             if 'Z' in data.keys():
                 cur_Z = data['Z']
             else:
