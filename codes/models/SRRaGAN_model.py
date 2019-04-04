@@ -20,6 +20,8 @@ class SRRaGANModel(BaseModel):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
+        self.noise_input = opt['network_G']['noise_input']
+        self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
         # define networks and load pretrained models
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
@@ -34,7 +36,8 @@ class SRRaGANModel(BaseModel):
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
-        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
+        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake',
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -87,7 +90,7 @@ class SRRaGANModel(BaseModel):
             self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
             self.l_gan_w = train_opt['gan_weight']
             # D_update_ratio and D_init_iters are for WGAN
-            self.D_update_ratio = train_opt['D_update_ratio'] if train_opt['D_update_ratio'] is not None else 1
+            self.global_D_update_ratio = train_opt['D_update_ratio'] if train_opt['D_update_ratio'] is not None else 1
             self.D_init_iters = train_opt['D_init_iters'] if train_opt['D_init_iters'] else 0
 
             if train_opt['gan_type'] == 'wgan-gp':
@@ -133,8 +136,15 @@ class SRRaGANModel(BaseModel):
     def feed_data(self, data, need_HR=True):
         # LR
         self.var_L = data['LR'].to(self.device)
-
+        if self.noise_input:
+            if 'Z' in data.keys():
+                cur_Z = data['Z']
+            else:
+                cur_Z = torch.normal(mean=torch.from_numpy(np.zeros(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor),
+                    std=torch.from_numpy(np.ones(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor))
+            self.var_L = torch.cat([(cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
         if need_HR:  # train or val
+            data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
             self.var_H = data['HR'].to(self.device)
 
             input_ref = data['ref'] if 'ref' in data else data['HR']
@@ -148,20 +158,21 @@ class SRRaGANModel(BaseModel):
         first_grad_accumulation_step_D = step%self.grad_accumulation_steps_D==0
         last_grad_accumulation_step_D = step % self.grad_accumulation_steps_D == (self.grad_accumulation_steps_D-1)
 
-        if self.D_update_ratio>0:
-            D_update_ratio = self.D_update_ratio
-        elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
-            D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
-        else:#Varying update ratio:
-            log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
-            if log_mean_D_diff<-2:
-                D_update_ratio = -1*int(np.ceil(log_mean_D_diff))
-            else:
-                D_update_ratio = max(1/10,np.floor(10*(log_mean_D_diff+1))/-10)
+        if first_grad_accumulation_step_D:
+            if self.global_D_update_ratio>0:
+                self.cur_D_update_ratio = self.global_D_update_ratio
+            elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
+                self.cur_D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
+            else:#Varying update ratio:
+                log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
+                if log_mean_D_diff<-2:
+                    self.cur_D_update_ratio = -2*int(np.ceil(log_mean_D_diff))
+                else:
+                    self.cur_D_update_ratio = max(1/50,np.floor(100*(log_mean_D_diff+1))/-100)
         # G
-        generator_step = (gradient_step_num) % max([1,D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
+        generator_step = (gradient_step_num) % max([1,self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
         if generator_step and self.opt['train']['D_valid_Steps_4_G_update']>0 and len(self.log_dict['D_logits_diff'])>=self.opt['train']['D_valid_Steps_4_G_update']:
-            generator_step = all([val[1]>0 for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+            generator_step = all([val[1]>np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
         # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
         generator_step = generator_step and step%self.grad_accumulation_steps_D>=self.grad_accumulation_steps_D-self.grad_accumulation_steps_G
         if generator_step:
@@ -210,8 +221,12 @@ class SRRaGANModel(BaseModel):
             pred_g_fake = self.netD(self.fake_H)
             pred_d_real = self.netD([self.fake_H[0],self.var_ref-self.fake_H[0]] if self.decomposed_output else self.var_ref).detach()
 
-            l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                                      self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+            if self.relativistic_D:
+                l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                                          self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
+            else:
+                l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)
+
             l_g_total += l_g_gan
 
             l_g_total.backward(retain_graph=True)
@@ -231,7 +246,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['l_g_gan'].append((gradient_step_num,np.mean(self.l_g_gan_grad_step)))
 
         # D
-        if (gradient_step_num) % max([1,np.ceil(1/D_update_ratio)]) == 0 and gradient_step_num > -self.D_init_iters:
+        if (gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and gradient_step_num > -self.D_init_iters:
             for p in self.netD.parameters():
                 p.requires_grad = True
             if first_grad_accumulation_step_D:
@@ -242,8 +257,12 @@ class SRRaGANModel(BaseModel):
             # pred_d_fake = self.netD((torch.cat(self.fake_H,1) if self.decomposed_output else self.fake_H).detach())  # detach to avoid BP to G
             pred_d_real = self.netD([self.fake_H[0],self.var_ref-self.fake_H[0]] if self.decomposed_output else self.var_ref)
             pred_d_fake = self.netD([t.detach() for t in self.fake_H] if self.decomposed_output else self.fake_H.detach())  # detach to avoid BP to G
-            l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-            l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+            if self.relativistic_D:
+                l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+                l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+            else:
+                l_d_real = 2*self.cri_gan(pred_d_real, True)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                l_d_fake = 2*self.cri_gan(pred_d_fake, False)
 
             l_d_total = (l_d_real + l_d_fake) / 2
 
@@ -276,9 +295,10 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['D_real'].append((gradient_step_num,np.mean(self.D_real_grad_step)))
                 self.log_dict['D_fake'].append((gradient_step_num,np.mean(self.D_fake_grad_step)))
                 self.log_dict['D_logits_diff'].append((gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
+                self.log_dict['D_update_ratio'].append((gradient_step_num,self.cur_D_update_ratio))
 
         # set log
-        # if step % self.D_update_ratio == 0 and step > self.D_init_iters:
+        # if step % self.global_D_update_ratio == 0 and step > self.D_init_iters:
             # G
             # if self.cri_pix:
             #     self.log_dict['l_g_pix'].append(l_g_pix.item())
@@ -317,7 +337,7 @@ class SRRaGANModel(BaseModel):
         np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
     def load_log(self):
         loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
-        self.log_dict = OrderedDict()
+        self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
         for key in loaded_log.files:
             if key=='psnr_val':
                 self.log_dict[key] = [tuple(val) for val in loaded_log[key]]
@@ -327,7 +347,7 @@ class SRRaGANModel(BaseModel):
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','D_update_ratio']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)

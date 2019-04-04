@@ -48,12 +48,13 @@ class SRResNet(nn.Module):
 
 class RRDBNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, gc=32, upscale=4, norm_type=None, \
-            act_type='leakyrelu', mode='CNA', upsample_mode='upconv'):
+            act_type='leakyrelu', mode='CNA', upsample_mode='upconv',noise_input=False):
         super(RRDBNet, self).__init__()
         n_upscale = int(math.log(upscale, 2))
         if upscale == 3:
             n_upscale = 1
-
+        if noise_input:
+            in_nc += 1
         fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None)
         rb_blocks = [B.RRDB(nf, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
             norm_type=norm_type, act_type=act_type, mode='CNA') for _ in range(nb)]
@@ -203,13 +204,18 @@ class PatchGAN_Discriminator(nn.Module):
         self.model = nn.ModuleList(sequences+projected_component_sequences)
 
     def forward(self, input):
+        # pre-clipping:
+        # 1.Making D oblivious to pixel values range, by clipping values to be within valid range
+        # 2.Making D oblivious to quantization issues, by quantizing its inputs to 256 possible values
         if self.decomposed_input:
             projected_component = input[0]
             input = input[1]
             if self.pre_clipping:
                 input = torch.max(input=torch.min(input=input,other=1-projected_component),other=-projected_component)
+                # input = (255*(input+projected_component)).round()/255-projected_component
         elif self.pre_clipping:
             input = torch.clamp(input=input,min=0,max=1)
+            # input = (255*input).round()/255
         for i,seq in enumerate(self.model[:self.num_modules]):
             if i>0:
                 projected_component = self.model[self.num_modules+i-1](projected_component)

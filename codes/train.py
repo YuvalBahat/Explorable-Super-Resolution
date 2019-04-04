@@ -123,10 +123,8 @@ def main():
                 print('---------- validation -------------')
                 start_time = time.time()
 
-                avg_psnr = 0.0
-                idx = 0
                 if SAVE_IMAGE_COLLAGE:
-                    image_collage,GT_image_collage = [],[]
+                    GT_image_collage = []
                     cur_train_results = model.get_current_visuals(entire_batch=True)
                     train_psnrs = [
                         util.calculate_psnr(util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255,
@@ -143,46 +141,52 @@ def main():
                             [util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
                              range(len(cur_train_results['SR']))],
                             0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                for val_data in tqdm.tqdm(val_loader):
-                    if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
-                    idx += 1
-                    img_name = os.path.splitext(os.path.basename(val_data['LR_path'][0]))[0]
-                    img_dir = os.path.join(opt['path']['val_images'], img_name)
-                    util.mkdir(img_dir)
-                    model.feed_data(val_data)
-                    model.test()
+                Z_noise = [0]+([-1,1] if opt['network_G']['noise_input'] else [])
+                for cur_Z in Z_noise:
+                    avg_psnr = 0.0
+                    idx = 0
+                    image_collage = []
+                    for val_data in tqdm.tqdm(val_loader):
+                        if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
+                        idx += 1
+                        img_name = os.path.splitext(os.path.basename(val_data['LR_path'][0]))[0]
+                        img_dir = os.path.join(opt['path']['val_images'], img_name)
+                        util.mkdir(img_dir)
+                        val_data['Z'] = cur_Z
+                        model.feed_data(val_data)
+                        model.test()
 
-                    visuals = model.get_current_visuals()
-                    sr_img = util.tensor2img(visuals['SR'],out_type=np.float32)  # float32
-                    gt_img = util.tensor2img(visuals['HR'],out_type=np.float32)  # float32
+                        visuals = model.get_current_visuals()
+                        sr_img = util.tensor2img(visuals['SR'],out_type=np.float32)  # float32
+                        gt_img = util.tensor2img(visuals['HR'],out_type=np.float32)  # float32
 
-                    # calculate PSNR
-                    crop_size = opt['scale']
-                    gt_img *= 255.
-                    sr_img *= 255.
-                    # cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                    # cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                    # avg_psnr += util.calculate_psnr(cropped_sr_img, cropped_gt_img)
-                    avg_psnr += util.calculate_psnr(sr_img, gt_img)
+                        # calculate PSNR
+                        crop_size = opt['scale']
+                        gt_img *= 255.
+                        sr_img *= 255.
+                        # cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size, :]
+                        # cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size, :]
+                        # avg_psnr += util.calculate_psnr(cropped_sr_img, cropped_gt_img)
+                        avg_psnr += util.calculate_psnr(sr_img, gt_img)
 
+                        if SAVE_IMAGE_COLLAGE:
+                            margins2crop = ((np.array(sr_img.shape[:2])-per_image_saved_patch)/2).astype(np.int32)
+                            image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
+                            if save_GT_HR:#Save GT HR images
+                                GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
+                        else:
+                            # Save SR images for reference
+                            save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
+                            util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
+
+                    avg_psnr = avg_psnr / idx
                     if SAVE_IMAGE_COLLAGE:
-                        margins2crop = ((np.array(sr_img.shape[:2])-per_image_saved_patch)/2).astype(np.int32)
-                        image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
-                        if save_GT_HR:#Save GT HR images
-                            GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
-                    else:
-                        # Save SR images for reference
-                        save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
-                        util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
-
-                avg_psnr = avg_psnr / idx
-                if SAVE_IMAGE_COLLAGE:
-                    save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_PSNR{:.3f}.png'.format(gradient_step_num,avg_psnr))
-                    util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
-                    if save_GT_HR:  # Save GT HR images
-                        util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
-                            os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
-                        save_GT_HR = False
+                        save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_{}PSNR{:.3f}.png'.format(gradient_step_num,('Z'+str(cur_Z)) if opt['network_G']['noise_input'] else '',avg_psnr))
+                        util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
+                        if save_GT_HR:  # Save GT HR images
+                            util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
+                                os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
+                            save_GT_HR = False
                 time_elapsed = time.time() - start_time
                 # Save to log
                 print_rlt = OrderedDict()

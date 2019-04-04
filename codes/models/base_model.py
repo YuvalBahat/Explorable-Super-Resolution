@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import DTE.DTEnet as DTEnet
 import numpy as np
+import collections
 
 class BaseModel():
     def __init__(self, opt):
@@ -98,5 +99,15 @@ class BaseModel():
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
         # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))
+        if self.noise_input:
+            loaded_state_dict = self.add_random_noise_weights_2_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 
+    def add_random_noise_weights_2_state_dict(self,loaded_state_dict,current_state_dict):
+        modified_state_dict = collections.OrderedDict()
+        for key in loaded_state_dict.keys():
+            if 'weight' in key and loaded_state_dict[key].size()[1]+1==current_state_dict[key].size()[1]:
+                modified_state_dict[key] = torch.cat([current_state_dict[key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
+            else:
+                modified_state_dict[key] = loaded_state_dict[key]
+        return modified_state_dict

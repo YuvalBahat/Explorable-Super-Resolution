@@ -1,5 +1,5 @@
 {
-  "name": "50Dinit_10V0Dupdate_DTE_batchD24G24_LR1e-5_Range500_DecompClippedPatchD_debug" //  please remove "debug_" during training
+  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRGD1e-5_Range5e3_DecompClippedNoisedPatchD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -53,6 +53,7 @@
   }
   , "network_D": {
     "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
+    , "relativistic": 1
     , "decomposed_input": 1
     , "pre_clipping": 1
     , "norm_type": "batch"
@@ -64,11 +65,11 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
-    , "lr_D": 1e-4
+    , "lr_D": 1e-5 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -82,14 +83,15 @@
     , "feature_weight": 0 //1
     , "gan_type": "lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
-    , "range_weight": 500
+    , "min_D_prob_ratio_4_G": 1.05
+    , "range_weight": 5000
     , "D_update_ratio": 0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 50
+     , "D_init_iters": 0
     // , "gp_weigth": 10
 
     , "manual_seed": 0

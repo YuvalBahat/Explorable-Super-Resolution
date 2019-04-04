@@ -101,7 +101,7 @@ def define_G(opt,DTE=None):
     elif which_model == 'RRDB_net':  # RRDB
         netG = arch.RRDBNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'],
             nb=opt_net['nb'], gc=opt_net['gc'], upscale=opt_net['scale'], norm_type=opt_net['norm_type'],
-            act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv')
+            act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',noise_input=opt_net['noise_input'])
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
     if opt['network_G']['DTE_arch']:
