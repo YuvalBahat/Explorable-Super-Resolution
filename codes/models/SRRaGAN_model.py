@@ -347,16 +347,19 @@ class SRRaGANModel(BaseModel):
 
     def update_learning_rate(self,cur_step=None):
         if self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:
-            return
+            return False
         relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0]>=cur_step-self.opt['train']['steps_4_lr_std']]
         if np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']:
             if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
-                if cur_step-np.load(os.path.join(self.log_path,'lr.npz'))['step_num']<=self.opt['train']['steps_4_lr_std']:
-                    return
+                if cur_step-np.load(os.path.join(self.log_path,'lr.npz'))['step_num']<=2*self.opt['train']['steps_4_lr_std']:
+                    return False
             for optimizer in [self.optimizer_G,self.optimizer_D]:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] *= self.opt['train']['lr_gamma']
+                    if param_group['lr']<1e-9:
+                        return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            return False
 
     def get_current_log(self):
         dict_2_return = OrderedDict()

@@ -84,6 +84,7 @@ def main():
     start_time = time.time()
     min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
     save_GT_HR = True
+    lr_too_low = False
     print('---------- Start training -------------')
     for epoch in range(int(math.floor(current_step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
@@ -113,10 +114,12 @@ def main():
                 logger.print_format_results('train', print_rlt)
 
             # save models
-            if gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch:
+            if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
                 print('Saving the model at the end of iter {:d}.'.format(gradient_step_num))
                 model.save(gradient_step_num)
                 model.save_log()
+                if lr_too_low:
+                    break
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:
@@ -202,8 +205,11 @@ def main():
 
             # update learning rate
             if not_within_batch:
-                model.update_learning_rate(gradient_step_num)
+                lr_too_low = model.update_learning_rate(gradient_step_num)
             current_step += 1
+        if lr_too_low:
+            print('Stopping training because LR is too low')
+            break
 
     print('Saving the final model.')
     model.save(gradient_step_num)
