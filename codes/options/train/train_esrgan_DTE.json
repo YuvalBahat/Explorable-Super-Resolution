@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRGD1e-5D1e-4on10K_Range5e3_DecompClippedNoisedPatchD_debug" //  please remove "debug_" during training
+  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchD_newerVerifyingD_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
