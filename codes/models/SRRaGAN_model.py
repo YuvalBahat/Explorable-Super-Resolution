@@ -135,6 +135,7 @@ class SRRaGANModel(BaseModel):
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.generator_step = False
+            self.generator_changed = False
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -232,7 +233,7 @@ class SRRaGANModel(BaseModel):
             self.l_d_fake_grad_step.append(l_d_fake.item())
             self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
             self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
-            self.D_logits_diff_grad_step.append(torch.mean(pred_d_real.detach()-pred_d_fake.detach()).item())
+            self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=(1,2,3)).data.cpu().numpy()))
             if first_grad_accumulation_step_D:
                 self.generator_step = (gradient_step_num) % max(
                     [1, self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
@@ -244,7 +245,7 @@ class SRRaGANModel(BaseModel):
                 #     self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
                 #                           self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
             if self.generator_step:
-                self.generator_step = self.D_logits_diff_grad_step[-1] > np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+                self.generator_step = all([val > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.D_logits_diff_grad_step[-1]])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
             l_d_total.backward(retain_graph=self.generator_step)
@@ -313,6 +314,7 @@ class SRRaGANModel(BaseModel):
             self.l_g_range_grad_step.append(l_g_range.item())
             if last_grad_accumulation_step_G:
                 self.optimizer_G.step()
+                self.generator_changed = True
                 # set log
                 if self.cri_pix:
                     self.log_dict['l_g_pix'].append((gradient_step_num,np.mean(self.l_g_pix_grad_step)))
@@ -361,7 +363,7 @@ class SRRaGANModel(BaseModel):
             for optimizer in [self.optimizer_G,self.optimizer_D]:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] *= self.opt['train']['lr_gamma']
-                    if param_group['lr']<1e-9:
+                    if param_group['lr']<1e-8:
                         return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
             return False
