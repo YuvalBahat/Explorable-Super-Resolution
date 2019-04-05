@@ -346,7 +346,7 @@ class SRRaGANModel(BaseModel):
         self.netG.train()
 
     def update_learning_rate(self,cur_step=None):
-        if self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:
+        if len(self.log_dict['D_logits_diff'])==0 or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:
             return False
         relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0]>=cur_step-self.opt['train']['steps_4_lr_std']]
         if np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']:
