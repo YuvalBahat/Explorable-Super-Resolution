@@ -179,9 +179,11 @@ class SRRaGANModel(BaseModel):
                     # self.cur_D_update_ratio = max(1/50,np.floor(100*(log_mean_D_diff+1))/-100)
         # G
         if first_grad_accumulation_step_D or self.generator_step:
+            G_grads_retained = True
             for p in self.netG.parameters():
                 p.requires_grad = True
         else:
+            G_grads_retained = False
             for p in self.netG.parameters():
                 p.requires_grad = False
         self.fake_H = self.netG(self.var_L)
@@ -234,13 +236,16 @@ class SRRaGANModel(BaseModel):
             if first_grad_accumulation_step_D:
                 self.generator_step = (gradient_step_num) % max(
                     [1, self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
-                if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(
-                        self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
-                    self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
-                                          self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
                 # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                self.generator_step = self.generator_step and step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-                if not self.generator_step:# Freeing up the unnecessary gradients memory:
+                self.generator_step = self.generator_step and step % \
+                                      self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+                # if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(
+                #         self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
+                #     self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
+                #                           self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+            if self.generator_step:
+                self.generator_step = self.D_logits_diff_grad_step[-1] > np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+            if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
             l_d_total.backward(retain_graph=self.generator_step)
             if last_grad_accumulation_step_D:
