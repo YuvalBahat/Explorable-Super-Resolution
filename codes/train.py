@@ -123,6 +123,7 @@ def main():
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:
+                print_rlt = OrderedDict()
                 if model.generator_changed:
                     print('---------- validation -------------')
                     start_time = time.time()
@@ -196,7 +197,6 @@ def main():
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
                 # Save to log
-                print_rlt = OrderedDict()
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = gradient_step_num
