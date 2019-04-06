@@ -20,7 +20,7 @@ class SRRaGANModel(BaseModel):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
-        self.noise_input = opt['network_G']['noise_input']
+        self.noise_input = opt['network_G']['noise_input'] if opt['network_G']['noise_input']!='None' else None
         self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
         # define networks and load pretrained models
         self.DTE_net = None
@@ -135,7 +135,7 @@ class SRRaGANModel(BaseModel):
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.generator_step = False
-            self.generator_changed = False
+            self.generator_changed = True#Initializing to true,to save the initial state```````
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -245,7 +245,8 @@ class SRRaGANModel(BaseModel):
                 #     self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
                 #                           self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
             if self.generator_step:
-                self.generator_step = all([val > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.D_logits_diff_grad_step[-1]])
+                self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
+                    and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
             l_d_total.backward(retain_graph=self.generator_step)
