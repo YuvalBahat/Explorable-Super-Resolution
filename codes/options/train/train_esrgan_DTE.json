@@ -74,7 +74,7 @@
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_lr_std": 500
-    , "std_4_lr_drop": 0.03
+    , "std_4_lr_drop": 0.04
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
