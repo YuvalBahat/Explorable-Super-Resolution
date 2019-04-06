@@ -367,6 +367,7 @@ class SRRaGANModel(BaseModel):
                     if param_group['lr']<1e-8:
                         return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            print('LR(D) reduced to %.2e, LR(G) reduced to %.2e.'%(self.optimizer_D.param_groups[0]['lr'],self.optimizer_G.param_groups[0]['lr']))
             return False
 
     def get_current_log(self):
