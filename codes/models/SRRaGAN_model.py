@@ -243,6 +243,7 @@ class SRRaGANModel(BaseModel):
                 #         self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
                 #     self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
                 #                           self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+
             if self.generator_step:
                 self.generator_step = self.D_logits_diff_grad_step[-1] > np.log(self.opt['train']['min_D_prob_ratio_4_G'])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
