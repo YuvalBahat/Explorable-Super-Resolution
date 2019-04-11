@@ -4,7 +4,7 @@ import re
 import tqdm
 import matplotlib.pyplot as plt
 
-exp_name = '50Dinit_V5Dupdate_DTE_batchD24G24_LR1e-5_Range_PatchD6XL_debug'
+exp_name = '0Dinit_VDupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchD_VerifyingDonPrev_LossLR_debug'
 FPS = 5
 final_blinking_seconds = 40
 

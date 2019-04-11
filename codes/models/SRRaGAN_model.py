@@ -16,16 +16,23 @@ import numpy as np
 import h5py
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt):
+    def __init__(self, opt,accumulation_steps_per_batch):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
         self.noise_input = opt['network_G']['noise_input'] if opt['network_G']['noise_input']!='None' else None
         self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
+        self.add_quantization_noise = bool(opt['network_D']['add_quantization_noise'])
+        self.min_accumulation_steps = min(
+            [opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
+        self.max_accumulation_steps = accumulation_steps_per_batch
+        self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
+        self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
         # define networks and load pretrained models
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
         self.decomposed_output = self.DTE_arch and bool(opt['network_D']['decomposed_input'])
+        self.step = 0
         if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']):
             assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
             DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
@@ -130,10 +137,6 @@ class SRRaGANModel(BaseModel):
                         train_opt['lr_steps'], train_opt['lr_gamma']))
             else:
                 raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
-            self.min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
-            self.max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
-            self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
-            self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.generator_step = False
             self.generator_changed = True#Initializing to true,to save the initial state```````
 
@@ -152,19 +155,21 @@ class SRRaGANModel(BaseModel):
                     std=torch.from_numpy(np.ones(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor))
             self.var_L = torch.cat([(cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
         if need_HR:  # train or val
-            data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
+            if self.add_quantization_noise:
+                data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
             self.var_H = data['HR'].to(self.device)
 
             input_ref = data['ref'] if 'ref' in data else data['HR']
             self.var_ref = input_ref.to(self.device)
     def Convert_2_LR(self,size):
         return Upsample(size=size,mode='bilinear')
-    def optimize_parameters(self, step):
-        gradient_step_num = step//self.max_accumulation_steps
-        first_grad_accumulation_step_G = step%self.grad_accumulation_steps_G==0
-        last_grad_accumulation_step_G = step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
-        first_grad_accumulation_step_D = step%self.grad_accumulation_steps_D==0
-        last_grad_accumulation_step_D = step % self.grad_accumulation_steps_D == (self.grad_accumulation_steps_D-1)
+    def optimize_parameters(self):
+        VERIFY_D_USING_PAST_PERFORMANCE = True
+        gradient_step_num = self.step//self.max_accumulation_steps
+        first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
+        last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
+        first_grad_accumulation_step_D = self.step%self.grad_accumulation_steps_D==0
+        last_grad_accumulation_step_D = self.step % self.grad_accumulation_steps_D == (self.grad_accumulation_steps_D-1)
 
         if first_grad_accumulation_step_D:
             if self.global_D_update_ratio>0:
@@ -238,14 +243,14 @@ class SRRaGANModel(BaseModel):
                 self.generator_step = (gradient_step_num) % max(
                     [1, self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
                 # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                self.generator_step = self.generator_step and step % \
+                self.generator_step = self.generator_step and self.step % \
                                       self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-                # if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(
-                #         self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
-                #     self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
-                #                           self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                if VERIFY_D_USING_PAST_PERFORMANCE:
+                    if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
+                        self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
+                                              self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
 
-            if self.generator_step:
+            if not VERIFY_D_USING_PAST_PERFORMANCE and self.generator_step:
                 self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
@@ -325,7 +330,7 @@ class SRRaGANModel(BaseModel):
                 if self.cri_range:
                     self.log_dict['l_g_range'].append((gradient_step_num,np.mean(self.l_g_range_grad_step)))
                 self.log_dict['l_g_gan'].append((gradient_step_num,np.mean(self.l_g_gan_grad_step)))
-
+        self.step += 1
 
         # set log
         # if step % self.global_D_update_ratio == 0 and step > self.D_init_iters:
@@ -354,14 +359,71 @@ class SRRaGANModel(BaseModel):
             self.fake_H = self.netG(self.var_L)
         self.netG.train()
 
+    def learning_rate_policy(self):
+        # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
+        if (not (1 + self.iter) % self.conf.learning_rate_policy_check_every
+                and self.iter - self.learning_rate_change_iter_nums[-1] > self.conf.min_iters):
+            # noinspection PyTupleAssignmentBalance
+            dtermining_loss = self.relative_rec_mse if self.conf.DTEnet else self.mse_rec
+            [slope, _], [[var, _], _] = np.polyfit(self.mse_steps[-(self.conf.learning_rate_slope_range //
+                                                                    self.conf.run_test_every):],
+                                                   dtermining_loss[-(self.conf.learning_rate_slope_range //
+                                                                  self.conf.run_test_every):],
+                                                   1, cov=True)
+
+            # We take the the standard deviation as a measure
+            std = np.sqrt(var)
+
+            # Verbose
+            print('slope: ', slope, 'STD: ', std)
+
+            # Determine learning rate maintaining or reduction by the ration between slope and noise
+            if -self.conf.learning_rate_change_ratio * slope < std:
+                self.learning_rate /= 5#10
+                print("learning rate updated: ", self.learning_rate)
+
+                # Keep track of learning rate changes for plotting purposes
+                self.learning_rate_change_iter_nums.append(self.iter)
+
     def update_learning_rate(self,cur_step=None):
-        if len(self.log_dict['D_logits_diff'])==0 or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:
+        #The returned value is LR_too_low
+        SLOPE_BASED = False
+        LOSS_BASED = True
+        if len(self.log_dict['D_logits_diff'])==0 or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
             return False
-        relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0]>=cur_step-self.opt['train']['steps_4_lr_std']]
-        if np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']:
-            if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
-                if cur_step-np.load(os.path.join(self.log_path,'lr.npz'))['step_num']<=2*self.opt['train']['steps_4_lr_std']:
-                    return False
+        if os.path.isfile(os.path.join(self.log_path, 'lr.npz')):#Allow enough steps between checks
+            if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_lr_std']:
+                return False
+        if SLOPE_BASED:
+            std,slope = 0,0
+            for key in ['l_d_real','l_d_fake','l_g_gan']:
+                relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+                [cur_slope, _], [[cur_var, _], _] = np.polyfit([i for i in range(len(relevant_loss_vals))],relevant_loss_vals,1, cov=True)
+                # We take the the standard deviation as a measure
+                std += 0.5*(0.5 if 'l_d' in key else 1.)*np.sqrt(cur_var)
+                slope += 0.5*(0.5 if 'l_d' in key else 1.)*cur_slope
+            reduce_lr = -self.opt['train']['lr_change_ratio']*slope<std
+        elif LOSS_BASED:
+            # win_length = 100
+            # plt.clf()
+            # plt.plot([self.log_dict['l_d_real'][i + win_length][0] for i in
+            #           range(len(self.log_dict['l_d_real']) - win_length)], [np.std([(self.log_dict['l_d_real'][
+            #                                                                          i:i + win_length][j][1] +
+            #                                                                          self.log_dict['l_d_fake'][
+            #                                                                          i:i + win_length][j][1]) / 2 for j
+            #                                                                         in range(
+            #         len(self.log_dict['l_d_real'][i:i + win_length]))]) for i in range(
+            #     len(self.log_dict['l_d_real']) - win_length)]);
+            # plt.savefig('D_loss_STD.pdf')
+            relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+            reduce_lr = np.std(relevant_loss_vals)>self.opt['train']['std_4_lr_drop']
+        else:
+            relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+            reduce_lr = np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']
+        if reduce_lr:
+            if SLOPE_BASED:
+                print('slope: ', slope, 'STD: ', std)
+            self.load(max_step=cur_step - self.opt['train']['steps_4_lr_std'])
             for optimizer in [self.optimizer_G,self.optimizer_D]:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] *= self.opt['train']['lr_gamma']
@@ -369,7 +431,7 @@ class SRRaGANModel(BaseModel):
                         return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
             print('LR(D) reduced to %.2e, LR(G) reduced to %.2e.'%(self.optimizer_D.param_groups[0]['lr'],self.optimizer_G.param_groups[0]['lr']))
-            return False
+        return False
 
     def get_current_log(self):
         dict_2_return = OrderedDict()
@@ -382,7 +444,7 @@ class SRRaGANModel(BaseModel):
         return dict_2_return
     def save_log(self):
         np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
-    def load_log(self):
+    def load_log(self,max_step=None):
         loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
         for key in loaded_log.files:
@@ -392,6 +454,8 @@ class SRRaGANModel(BaseModel):
                 self.log_dict[key] = list(loaded_log[key])
                 if isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
+            if max_step is not None:
+                self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
         keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','D_update_ratio']
@@ -491,22 +555,28 @@ class SRRaGANModel(BaseModel):
                     with open(network_path, 'a') as f:
                         f.write(message)
 
-    def load(self):
+    def load(self,max_step=None):
         resume_training = self.opt['is_train'] and self.opt['train']['resume']
-        load_path_G = self.opt['path']['pretrain_model_G']
-        if resume_training is not None and resume_training:
+        if max_step is not None or (resume_training is not None and resume_training):
             model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
-            model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))[-1]
+            model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))
+            if max_step is not None:
+                model_name = [model for model in model_name if int(re.search('(\d)+(?=_G.pth)',model).group(0))<=max_step]
+            model_name = model_name[-1]
+            loaded_model_step = int(re.search('(\d)+(?=_G.pth)',model_name).group(0))
+            self.step = (loaded_model_step+1)*self.max_accumulation_steps
             print('Resuming training with model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
             self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
-            self.load_log()
+            self.load_log(max_step=loaded_model_step)
             if self.opt['is_train']:
-                model_name = [name for name in os.listdir(self.opt['path']['models']) if '_D.pth' in name]
-                model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_D.pth)', x).group(0)))[-1]
+                # model_name = [name for name in os.listdir(self.opt['path']['models']) if '_D.pth' in name]
+                # model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_D.pth)', x).group(0)))[-1]
+                model_name = str(loaded_model_step)+'_D.pth'
                 print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD)
 
         else:
+            load_path_G = self.opt['path']['pretrain_model_G']
             if load_path_G is not None:
                 print('loading model for G [{:s}] ...'.format(load_path_G))
                 self.load_network(load_path_G, self.netG)
