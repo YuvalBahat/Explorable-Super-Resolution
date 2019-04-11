@@ -44,17 +44,17 @@ def main():
     torch.manual_seed(seed)
 
     # create train and val dataloader
-    max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
+            max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
             train_set = create_dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['batch_size']))
             print('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
-            current_step = 0
-            if opt['train']['resume']:
-                model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
-                model_name = sorted([m for m in model_name if re.search('(\d)+(?=_G.pth)', m) is not None], key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
-                current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))*max_accumulation_steps
+            # current_step = 0
+            # if opt['train']['resume']:
+            #     model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
+            #     model_name = sorted([m for m in model_name if re.search('(\d)+(?=_G.pth)', m) is not None], key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
+            #     current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))*max_accumulation_steps
             total_iters = int(opt['train']['niter']*max_accumulation_steps)#-current_step
             total_epoches = int(math.ceil(total_iters / train_size))
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
@@ -69,7 +69,7 @@ def main():
     assert train_loader is not None
 
     # Create model
-    model = create_model(opt)
+    model = create_model(opt,max_accumulation_steps)
     # create logger
     logger = Logger(opt)
     # Save validation set results as image collage:
@@ -86,16 +86,16 @@ def main():
     save_GT_HR = True
     lr_too_low = False
     print('---------- Start training -------------')
-    for epoch in range(int(math.floor(current_step / train_size)),total_epoches):
+    for epoch in range(int(math.floor(model.step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
-            gradient_step_num = current_step // max_accumulation_steps
-            not_within_batch = current_step % max_accumulation_steps == (max_accumulation_steps - 1)
+            gradient_step_num = model.step // max_accumulation_steps
+            not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
             if gradient_step_num > total_iters:
                 break
 
             # training
             model.feed_data(train_data)
-            model.optimize_parameters(current_step)
+            model.optimize_parameters()
 
             time_elapsed = time.time() - start_time
             if not_within_batch:    start_time = time.time()
@@ -206,7 +206,7 @@ def main():
             # update learning rate
             if not_within_batch:
                 lr_too_low = model.update_learning_rate(gradient_step_num)
-            current_step += 1
+            # current_step += 1
         if lr_too_low:
             print('Stopping training because LR is too low')
             break

@@ -219,9 +219,9 @@ class PatchGAN_Discriminator(nn.Module):
             input = torch.clamp(input=input,min=0,max=1)
             # input = (255*input).round()/255
         for i,seq in enumerate(self.model[:self.num_modules]):
-            if i>0:
-                projected_component = self.model[self.num_modules+i-1](projected_component)
             if self.decomposed_input:
+                if i > 0:
+                    projected_component = self.model[self.num_modules + i - 1](projected_component)
                 input = seq(torch.cat([projected_component,input],dim=1))
             else:
                 input = seq(input)

@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_10V0Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchD_newerVerifyingD_Gnoise_debug" //  please remove "debug_" during training
+  "name": "0Dinit_VDupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchD_VerifyingDonPrev_LossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 12
+      , "batch_size": 6
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -41,7 +41,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
-    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
+    , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -53,9 +53,10 @@
   }
   , "network_D": {
     "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
-    , "relativistic": 0
+    , "relativistic": 1
     , "decomposed_input": 1
     , "pre_clipping": 1
+    , "add_quantization_noise": 1
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
@@ -65,7 +66,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -74,7 +75,8 @@
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_lr_std": 500
-    , "std_4_lr_drop": 0.04
+    , "std_4_lr_drop": 0.03
+    , "lr_change_ratio": 1.5 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
@@ -103,6 +105,6 @@
 
   , "logger": {
     "print_freq": 10 //200
-    , "save_checkpoint_freq": 1e3 //5e3
+    , "save_checkpoint_freq": 500 //5e3
   }
 }
