@@ -66,7 +66,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1`
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,7 +87,8 @@
     , "feature_weight": 0 //1
     , "gan_type": "lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
-    , "min_D_prob_ratio_4_G": 1.05
+    , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
+    , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "range_weight": 5000
     , "D_update_ratio": 0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps

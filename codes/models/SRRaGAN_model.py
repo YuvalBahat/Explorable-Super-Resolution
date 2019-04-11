@@ -44,7 +44,7 @@ class SRRaGANModel(BaseModel):
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease']
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -249,7 +249,9 @@ class SRRaGANModel(BaseModel):
                     if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
                         self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
                                               all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
-                                              self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                                              self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
+                                              all([val[1] > np.log(self.opt['train']['min_mean_D_correct']) for val in
+                                                   self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
 
             if not VERIFY_D_USING_PAST_PERFORMANCE and self.generator_step:
                 self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
@@ -269,6 +271,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
                 self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
                 self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
+                self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
                 self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
         # G step:
@@ -364,7 +367,7 @@ class SRRaGANModel(BaseModel):
         #The returned value is LR_too_low
         SLOPE_BASED = False
         LOSS_BASED = True
-        if len(self.log_dict['D_logits_diff'])==0 or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
+        if len(self.log_dict['D_logits_diff'])<2 * self.opt['train']['steps_4_lr_std'] or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
             return False
         if os.path.isfile(os.path.join(self.log_path, 'lr.npz')):#Allow enough steps between checks
             if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_lr_std']:
@@ -428,7 +431,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict[key] = [tuple(val) for val in loaded_log[key]]
             else:
                 self.log_dict[key] = list(loaded_log[key])
-                if isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
+                if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
             if max_step is not None:
                 self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
