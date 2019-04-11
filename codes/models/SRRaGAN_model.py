@@ -44,7 +44,7 @@ class SRRaGANModel(BaseModel):
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio']
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -165,7 +165,7 @@ class SRRaGANModel(BaseModel):
         return Upsample(size=size,mode='bilinear')
     def optimize_parameters(self):
         VERIFY_D_USING_PAST_PERFORMANCE = True
-        gradient_step_num = self.step//self.max_accumulation_steps
+        self.gradient_step_num = self.step//self.max_accumulation_steps
         first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
         last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
         first_grad_accumulation_step_D = self.step%self.grad_accumulation_steps_D==0
@@ -201,7 +201,7 @@ class SRRaGANModel(BaseModel):
             self.var_H,self.var_ref = self.DTE_net.HR_unpadder(self.var_H),self.DTE_net.HR_unpadder(self.var_ref)
 
         # D
-        if (gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and gradient_step_num > -self.D_init_iters:
+        if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
             for p in self.netD.parameters():
                 p.requires_grad = True
             for p in self.netG.parameters():
@@ -240,8 +240,8 @@ class SRRaGANModel(BaseModel):
             self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
             self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=(1,2,3)).data.cpu().numpy()))
             if first_grad_accumulation_step_D:
-                self.generator_step = (gradient_step_num) % max(
-                    [1, self.cur_D_update_ratio]) == 0 and gradient_step_num > self.D_init_iters
+                self.generator_step = (self.gradient_step_num) % max(
+                    [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
                 # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
                 self.generator_step = self.generator_step and self.step % \
                                       self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
@@ -259,16 +259,16 @@ class SRRaGANModel(BaseModel):
             if last_grad_accumulation_step_D:
                 self.optimizer_D.step()
                 # set log
-                self.log_dict['l_d_real'].append((gradient_step_num,np.mean(self.l_d_real_grad_step)))
-                self.log_dict['l_d_fake'].append((gradient_step_num,np.mean(self.l_d_fake_grad_step)))
+                self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
+                self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
 
                 if self.opt['train']['gan_type'] == 'wgan-gp':
-                    self.log_dict['l_d_gp'].append((gradient_step_num,l_d_gp.item()))
+                    self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
                 # D outputs
-                self.log_dict['D_real'].append((gradient_step_num,np.mean(self.D_real_grad_step)))
-                self.log_dict['D_fake'].append((gradient_step_num,np.mean(self.D_fake_grad_step)))
-                self.log_dict['D_logits_diff'].append((gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
-                self.log_dict['D_update_ratio'].append((gradient_step_num,self.cur_D_update_ratio))
+                self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
+                self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
+                self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
+                self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
         # G step:
         l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
@@ -324,12 +324,12 @@ class SRRaGANModel(BaseModel):
                 self.generator_changed = True
                 # set log
                 if self.cri_pix:
-                    self.log_dict['l_g_pix'].append((gradient_step_num,np.mean(self.l_g_pix_grad_step)))
+                    self.log_dict['l_g_pix'].append((self.gradient_step_num,np.mean(self.l_g_pix_grad_step)))
                 if self.cri_fea:
-                    self.log_dict['l_g_fea'].append((gradient_step_num,np.mean(self.l_g_fea_grad_step)))
+                    self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
                 if self.cri_range:
-                    self.log_dict['l_g_range'].append((gradient_step_num,np.mean(self.l_g_range_grad_step)))
-                self.log_dict['l_g_gan'].append((gradient_step_num,np.mean(self.l_g_gan_grad_step)))
+                    self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
+                self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
         # set log
@@ -358,32 +358,6 @@ class SRRaGANModel(BaseModel):
         with torch.no_grad():
             self.fake_H = self.netG(self.var_L)
         self.netG.train()
-
-    def learning_rate_policy(self):
-        # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
-        if (not (1 + self.iter) % self.conf.learning_rate_policy_check_every
-                and self.iter - self.learning_rate_change_iter_nums[-1] > self.conf.min_iters):
-            # noinspection PyTupleAssignmentBalance
-            dtermining_loss = self.relative_rec_mse if self.conf.DTEnet else self.mse_rec
-            [slope, _], [[var, _], _] = np.polyfit(self.mse_steps[-(self.conf.learning_rate_slope_range //
-                                                                    self.conf.run_test_every):],
-                                                   dtermining_loss[-(self.conf.learning_rate_slope_range //
-                                                                  self.conf.run_test_every):],
-                                                   1, cov=True)
-
-            # We take the the standard deviation as a measure
-            std = np.sqrt(var)
-
-            # Verbose
-            print('slope: ', slope, 'STD: ', std)
-
-            # Determine learning rate maintaining or reduction by the ration between slope and noise
-            if -self.conf.learning_rate_change_ratio * slope < std:
-                self.learning_rate /= 5#10
-                print("learning rate updated: ", self.learning_rate)
-
-                # Keep track of learning rate changes for plotting purposes
-                self.learning_rate_change_iter_nums.append(self.iter)
 
     def update_learning_rate(self,cur_step=None):
         #The returned value is LR_too_low
@@ -430,6 +404,7 @@ class SRRaGANModel(BaseModel):
                     if param_group['lr']<1e-8:
                         return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            self.log_dict['LR_decrease'].append([self.gradient_step_num,{'lr_G':self.optimizer_G.param_groups[0]['lr'],'lr_D':self.optimizer_D.param_groups[0]['lr']}])
             print('LR(D) reduced to %.2e, LR(G) reduced to %.2e.'%(self.optimizer_D.param_groups[0]['lr'],self.optimizer_G.param_groups[0]['lr']))
         return False
 
@@ -463,6 +438,7 @@ class SRRaGANModel(BaseModel):
         legend_strings = []
         plt.figure(2)
         plt.clf()
+        min_global_val, max_global_val = np.finfo(np.float32).max,np.finfo(np.float32).min
         for key in keys_2_display:
             if key in self.log_dict.keys() and len(self.log_dict[key])>0:
                 if PER_KEY_FIGURE:
@@ -470,7 +446,10 @@ class SRRaGANModel(BaseModel):
                     plt.clf()
                 if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
                     cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
-                    self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    if 'LR_decrease' in self.log_dict.keys():
+                        for decrease in self.log_dict['LR_decrease']:
+                            plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
                     if isinstance(self.log_dict[key][0][1],torch.Tensor):
                         series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
                     else:
@@ -494,10 +473,14 @@ class SRRaGANModel(BaseModel):
                         cur_legend_string = 'MSE_val' + ' (%s:%.2e)' % (key,series_avg)
                         cur_curve[1] = 255*np.exp(-cur_curve[1]/20)
                     cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
-                    self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
                 legend_strings.append(cur_legend_string)
         plt.legend(legend_strings,loc='best')
         plt.xlabel('Steps')
+        if 'LR_decrease' in self.log_dict.keys():
+            for decrease in self.log_dict['LR_decrease']:
+                plt.plot([decrease[0], decrease[0]], [min_global_val,max_global_val], 'k')
         plt.savefig(os.path.join(self.log_path,'logs.pdf'))
         # plt.close(general_fig)
         # plt.close(per_key_fig)
@@ -527,6 +510,7 @@ class SRRaGANModel(BaseModel):
             plt.plot(steps,loss)
         else:
             plt.plot(loss)
+        return np.min(loss),np.max(loss)
 
     def print_network(self):
         # Generator
