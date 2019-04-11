@@ -81,21 +81,26 @@ class BaseModel():
         return field_size
 
     # helper saving function that can be used by subclasses
-    def save_network(self, save_dir, network, network_label, iter_label):
+    def save_network(self, save_dir, network, network_label, iter_label,optimizer):
         save_filename = '{}_{}.pth'.format(iter_label, network_label)
         save_path = os.path.join(save_dir, save_filename)
         if isinstance(network, nn.DataParallel):
             network = network.module
-        state_dict = network.state_dict()
-        for key, param in state_dict.items():
-            state_dict[key] = param.cpu()
-        torch.save(state_dict, save_path)
+        model_state_dict = network.state_dict()
+        optimizer_state_dict = optimizer.state_dict()
+        # for SD in [model_state_dict,optimizer_state_dict]:
+        for key, param in model_state_dict.items():
+            model_state_dict[key] = param.cpu()
+        torch.save({'model_state_dict':model_state_dict,'optimizer_state_dict':optimizer_state_dict}, save_path)
 
     # helper loading function that can be used by subclasses
-    def load_network(self, load_path, network, strict=True):
+    def load_network(self, load_path, network, strict=True,optimizer=None):
         if isinstance(network, nn.DataParallel):
             network = network.module
         loaded_state_dict = torch.load(load_path)
+        if 'optimizer_state_dict' in loaded_state_dict.keys():
+            optimizer.load_state_dict(loaded_state_dict['optimizer_state_dict'])
+            loaded_state_dict = loaded_state_dict['model_state_dict']
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
         # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))

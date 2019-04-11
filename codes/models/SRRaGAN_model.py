@@ -51,7 +51,7 @@ class SRRaGANModel(BaseModel):
             self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)  # D
             self.netG.train()
             self.netD.train()
-        self.load()  # load G and D if needed
+        # self.load()  # load G and D if needed
 
         # define losses, optimizer and scheduler
         if self.is_train:
@@ -139,6 +139,7 @@ class SRRaGANModel(BaseModel):
                 raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
             self.generator_step = False
             self.generator_changed = True#Initializing to true,to save the initial state```````
+        self.load()
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -554,14 +555,14 @@ class SRRaGANModel(BaseModel):
             loaded_model_step = int(re.search('(\d)+(?=_G.pth)',model_name).group(0))
             self.step = (loaded_model_step+1)*self.max_accumulation_steps
             print('Resuming training with model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
-            self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
+            self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG,optimizer=self.optimizer_G)
             self.load_log(max_step=loaded_model_step)
             if self.opt['is_train']:
                 # model_name = [name for name in os.listdir(self.opt['path']['models']) if '_D.pth' in name]
                 # model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_D.pth)', x).group(0)))[-1]
                 model_name = str(loaded_model_step)+'_D.pth'
                 print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
-                self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD)
+                self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD,optimizer=self.optimizer_D)
 
         else:
             load_path_G = self.opt['path']['pretrain_model_G']
@@ -574,5 +575,5 @@ class SRRaGANModel(BaseModel):
                 self.load_network(load_path_D, self.netD)
 
     def save(self, iter_label):
-        self.save_network(self.save_dir, self.netG, 'G', iter_label)
-        self.save_network(self.save_dir, self.netD, 'D', iter_label)
+        self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
+        self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
