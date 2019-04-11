@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_VDupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchD_VerifyingDonPrev_LossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_VDupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_DecompClippedNoisedPatchDNonRel_VerifyingDonPrev_LossLR_Gnoise_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -41,7 +41,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
-    , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
+    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -53,7 +53,7 @@
   }
   , "network_D": {
     "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
-    , "relativistic": 1
+    , "relativistic": 0
     , "decomposed_input": 1
     , "pre_clipping": 1
     , "add_quantization_noise": 1
@@ -66,7 +66,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

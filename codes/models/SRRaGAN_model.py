@@ -246,8 +246,9 @@ class SRRaGANModel(BaseModel):
                 self.generator_step = self.generator_step and self.step % \
                                       self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
                 if VERIFY_D_USING_PAST_PERFORMANCE:
-                    if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0 and len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update']:
-                        self.generator_step = all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
+                    if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
+                        self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
+                                              all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
                                               self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
 
             if not VERIFY_D_USING_PAST_PERFORMANCE and self.generator_step:
