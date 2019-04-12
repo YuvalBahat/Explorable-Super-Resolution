@@ -44,7 +44,7 @@ class SRRaGANModel(BaseModel):
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished']
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -231,7 +231,7 @@ class SRRaGANModel(BaseModel):
                 self.random_pt.uniform_()  # Draw random interpolation points
                 interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
                 interp.requires_grad = True
-                interp_crit, _ = self.netD(interp)
+                interp_crit = self.netD(interp)
                 l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
                 l_d_total += l_d_gp
 
@@ -239,7 +239,7 @@ class SRRaGANModel(BaseModel):
             self.l_d_fake_grad_step.append(l_d_fake.item())
             self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
             self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
-            self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=(1,2,3)).data.cpu().numpy()))
+            self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
             if first_grad_accumulation_step_D:
                 self.generator_step = (self.gradient_step_num) % max(
                     [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
