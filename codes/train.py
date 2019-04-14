@@ -192,8 +192,8 @@ def main():
                                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                                     os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
                                 save_GT_HR = False
-                    model.log_dict['psnr_val'].append((gradient_step_num,avg_psnr))
-                    print_rlt['psnr'] += avg_psnr/len(Z_noise)
+                        print_rlt['psnr'] += avg_psnr/len(Z_noise)
+                    model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
