@@ -146,6 +146,7 @@ def main():
                                  range(len(cur_train_results['SR']))],
                                 0)), 1), 0, 255).astype(np.uint8), save_img_path)
                     Z_noise = [0]+([-1,1] if opt['network_G']['noise_input'] else [])
+                    print_rlt['psnr'] = 0
                     for cur_Z in Z_noise:
                         avg_psnr = 0.0
                         idx = 0
@@ -192,7 +193,7 @@ def main():
                                     os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
                                 save_GT_HR = False
                     model.log_dict['psnr_val'].append((gradient_step_num,avg_psnr))
-                    print_rlt['psnr'] = avg_psnr
+                    print_rlt['psnr'] += avg_psnr/len(Z_noise)
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
