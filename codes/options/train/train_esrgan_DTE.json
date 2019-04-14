@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN_LossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -66,7 +66,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -75,7 +75,7 @@
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_lr_std": 500
-    , "std_4_lr_drop": 0.03
+    , "std_4_lr_drop": 100 //0.3 //0.03
     , "lr_change_ratio": 1.5 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
