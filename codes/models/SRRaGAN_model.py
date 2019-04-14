@@ -43,7 +43,7 @@ class SRRaGANModel(BaseModel):
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
-        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake',
+        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
@@ -259,6 +259,7 @@ class SRRaGANModel(BaseModel):
                     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
+            l_d_total /= self.grad_accumulation_steps_D
             l_d_total.backward(retain_graph=self.generator_step)
             if last_grad_accumulation_step_D:
                 self.optimizer_D.step()
@@ -318,7 +319,7 @@ class SRRaGANModel(BaseModel):
                 l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)
 
             l_g_total += l_g_gan
-
+            l_g_total /= self.grad_accumulation_steps_G
             l_g_total.backward()
             self.l_g_pix_grad_step.append(l_g_pix.item())
             self.l_g_fea_grad_step.append(l_g_fea.item())
@@ -368,11 +369,9 @@ class SRRaGANModel(BaseModel):
         #The returned value is LR_too_low
         SLOPE_BASED = False
         LOSS_BASED = True
-        if len(self.log_dict['D_logits_diff'])<2 * self.opt['train']['steps_4_lr_std'] or self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
-            return False
-        if os.path.isfile(os.path.join(self.log_path, 'lr.npz')):#Allow enough steps between checks
-            if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_lr_std']:
-                return False
+        # if os.path.isfile(os.path.join(self.log_path, 'lr.npz')):#Allow enough steps between checks
+        #     if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_lr_std']:
+        #         return False
         if SLOPE_BASED:
             std,slope = 0,0
             for key in ['l_d_real','l_d_fake','l_g_gan']:
@@ -394,11 +393,18 @@ class SRRaGANModel(BaseModel):
             #         len(self.log_dict['l_d_real'][i:i + win_length]))]) for i in range(
             #     len(self.log_dict['l_d_real']) - win_length)]);
             # plt.savefig('D_loss_STD.pdf')
-            relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
-            reduce_lr = np.std(relevant_loss_vals)>self.opt['train']['std_4_lr_drop']
+            if len(self.log_dict['D_logits_diff'])>=self.opt['train']['steps_4_lr_std']:
+                relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+                self.log_dict['D_loss_STD'].append([self.gradient_step_num,np.std(relevant_loss_vals)])
+                reduce_lr = self.log_dict['D_loss_STD'][-1][1]>self.opt['train']['std_4_lr_drop']
+            else:
+                reduce_lr = False
         else:
             relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
             reduce_lr = np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']
+        if len(self.log_dict['D_logits_diff'])<2 * self.opt['train']['steps_4_lr_std'] or \
+                self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
+            return False
         if reduce_lr:
             if SLOPE_BASED:
                 print('slope: ', slope, 'STD: ', std)
@@ -438,7 +444,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','D_update_ratio']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','D_update_ratio','D_loss_STD']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)
@@ -477,7 +483,10 @@ class SRRaGANModel(BaseModel):
                     if key=='psnr_val':
                         cur_legend_string = 'MSE_val' + ' (%s:%.2e)' % (key,series_avg)
                         cur_curve[1] = 255*np.exp(-cur_curve[1]/20)
-                    cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
+                    if np.std(cur_curve[1])>0:
+                        cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
+                    else:
+                        cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
                     min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
                     min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
                 legend_strings.append(cur_legend_string)
