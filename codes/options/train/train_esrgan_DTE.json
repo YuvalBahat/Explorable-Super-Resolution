@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_VDupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_VGGDNonRel_VerifyingDonPrev_LossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN100_VGGDRel_VerifyingDonPrev_LossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -53,7 +53,7 @@
   }
   , "network_D": {
     "which_model_D": "discriminator_vgg_128" //,"discriminator_vgg_128","PatchGAN"
-    , "relativistic": 0
+    , "relativistic": 1
     , "decomposed_input": 0
     , "pre_clipping": 0
     , "add_quantization_noise": 0
@@ -75,7 +75,7 @@
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_lr_std": 500
-    , "std_4_lr_drop": 0.03
+    , "std_4_lr_drop": 0.3 //0.03
     , "lr_change_ratio": 1.5 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
@@ -85,19 +85,19 @@
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "feature_weight": 0 //1
-    , "gan_type": "vanilla" //,"lsgan" //,"vanilla"
+    , "gan_type": "wgan-gp" //,"lsgan" //,"vanilla"
     , "gan_weight": 1 //5e-3
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "range_weight": 5000
-    , "D_update_ratio": 0
+    , "D_update_ratio": 10
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
     // , "D_update_ratio": 1
      , "D_init_iters": 0
-    // , "gp_weigth": 10
+     , "gp_weigth": 100
 
     , "manual_seed": 0
     , "niter": 500100 //5e5
