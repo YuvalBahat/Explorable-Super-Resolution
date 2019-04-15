@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGDRel_VerifyingDonPrev_NoLossLR__Gnoise_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGD_NonRel_VerifyingDonPrev_NoLossLR__Gnoise_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -53,7 +53,7 @@
   }
   , "network_D": {
     "which_model_D": "discriminator_vgg_128" //,"discriminator_vgg_128","PatchGAN"
-    , "relativistic": 1
+    , "relativistic": 0
     , "decomposed_input": 0
     , "pre_clipping": 0
     , "add_quantization_noise": 0
@@ -66,7 +66,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

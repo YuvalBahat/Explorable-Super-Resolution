@@ -27,6 +27,8 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
+    , "DTE_arch": 1
+    , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
