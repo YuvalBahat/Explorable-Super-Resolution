@@ -229,9 +229,9 @@ class SRRaGANModel(BaseModel):
                 if self.random_pt.size(0) != batch_size:
                     self.random_pt.resize_(batch_size, 1, 1, 1)
                 self.random_pt.uniform_()  # Draw random interpolation points
-                interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
+                interp = self.random_pt * ((self.fake_H[0].detach()+self.fake_H[1].detach()) if self.decomposed_output else self.fake_H.detach()) + (1 - self.random_pt) * self.var_ref
                 interp.requires_grad = True
-                interp_crit = self.netD(interp)
+                interp_crit = self.netD([self.fake_H[0].detach(),interp-self.fake_H[0].detach()] if self.decomposed_output else interp)
                 l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
                 l_d_total += l_d_gp
 
@@ -260,7 +260,7 @@ class SRRaGANModel(BaseModel):
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
             l_d_total /= self.grad_accumulation_steps_D
-            l_d_total.backward(retain_graph=self.generator_step)
+            l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
             if last_grad_accumulation_step_D:
                 self.optimizer_D.step()
                 # set log

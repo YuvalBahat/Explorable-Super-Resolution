@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGDRel_VerifyingDonPrev_NoLossLR__Gnoise_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_PatchD_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 6
+      , "batch_size": 4
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -41,7 +41,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
-    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
+    , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -52,11 +52,11 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128" //,"discriminator_vgg_128","PatchGAN"
+    "which_model_D": "PatchGAN" //,"discriminator_vgg_128","PatchGAN"
     , "relativistic": 1
     , "decomposed_input": 0
-    , "pre_clipping": 0
-    , "add_quantization_noise": 0
+    , "pre_clipping": 0 //1
+    , "add_quantization_noise": 0 //1
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
@@ -85,12 +85,12 @@
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "feature_weight": 0 //1
-    , "gan_type": "wgan-gp" //,"lsgan" //,"vanilla"
+    , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "range_weight": 5000
-    , "D_update_ratio": 10
+    , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
