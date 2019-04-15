@@ -1,22 +1,22 @@
 {
-  "name": "RRDB_ESRGAN_x4"
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGD_NonRel_VerifyingDonPrev_NoLossLR__Gnoise_debug" //,"RRDB_ESRGAN_x4"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4
   , "gpu_ids": [0]
 
   , "datasets": {
-    "test_2": { // the 2nd test dataset
-      "name": "DIV2K"
-      , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_HRx4"
-      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_bicLRx4"
-    }
-    , "test_1": { // the 1st test dataset
+    //"test_2": { // the 2nd test dataset
+//      "name": "DIV2K"
+//      , "mode": "LRHR"
+//      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_HRx4"
+//      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_bicLRx4"
+//    },
+     "test_1": { // the 1st test dataset
       "name": "set14"
       , "mode": "LRHR"
-      , "dataroot_HR": "/home/ybahat/Datasets/Set14/Set14_HRx4"
-      , "dataroot_LR": "/home/ybahat/Datasets/Set14/Set14_bicLRx4"
+      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
+      , "dataroot_LR": "Set14/Set14_bicLRx4"
     }
   }
 
@@ -27,6 +27,8 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
+    , "DTE_arch": 1
+    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64

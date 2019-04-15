@@ -76,12 +76,12 @@ def parse(opt_path, is_train=True):
     for key, path in opt['path'].items():
         if path and key in opt['path']:
             opt['path'][key] = os.path.expanduser(path)
+    if 'tiras' in os.getcwd():
+        opt['path']['root'] = opt['path']['root'].replace('/ybahat/PycharmProjects/', '/tiras/ybahat/')
+    experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
+    opt['path']['experiments_root'] = experiments_root
+    opt['path']['models'] = os.path.join(experiments_root, 'models')
     if is_train:
-        if 'tiras' in os.getcwd():
-            opt['path']['root'] = opt['path']['root'].replace('/ybahat/PycharmProjects/','/tiras/ybahat/')
-        experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
-        opt['path']['experiments_root'] = experiments_root
-        opt['path']['models'] = os.path.join(experiments_root, 'models')
         opt['path']['log'] = experiments_root
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
         assert opt['datasets']['train']['batch_size_4_grads_G']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
