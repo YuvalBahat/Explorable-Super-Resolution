@@ -38,17 +38,20 @@ def mkdir_and_rename(path):
         print('Path already exists. Changing to [{:s}]'.format(renamed_path))
     os.makedirs(path)
 
-def Assign_GPU():
+def Assign_GPU(max_GPUs=1):
     excluded_IDs = []
-    GPU_2_use = GPUtil.getAvailable(order='memory',excludeID=excluded_IDs)
+    GPU_2_use = GPUtil.getAvailable(order='memory',excludeID=excluded_IDs,limit=max_GPUs if max_GPUs is not None else 100)
     if len(GPU_2_use)==0:
         print('No available GPUs. waiting...')
         while len(GPU_2_use)==0:
             time.sleep(10)
             GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
-    assert len(GPU_2_use)==1,'No available GPUs...'
-    print('Using GPU #%d'%(GPU_2_use[0]))
-    os.environ["CUDA_VISIBLE_DEVICES"] = "%d"%(GPU_2_use[0]) # Limit to 1 GPU when using an interactive session
+    assert len(GPU_2_use)>0,'No available GPUs...'
+    if max_GPUs is not None:
+        print('Using GPU #%d'%(GPU_2_use[0]))
+        os.environ["CUDA_VISIBLE_DEVICES"] = "%d"%(GPU_2_use[0]) # Limit to 1 GPU when using an interactive session
+    else:
+        return GPU_2_use
 ####################
 # image convert
 ####################

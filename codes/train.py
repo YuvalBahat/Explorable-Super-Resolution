@@ -23,7 +23,9 @@ def main():
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     if parser.parse_args().single_GPU:
         util.Assign_GPU()
-    opt = option.parse(parser.parse_args().opt, is_train=True)
+    else:
+        available_GPUs = util.Assign_GPU(max_GPUs=None)
+    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs))
 
     if not opt['train']['resume']:
         util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists
