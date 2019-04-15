@@ -99,7 +99,8 @@ class BaseModel():
             network = network.module
         loaded_state_dict = torch.load(load_path)
         if 'optimizer_state_dict' in loaded_state_dict.keys():
-            optimizer.load_state_dict(loaded_state_dict['optimizer_state_dict'])
+            if optimizer is not None:# Not performed in the test case:
+                optimizer.load_state_dict(loaded_state_dict['optimizer_state_dict'])
             loaded_state_dict = loaded_state_dict['model_state_dict']
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())

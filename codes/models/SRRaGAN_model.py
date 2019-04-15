@@ -16,29 +16,22 @@ import numpy as np
 import h5py
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt,accumulation_steps_per_batch):
+    def __init__(self, opt,accumulation_steps_per_batch=None):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
         self.noise_input = opt['network_G']['noise_input'] if opt['network_G']['noise_input']!='None' else None
-        self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
-        self.add_quantization_noise = bool(opt['network_D']['add_quantization_noise'])
-        self.min_accumulation_steps = min(
-            [opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
-        self.max_accumulation_steps = accumulation_steps_per_batch
-        self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
-        self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
         # define networks and load pretrained models
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
-        self.decomposed_output = self.DTE_arch and bool(opt['network_D']['decomposed_input'])
         self.step = 0
         if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']):
-            assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
             DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
             DTE_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
             DTE_conf.input_range = np.array(opt['range'])
-            DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
+            if self.is_train:
+                assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
+                DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
             self.DTE_net = DTEnet.DTEnet(DTE_conf)
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
@@ -48,6 +41,14 @@ class SRRaGANModel(BaseModel):
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
+            self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
+            self.add_quantization_noise = bool(opt['network_D']['add_quantization_noise'])
+            self.min_accumulation_steps = min(
+                [opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
+            self.max_accumulation_steps = accumulation_steps_per_batch
+            self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
+            self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
+            self.decomposed_output = self.DTE_arch and bool(opt['network_D']['decomposed_input'])
             self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)  # D
             self.netG.train()
             self.netD.train()
@@ -156,7 +157,7 @@ class SRRaGANModel(BaseModel):
                     std=torch.from_numpy(np.ones(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor))
             self.var_L = torch.cat([(cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
         if need_HR:  # train or val
-            if self.add_quantization_noise:
+            if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
             self.var_H = data['HR'].to(self.device)
 
@@ -555,23 +556,26 @@ class SRRaGANModel(BaseModel):
 
     def load(self,max_step=None):
         resume_training = self.opt['is_train'] and self.opt['train']['resume']
-        if max_step is not None or (resume_training is not None and resume_training):
+        if max_step is not None or (resume_training is not None and resume_training) or not self.opt['is_train']:
             model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
             model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))
             if max_step is not None:
                 model_name = [model for model in model_name if int(re.search('(\d)+(?=_G.pth)',model).group(0))<=max_step]
             model_name = model_name[-1]
             loaded_model_step = int(re.search('(\d)+(?=_G.pth)',model_name).group(0))
-            self.step = (loaded_model_step+1)*self.max_accumulation_steps
-            print('Resuming training with model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
-            self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG,optimizer=self.optimizer_G)
-            self.load_log(max_step=loaded_model_step)
             if self.opt['is_train']:
+                self.step = (loaded_model_step+1)*self.max_accumulation_steps
+                print('Resuming training with model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
+                self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG,optimizer=self.optimizer_G)
+                self.load_log(max_step=loaded_model_step)
                 # model_name = [name for name in os.listdir(self.opt['path']['models']) if '_D.pth' in name]
                 # model_name = sorted(model_name, key=lambda x: int(re.search('(\d)+(?=_D.pth)', x).group(0)))[-1]
                 model_name = str(loaded_model_step)+'_D.pth'
                 print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD,optimizer=self.optimizer_D)
+            else:
+                print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
+                self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
 
         else:
             load_path_G = self.opt['path']['pretrain_model_G']

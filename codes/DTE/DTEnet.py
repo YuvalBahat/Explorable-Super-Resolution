@@ -276,7 +276,7 @@ class DTE_PyTorch(nn.Module):
         self.HR_unpadder = DTEnet.HR_unpadder
         self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
         self.pre_pad = False #Using a variable as flag because I couldn't pass it as argument to forward function when using the DataParallel module with more than 1 GPU
-        self.return_2_components = self.conf.decomposed_output
+        self.return_2_components = 'decomposed_output' in self.conf.__dict__ and self.conf.decomposed_output
 
     def forward(self, x):
         # assert not (self.pre_pad and self.return_2_components),'Unsupported'

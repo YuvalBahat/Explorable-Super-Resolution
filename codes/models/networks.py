@@ -106,7 +106,7 @@ def define_G(opt,DTE=None):
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
     if opt['network_G']['DTE_arch']:
-        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['HR_size'])
+        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['HR_size'] if opt['is_train'] else None)
     if opt['is_train']:
         init_weights(netG, init_type='kaiming', scale=0.1)
     if gpu_ids:
