@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_PatchD_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_NoDTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -39,7 +39,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 1
+    , "DTE_arch": 0
     , "sigmoid_range_limit": 0
     , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
@@ -52,7 +52,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "PatchGAN" //,"discriminator_vgg_128","PatchGAN"
+    "which_model_D": "discriminator_vgg_128" //,"PatchGAN"
     , "relativistic": 0
     , "decomposed_input": 0
     , "pre_clipping": 0 //1
@@ -60,23 +60,23 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "n_layers": 3
+    , "n_layers": 6
     , "nf": 64
     , "in_nc": 3
   }
 
   , "train": {
     "resume": 1
-    ,"lr_G": 1e-5 //1e-4
+    ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-4 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
-    , "steps_4_lr_std": 500
+    , "steps_4_loss_std": 500
     , "std_4_lr_drop": 100 //0.3 //0.03
-    , "lr_change_ratio": 1.5 // ratio between STD and slope of linear fit, under which lr is reduced
+    , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
@@ -87,6 +87,8 @@
     , "feature_weight": 0 //1
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
+    , "D_verification": "past" //'current', 'convergence', 'past'
+    , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "range_weight": 5000

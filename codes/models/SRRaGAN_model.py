@@ -41,6 +41,10 @@ class SRRaGANModel(BaseModel):
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
+            self.D_verification = opt['train']['D_verification']
+            assert self.D_verification in ['current', 'convergence', 'past']
+            if self.D_verification=='convergence':
+                self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
             self.add_quantization_noise = bool(opt['network_D']['add_quantization_noise'])
             self.min_accumulation_steps = min(
@@ -166,7 +170,6 @@ class SRRaGANModel(BaseModel):
     def Convert_2_LR(self,size):
         return Upsample(size=size,mode='bilinear')
     def optimize_parameters(self):
-        VERIFY_D_USING_PAST_PERFORMANCE = True
         self.gradient_step_num = self.step//self.max_accumulation_steps
         first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
         last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
@@ -247,15 +250,26 @@ class SRRaGANModel(BaseModel):
                 # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
                 self.generator_step = self.generator_step and self.step % \
                                       self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-                if VERIFY_D_USING_PAST_PERFORMANCE:
-                    if self.generator_step and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
+                if self.generator_step:
+                    if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
                         self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
                                               all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
                                               self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
                                               all([val[1] > np.log(self.opt['train']['min_mean_D_correct']) for val in
                                                    self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                    elif self.D_verification=='convergence':
+                        if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
+                            std, slope = 0, 0
+                            for key in ['l_d_real', 'l_d_fake']:
+                                relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= self.gradient_step_num - self.opt['train']['steps_4_loss_std']]
+                                [cur_slope, _], [[cur_var, _], _] = np.polyfit([i for i in range(len(relevant_loss_vals))],relevant_loss_vals, 1, cov=True)
+                                # We take the the standard deviation as a measure
+                                std += 0.5 * np.sqrt(cur_var)
+                                slope += 0.5 * cur_slope
+                            self.D_converged = -self.opt['train']['lr_change_ratio'] * slope < std
+                        self.generator_step = 1*self.D_converged
 
-            if not VERIFY_D_USING_PAST_PERFORMANCE and self.generator_step:
+            if self.D_verification=='current' and self.generator_step:
                 self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
             if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
@@ -371,12 +385,12 @@ class SRRaGANModel(BaseModel):
         SLOPE_BASED = False
         LOSS_BASED = True
         # if os.path.isfile(os.path.join(self.log_path, 'lr.npz')):#Allow enough steps between checks
-        #     if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_lr_std']:
+        #     if cur_step - np.load(os.path.join(self.log_path, 'lr.npz'))['step_num'] <= 2 * self.opt['train']['steps_4_loss_std']:
         #         return False
         if SLOPE_BASED:
             std,slope = 0,0
             for key in ['l_d_real','l_d_fake','l_g_gan']:
-                relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+                relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= cur_step - self.opt['train']['steps_4_loss_std']]
                 [cur_slope, _], [[cur_var, _], _] = np.polyfit([i for i in range(len(relevant_loss_vals))],relevant_loss_vals,1, cov=True)
                 # We take the the standard deviation as a measure
                 std += 0.5*(0.5 if 'l_d' in key else 1.)*np.sqrt(cur_var)
@@ -394,22 +408,22 @@ class SRRaGANModel(BaseModel):
             #         len(self.log_dict['l_d_real'][i:i + win_length]))]) for i in range(
             #     len(self.log_dict['l_d_real']) - win_length)]);
             # plt.savefig('D_loss_STD.pdf')
-            if len(self.log_dict['D_logits_diff'])>=self.opt['train']['steps_4_lr_std']:
-                relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+            if len(self.log_dict['D_logits_diff'])>=self.opt['train']['steps_4_loss_std']:
+                relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_loss_std']]
                 self.log_dict['D_loss_STD'].append([self.gradient_step_num,np.std(relevant_loss_vals)])
                 reduce_lr = self.log_dict['D_loss_STD'][-1][1]>self.opt['train']['std_4_lr_drop']
             else:
                 reduce_lr = False
         else:
-            relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0] >= cur_step - self.opt['train']['steps_4_lr_std']]
+            relevant_D_logits_difs = [val[1] for val in self.log_dict['D_logits_diff'] if val[0] >= cur_step - self.opt['train']['steps_4_loss_std']]
             reduce_lr = np.std(relevant_D_logits_difs)>self.opt['train']['std_4_lr_drop']
-        if len(self.log_dict['D_logits_diff'])<2 * self.opt['train']['steps_4_lr_std'] or \
-                self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_lr_std']:#Check after a minimal number of steps
+        if len(self.log_dict['D_logits_diff'])<2 * self.opt['train']['steps_4_loss_std'] or \
+                self.log_dict['D_logits_diff'][0][0]>cur_step-self.opt['train']['steps_4_loss_std']:#Check after a minimal number of steps
             return False
         if reduce_lr:
             if SLOPE_BASED:
                 print('slope: ', slope, 'STD: ', std)
-            self.load(max_step=cur_step - self.opt['train']['steps_4_lr_std'])
+            self.load(max_step=cur_step - self.opt['train']['steps_4_loss_std'])
             for optimizer in [self.optimizer_G,self.optimizer_D]:
                 for param_group in optimizer.param_groups:
                     param_group['lr'] *= self.opt['train']['lr_gamma']
