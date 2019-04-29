@@ -590,6 +590,7 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
+                self.gradient_step_num = loaded_model_step
 
         else:
             load_path_G = self.opt['path']['pretrain_model_G']

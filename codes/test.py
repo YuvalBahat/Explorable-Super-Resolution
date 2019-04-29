@@ -153,4 +153,4 @@ for test_loader in test_loaders:
                     .format(ave_psnr_y, ave_ssim_y))
     if SAVE_GIF_4_STOCHASTIC:
         frames = [frame[:,:,::-1] for frame in frames]#Channels are originally ordered as BGR for cv2
-        imageio.mimsave(os.path.join(dataset_dir+ suffix + '.gif'),frames+frames[-2:0:-1],fps=2)
+        imageio.mimsave(os.path.join(dataset_dir+ suffix + '_%d.gif'%(model.gradient_step_num)),frames+frames[-2:0:-1],fps=2)

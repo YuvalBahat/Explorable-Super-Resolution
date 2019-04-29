@@ -3,6 +3,7 @@ from collections import OrderedDict
 from datetime import datetime
 import json
 from socket import gethostname
+import numpy as np
 try:
     import GPUtil
 except:
@@ -33,7 +34,7 @@ def get_timestamp():
 #         opts = Return_Field(opts,field[:-1])
 #     return opts[field[-1]]
 
-def parse(opt_path, is_train=True):
+def parse(opt_path, is_train=True,batch_size_multiplier=None):
     # remove comments starting with '//'
     json_str = ''
     with open(opt_path, 'r') as f:
@@ -84,8 +85,14 @@ def parse(opt_path, is_train=True):
     if is_train:
         opt['path']['log'] = experiments_root
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
-        assert opt['datasets']['train']['batch_size_4_grads_G']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
-        assert opt['datasets']['train']['batch_size_4_grads_D']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
+        if batch_size_multiplier is not None:
+            opt['datasets']['train']['batch_size'] *= batch_size_multiplier
+        while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
+                np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
+            opt['datasets']['train']['batch_size'] -= 1
+        assert opt['datasets']['train']['batch_size']>0,'Batch size must be greater than 0'
+        # assert opt['datasets']['train']['batch_size_4_grads_G']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
+        # assert opt['datasets']['train']['batch_size_4_grads_D']%opt['datasets']['train']['batch_size']==0,'Must have integer batches in a gradient step.'
         assert opt['datasets']['train']['batch_size_4_grads_D']>=opt['datasets']['train']['batch_size_4_grads_G'],'Currently not supporting G_batch>D_batch'
         opt['train']['grad_accumulation_steps_G'] = opt['datasets']['train']['batch_size_4_grads_G']//opt['datasets']['train']['batch_size']
         opt['train']['grad_accumulation_steps_D'] = opt['datasets']['train']['batch_size_4_grads_D']//opt['datasets']['train']['batch_size']
