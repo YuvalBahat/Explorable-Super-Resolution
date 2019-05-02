@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_NoDTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG5e-4D5e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 4
+      , "batch_size": 6
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -39,7 +39,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 0
+    , "DTE_arch": 1
     , "sigmoid_range_limit": 0
     , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
@@ -67,15 +67,15 @@
 
   , "train": {
     "resume": 1
-    ,"lr_G": 1e-4 //1e-5
+    ,"lr_G": 5e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
-    , "lr_D": 1e-4 //1e-4
+    , "lr_D": 5e-4 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_loss_std": 500
-    , "std_4_lr_drop": 100 //0.3 //0.03
+    , "std_4_lr_drop": 1.6 //0.3 //0.03
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
@@ -103,11 +103,11 @@
 
     , "manual_seed": 0
     , "niter": 500100 //5e5
-    , "val_freq": 50 //5e3
+    , "val_freq": 500 //5e3
   }
 
   , "logger": {
-    "print_freq": 10 //200
+    "print_freq": 100 //200
     , "save_checkpoint_freq": 500 //5e3
   }
 }
