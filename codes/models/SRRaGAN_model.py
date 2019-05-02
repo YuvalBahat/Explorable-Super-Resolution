@@ -36,7 +36,7 @@ class SRRaGANModel(BaseModel):
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
-        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD',
+        logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
@@ -266,7 +266,7 @@ class SRRaGANModel(BaseModel):
                                 # We take the the standard deviation as a measure
                                 std += 0.5 * np.sqrt(cur_var)
                                 slope += 0.5 * cur_slope
-                            self.D_converged = -self.opt['train']['lr_change_ratio'] * slope < std
+                            self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
                         self.generator_step = 1*self.D_converged
 
             if self.D_verification=='current' and self.generator_step:
@@ -281,7 +281,7 @@ class SRRaGANModel(BaseModel):
                 # set log
                 self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
                 self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
-
+                self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
                 if self.opt['train']['gan_type'] == 'wgan-gp':
                     self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
                 # D outputs
@@ -352,27 +352,6 @@ class SRRaGANModel(BaseModel):
                     self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
                 self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
-
-        # set log
-        # if step % self.global_D_update_ratio == 0 and step > self.D_init_iters:
-            # G
-            # if self.cri_pix:
-            #     self.log_dict['l_g_pix'].append(l_g_pix.item())
-            # if self.cri_fea:
-            #     self.log_dict['l_g_fea'].append(l_g_fea.item())
-            # if self.cri_range:
-            #     self.log_dict['l_g_range'].append(l_g_range.item())
-            # self.log_dict['l_g_gan'].append(l_g_gan.item())
-        # D
-        # self.log_dict['l_d_real'].append(l_d_real.item())
-        # self.log_dict['l_d_fake'].append(l_d_fake.item())
-        #
-        # if self.opt['train']['gan_type'] == 'wgan-gp':
-        #     self.log_dict['l_d_gp'].append(l_d_gp.item())
-        # # D outputs
-        # self.log_dict['D_real'].append(torch.mean(pred_d_real.detach()))
-        # self.log_dict['D_fake'].append(torch.mean(pred_d_fake.detach()))
-        # self.log_dict['D_logits_diff'].append(torch.mean(pred_d_real.detach()-pred_d_fake.detach()))
 
     def test(self):
         self.netG.eval()
@@ -459,7 +438,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','D_update_ratio','D_loss_STD']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','l_d_real','D_loss_STD']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)
