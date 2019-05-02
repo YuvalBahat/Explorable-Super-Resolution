@@ -34,7 +34,7 @@
     "root": "/home/ybahat/PycharmProjects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
 }
 
   , "network_G": {
@@ -67,10 +67,10 @@
 
   , "train": {
     "resume": 1
-    ,"lr_G": 5e-4 //1e-5
+    ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
-    , "lr_D": 5e-4 //1e-4
+    , "lr_D": 1e-4 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
