@@ -111,9 +111,10 @@ class BaseModel():
 
     def add_random_noise_weights_2_state_dict(self,loaded_state_dict,current_state_dict):
         modified_state_dict = collections.OrderedDict()
+        SET_Z_WEIGHTS_2_ZERO = True
         for key in loaded_state_dict.keys():
             if 'weight' in key and loaded_state_dict[key].dim()>1 and loaded_state_dict[key].size()[1]+1==current_state_dict[key].size()[1]:
-                modified_state_dict[key] = torch.cat([current_state_dict[key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
+                modified_state_dict[key] = torch.cat([(0 if SET_Z_WEIGHTS_2_ZERO else 1)*current_state_dict[key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
             else:
                 modified_state_dict[key] = loaded_state_dict[key]
         return modified_state_dict

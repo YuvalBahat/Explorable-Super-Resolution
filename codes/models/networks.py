@@ -167,3 +167,29 @@ def define_F(opt, use_bn=False):
         netF = nn.DataParallel(netF)
     netF.eval()  # No need to train
     return netF
+
+def define_E(input_nc, output_nc, ndf, net_type,init_type='xavier', init_gain=0.02, gpu_ids=[], vaeLike=False):#,norm='batch', nl='lrelu'):
+    netE = None
+    norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
+    nl = 'lrelu'  # use leaky relu for E
+    nl_layer = functools.partial(nn.LeakyReLU, negative_slope=0.2, inplace=True)
+    if net_type == 'resnet_128':
+        netE = arch.E_ResNet(input_nc, output_nc, ndf, n_blocks=4, norm_layer=norm_layer,
+                       nl_layer=nl_layer, vaeLike=vaeLike)
+    elif net_type == 'resnet_256':
+        netE = arch.E_ResNet(input_nc, output_nc, ndf, n_blocks=5, norm_layer=norm_layer,
+                       nl_layer=nl_layer, vaeLike=vaeLike)
+    elif net_type == 'conv_128':
+        netE = arch.E_NLayers(input_nc, output_nc, ndf, n_layers=4, norm_layer=norm_layer,
+                        nl_layer=nl_layer, vaeLike=vaeLike)
+    elif net_type == 'conv_256':
+        netE = arch.E_NLayers(input_nc, output_nc, ndf, n_layers=5, norm_layer=norm_layer,
+                        nl_layer=nl_layer, vaeLike=vaeLike)
+    else:
+        raise NotImplementedError('Encoder model name [%s] is not recognized' % net_type)
+    init_weights(netE, init_type='kaiming', scale=0.1)
+    if gpu_ids:
+        assert torch.cuda.is_available()
+        netE = nn.DataParallel(netE)
+    return netE
+    # return init_net(netE, init_type, init_gain, gpu_ids)

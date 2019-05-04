@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG5e-4D5e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5_VGG_NonRel_Latent10_NoLossLR_GnoiseZeroed_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -35,13 +35,14 @@
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
     , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
 }
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
-    , "noise_input": "None" // "all_layers" //"all_layers","first_layer","None"
+    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -66,11 +67,11 @@
   }
 
   , "train": {
-    "resume": 1
-    ,"lr_G": 1e-4 //1e-5
+    "resume": 0
+    ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
-    , "lr_D": 1e-4 //1e-4
+    , "lr_D": 1e-5 //1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -87,6 +88,7 @@
     , "feature_weight": 0 //1
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
+    , "latent_weight": 10 //Weight on loss on difference between z and the output of E(G(LR,z))
     , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps

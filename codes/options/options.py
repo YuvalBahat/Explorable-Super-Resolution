@@ -87,6 +87,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None):
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
         if batch_size_multiplier is not None:
             opt['datasets']['train']['batch_size'] *= batch_size_multiplier
+            opt['datasets']['train']['n_workers'] *= batch_size_multiplier
         while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
                 np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
             opt['datasets']['train']['batch_size'] -= 1

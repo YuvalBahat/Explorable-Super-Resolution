@@ -37,7 +37,8 @@ class SRRaGANModel(BaseModel):
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp']
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
+                       'l_e','l_g_latent']
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -56,6 +57,10 @@ class SRRaGANModel(BaseModel):
             self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)  # D
             self.netG.train()
             self.netD.train()
+            if self.noise_input is not None:
+                self.netE = networks.define_E(input_nc=opt['network_G']['out_nc'],output_nc=1,ndf=opt['network_D']['nf'],
+                                              net_type='resnet_256',gpu_ids=opt['gpu_ids']).to(self.device)
+                self.netE.train()
         # self.load()  # load G and D if needed
 
         # define losses, optimizer and scheduler
@@ -97,7 +102,12 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Remove range loss.')
                 self.cri_range = None
-
+            # Loss on latent vector Z reconstruction by encoder E:
+            if self.noise_input and (train_opt['latent_weight']>0 or self.debug):
+                self.cri_latent = nn.L1Loss().to(self.device)
+                self.l_latent_w = train_opt['latent_weight']
+            else:
+                self.cri_latent = None
             # GD gan loss
             self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
             self.l_gan_w = train_opt['gan_weight']
@@ -134,7 +144,10 @@ class SRRaGANModel(BaseModel):
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr_D, \
                 weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
             self.optimizers.append(self.optimizer_D)
-
+            # E
+            if self.noise_input:
+                self.optimizer_E = torch.optim.Adam(self.netE.parameters(),lr=lr_D,betas=(train_opt['beta1_D'], 0.999))
+                self.optimizers.append(self.optimizer_E)
             # schedulers
             if train_opt['lr_scheme'] == 'MultiStepLR':
                 for optimizer in self.optimizers:
@@ -155,11 +168,11 @@ class SRRaGANModel(BaseModel):
         self.var_L = data['LR'].to(self.device)
         if self.noise_input is not None:
             if 'Z' in data.keys():
-                cur_Z = data['Z']
+                self.cur_Z = data['Z']
             else:
-                cur_Z = torch.normal(mean=torch.from_numpy(np.zeros(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor),
+                self.cur_Z = torch.normal(mean=torch.from_numpy(np.zeros(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor),
                     std=torch.from_numpy(np.ones(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor))
-            self.var_L = torch.cat([(cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
+            self.var_L = torch.cat([(self.cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
@@ -205,15 +218,21 @@ class SRRaGANModel(BaseModel):
                 self.fake_H = self.DTE_net.HR_unpadder(self.fake_H)
             self.var_H,self.var_ref = self.DTE_net.HR_unpadder(self.var_H),self.DTE_net.HR_unpadder(self.var_ref)
 
-        # D
+        # D (and E, if exists)
         if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
             for p in self.netD.parameters():
                 p.requires_grad = True
             for p in self.netG.parameters():
                 p.requires_grad = False
+            if self.noise_input:
+                for p in self.netE.parameters():
+                    p.requires_grad = True
             if first_grad_accumulation_step_D:
                 self.optimizer_D.zero_grad()
                 self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
+                if self.noise_input:
+                    self.optimizer_E.zero_grad()
+                    self.l_e_grad_step = []
             l_d_total = 0
             # pred_d_real = self.netD(torch.cat([self.fake_H[0],self.var_ref-self.fake_H[0]],1) if self.decomposed_output else self.var_ref)
             # pred_d_fake = self.netD((torch.cat(self.fake_H,1) if self.decomposed_output else self.fake_H).detach())  # detach to avoid BP to G
@@ -276,6 +295,14 @@ class SRRaGANModel(BaseModel):
                     self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
             l_d_total /= self.grad_accumulation_steps_D
             l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
+
+            if self.noise_input:
+                estimated_z = self.netE(self.fake_H.detach())
+                l_e = self.cri_latent(estimated_z,self.cur_Z.to(estimated_z.device))
+                self.l_e_grad_step.append(l_e.item())
+                l_e /= self.grad_accumulation_steps_D
+                l_e.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
+
             if last_grad_accumulation_step_D:
                 self.optimizer_D.step()
                 # set log
@@ -290,6 +317,9 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
                 self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
                 self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
+                if self.noise_input:
+                    self.optimizer_E.step()
+                    self.log_dict['l_e'].append((self.gradient_step_num,np.mean(self.l_e_grad_step)))
 
         # G step:
         l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
@@ -298,9 +328,12 @@ class SRRaGANModel(BaseModel):
                 p.requires_grad = False
             for p in self.netG.parameters():
                 p.requires_grad = True
+            if self.noise_input:
+                for p in self.netE.parameters():
+                    p.requires_grad = False
             if first_grad_accumulation_step_G:
                 self.optimizer_G.zero_grad()
-                self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step = [],[],[],[]
+                self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,self.l_g_latent_grad_step = [],[],[],[],[]
             if self.cri_pix:  # pixel loss
                 if 'pixel_domain' in self.opt['train'] and self.opt['train']['pixel_domain']=='LR':
                     LR_size = list(self.var_L.size()[-2:])
@@ -321,6 +354,10 @@ class SRRaGANModel(BaseModel):
             if self.cri_range: #range loss
                 l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                 l_g_total += self.l_range_w * l_g_range
+            if self.cri_latent:
+                l_g_latent = self.cri_latent(self.netE(self.fake_H),self.cur_Z.to(self.fake_H.device))
+                l_g_total += self.l_latent_w * l_g_latent
+                self.l_g_latent_grad_step.append(l_g_latent.item())
             # G gan + cls loss
             # pred_g_fake = self.netD(torch.cat(self.fake_H,1) if self.decomposed_output else self.fake_H)
             # pred_d_real = self.netD(torch.cat([self.fake_H[0],self.var_ref-self.fake_H[0]],1) if self.decomposed_output else self.var_ref).detach()
@@ -350,6 +387,8 @@ class SRRaGANModel(BaseModel):
                     self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
                 if self.cri_range:
                     self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
+                if self.cri_latent:
+                    self.log_dict['l_g_latent'].append((self.gradient_step_num, np.mean(self.l_g_latent_grad_step)))
                 self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
@@ -402,10 +441,12 @@ class SRRaGANModel(BaseModel):
         if reduce_lr:
             if SLOPE_BASED:
                 print('slope: ', slope, 'STD: ', std)
-            self.load(max_step=cur_step - self.opt['train']['steps_4_loss_std'])
-            for optimizer in [self.optimizer_G,self.optimizer_D]:
+            # optimizers_list = [self.optimizer_G,self.optimizer_D]
+            cur_LR = [opt.param_groups[0]['lr'] for opt in self.optimizers]
+            self.load(max_step=cur_step - self.opt['train']['steps_4_loss_std'],resume_train=True)
+            for opt_num,optimizer in enumerate(self.optimizers):
                 for param_group in optimizer.param_groups:
-                    param_group['lr'] *= self.opt['train']['lr_gamma']
+                    param_group['lr'] = cur_LR[opt_num]*self.opt['train']['lr_gamma']
                     if param_group['lr']<1e-8:
                         return True
             np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
@@ -438,7 +479,7 @@ class SRRaGANModel(BaseModel):
                 self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','l_d_real','D_loss_STD']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)
@@ -547,8 +588,8 @@ class SRRaGANModel(BaseModel):
                     with open(network_path, 'a') as f:
                         f.write(message)
 
-    def load(self,max_step=None):
-        resume_training = self.opt['is_train'] and self.opt['train']['resume']
+    def load(self,max_step=None,resume_train=None):
+        resume_training = resume_train if resume_train is not None else (self.opt['is_train'] and self.opt['train']['resume'])
         if max_step is not None or (resume_training is not None and resume_training) or not self.opt['is_train']:
             model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
             model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))
@@ -566,6 +607,10 @@ class SRRaGANModel(BaseModel):
                 model_name = str(loaded_model_step)+'_D.pth'
                 print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD,optimizer=self.optimizer_D)
+                if self.noise_input:
+                    model_name = str(loaded_model_step)+'_E.pth'
+                    print('Resuming training with model for E [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
+                    self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netE,optimizer=self.optimizer_E)
             else:
                 print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
@@ -579,8 +624,11 @@ class SRRaGANModel(BaseModel):
             load_path_D = self.opt['path']['pretrain_model_D']
             if self.opt['is_train'] and load_path_D is not None:
                 print('loading model for D [{:s}] ...'.format(load_path_D))
-                self.load_network(load_path_D, self.netD)
+                self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
 
     def save(self, iter_label):
         self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
         self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
+        if self.noise_input:
+            self.save_network(self.save_dir, self.netE, 'E', iter_label, self.optimizer_E)
+
