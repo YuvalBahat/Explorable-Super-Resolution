@@ -48,19 +48,20 @@ class SRResNet(nn.Module):
 
 class RRDBNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, gc=32, upscale=4, norm_type=None, \
-            act_type='leakyrelu', mode='CNA', upsample_mode='upconv',noise_input=None):
+            act_type='leakyrelu', mode='CNA', upsample_mode='upconv',latent_input=None):
         super(RRDBNet, self).__init__()
+        self.latent_input = latent_input
         n_upscale = int(math.log(upscale, 2))
         if upscale == 3:
             n_upscale = 1
-        if noise_input is not None:
+        if latent_input is not None:
             in_nc += 1
-            # if noise_input=='all_layers':
-
-        fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None)
+            # if latent_input=='all_layers':
+        USE_NODULE_LISTS = True
+        fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
         rb_blocks = [B.RRDB(nf, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
-            norm_type=norm_type, act_type=act_type, mode='CNA') for _ in range(nb)]
-        LR_conv = B.conv_block(nf, nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode)
+            norm_type=norm_type, act_type=act_type, mode='CNA',latent_input_channels=(1 if latent_input=='all_layers' else 0)) for _ in range(nb)]
+        LR_conv = B.conv_block(nf+(1 if latent_input=='all_layers' else 0), nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode,return_module_list=USE_NODULE_LISTS)
 
         if upsample_mode == 'upconv':
             upsample_block = B.upconv_blcok
@@ -72,14 +73,31 @@ class RRDBNet(nn.Module):
             upsampler = upsample_block(nf, nf, 3, act_type=act_type)
         else:
             upsampler = [upsample_block(nf, nf, act_type=act_type) for _ in range(n_upscale)]
-        HR_conv0 = B.conv_block(nf, nf, kernel_size=3, norm_type=None, act_type=act_type)
-        HR_conv1 = B.conv_block(nf, out_nc, kernel_size=3, norm_type=None, act_type=None)
+        if latent_input=='all_layers':
+            self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
+        HR_conv0 = B.conv_block(nf+(1 if latent_input=='all_layers' else 0), nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_NODULE_LISTS)
+        HR_conv1 = B.conv_block(nf+(1 if latent_input=='all_layers' else 0), out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
 
-        self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*rb_blocks, LR_conv)),\
-            *upsampler, HR_conv0, HR_conv1)
+        if USE_NODULE_LISTS:
+            self.model = nn.ModuleList(fea_conv+\
+                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_NODULE_LISTS),latent_input_channels=1 if latent_input=='all_layers' else 0,use_module_list=True)]+\
+                                       upsampler+HR_conv0+HR_conv1)
+        else:
+            self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*rb_blocks, LR_conv)),\
+                *upsampler, HR_conv0, HR_conv1)
 
     def forward(self, x):
-        x = self.model(x)
+        if self.latent_input=='all_layers':
+            latent_input = x[:,0,...].unsqueeze(1)
+        for i,module in enumerate(self.model):
+            module_children = [str(type(m)) for m in module.children()]
+            if i>0 and self.latent_input=='all_layers':
+                if len(module_children)>0 and 'Upsample' in module_children[0]:
+                    latent_input = self.latent_upsampler(latent_input)
+                elif 'ReLU' not in str(type(module)):
+                    x = torch.cat([latent_input,x],1)
+            x = module(x)
+        # x = self.model(x)
         return x
 
 

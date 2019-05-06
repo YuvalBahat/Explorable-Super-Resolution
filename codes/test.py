@@ -41,7 +41,7 @@ model = create_model(opt)
 SAVE_IMAGE_COLLAGE = True
 SAVE_GIF_4_STOCHASTIC = True
 # Parameters for GIF:
-NOISE_RANGE = 0.8
+LATENT_RANGE = 0.8
 NUM_SAMPLES = 15#Must be odd for a collage to be saved
 assert SAVE_IMAGE_COLLAGE or not SAVE_GIF_4_STOCHASTIC,'Must use image collage for creating GIF'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2,'Pick an odd number of samples'
@@ -65,19 +65,19 @@ for test_loader in test_loaders:
     test_results['ssim'] = []
     test_results['psnr_y'] = []
     test_results['ssim_y'] = []
-    SAVE_GIF_4_STOCHASTIC = SAVE_GIF_4_STOCHASTIC and opt['network_G']['noise_input']
+    SAVE_GIF_4_STOCHASTIC = SAVE_GIF_4_STOCHASTIC and opt['network_G']['latent_input']
     if SAVE_GIF_4_STOCHASTIC:
         optional_Zs = np.arange(start=-2,stop=0,step=0.001)
-        optional_Zs = optional_Zs[int(np.argwhere(norm.cdf(optional_Zs)>=(1-NOISE_RANGE)/2)[0]):]
+        optional_Zs = optional_Zs[int(np.argwhere(norm.cdf(optional_Zs)>=(1-LATENT_RANGE)/2)[0]):]
         optional_Zs = optional_Zs#+[0]+[-1*val for val in optional_Zs[::-1]]
-        Z_noise = []
+        Z_latent = []
         for frame_num in range(int((NUM_SAMPLES-1)/2)):
-            Z_noise.append(optional_Zs[int(frame_num*len(optional_Zs)/((NUM_SAMPLES-1)/2))])
-        Z_noise = Z_noise+[0]+[-1*val for val in Z_noise[::-1]]
+            Z_latent.append(optional_Zs[int(frame_num*len(optional_Zs)/((NUM_SAMPLES-1)/2))])
+        Z_latent = Z_latent+[0]+[-1*val for val in Z_latent[::-1]]
     else:
-        Z_noise = [0]
+        Z_latent = [0]
     frames = []
-    for cur_Z in sorted(Z_noise):
+    for cur_Z in sorted(Z_latent):
         if SAVE_IMAGE_COLLAGE:
             image_collage, GT_image_collage = [], []
         idx = 0

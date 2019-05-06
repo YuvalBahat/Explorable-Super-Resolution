@@ -75,12 +75,25 @@ class ConcatBlock(nn.Module):
 
 class ShortcutBlock(nn.Module):
     #Elementwise sum the output of a submodule to its input
-    def __init__(self, submodule):
+    def __init__(self, submodule,latent_input_channels=0,use_module_list=False):
         super(ShortcutBlock, self).__init__()
+        if use_module_list:
+            submodule = nn.ModuleList(submodule)
         self.sub = submodule
+        self.latent_input_channels = latent_input_channels
 
     def forward(self, x):
-        output = x + self.sub(x)
+        if isinstance(self.sub,nn.ModuleList):#Supporint latent input to each module by using nn.ModuleList
+            if self.latent_input_channels>0:
+                latent_input = x[:,0,...].unsqueeze(1)
+            output = x
+            for i,module in enumerate(self.sub):
+                if i>0 and self.latent_input_channels>0:
+                    output = torch.cat([latent_input,output],1)
+                output = module(output)
+        else:
+            output = self.sub(x)
+        output = x[:,self.latent_input_channels:,...] + output
         return output
 
     def __repr__(self):
@@ -90,7 +103,7 @@ class ShortcutBlock(nn.Module):
         return tmpstr
 
 
-def sequential(*args):
+def sequential(*args,return_module_list=False):
     # Flatten Sequential. It unwraps nn.Sequential.
     if len(args) == 1:
         if isinstance(args[0], OrderedDict):
@@ -103,11 +116,18 @@ def sequential(*args):
                 modules.append(submodule)
         elif isinstance(module, nn.Module):
             modules.append(module)
-    return nn.Sequential(*modules)
+    if return_module_list:
+        return modules
+        # if len(modules)>1:
+        #     return nn.ModuleList(modules)
+        # else:
+        #     return modules[0]
+    else:
+        return nn.Sequential(*modules)
 
 
 def conv_block(in_nc, out_nc, kernel_size, stride=1, dilation=1, groups=1, bias=True, \
-               pad_type='zero', norm_type=None, act_type='relu', mode='CNA'):
+               pad_type='zero', norm_type=None, act_type='relu', mode='CNA',return_module_list=False):
     '''
     Conv layer with padding, normalization, activation
     mode: CNA --> Conv -> Norm -> Act
@@ -123,7 +143,7 @@ def conv_block(in_nc, out_nc, kernel_size, stride=1, dilation=1, groups=1, bias=
     a = act(act_type) if act_type else None
     if 'CNA' in mode:
         n = norm(norm_type, out_nc) if norm_type else None
-        return sequential(p, c, n, a)
+        return sequential(p, c, n, a,return_module_list=return_module_list)
     elif mode == 'NAC':
         if norm_type is None and act_type is not None:
             a = act(act_type, inplace=False)
@@ -181,31 +201,45 @@ class ResidualDenseBlock_5C(nn.Module):
     '''
 
     def __init__(self, nc, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
-            norm_type=None, act_type='leakyrelu', mode='CNA'):
+            norm_type=None, act_type='leakyrelu', mode='CNA',latent_input_channels=0):
+        self.USE_MODULE_LIST = True
         super(ResidualDenseBlock_5C, self).__init__()
         # gc: growth channel, i.e. intermediate channels
-        self.conv1 = conv_block(nc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
-            norm_type=norm_type, act_type=act_type, mode=mode)
-        self.conv2 = conv_block(nc+gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
-            norm_type=norm_type, act_type=act_type, mode=mode)
-        self.conv3 = conv_block(nc+2*gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
-            norm_type=norm_type, act_type=act_type, mode=mode)
-        self.conv4 = conv_block(nc+3*gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
-            norm_type=norm_type, act_type=act_type, mode=mode)
         if mode == 'CNA':
             last_act = None
         else:
             last_act = act_type
-        self.conv5 = conv_block(nc+4*gc, nc, 3, stride, bias=bias, pad_type=pad_type, \
-            norm_type=norm_type, act_type=last_act, mode=mode)
+        if self.USE_MODULE_LIST:#Latent input channels only properly supported when using ModuleList
+            self.convs = []
+            for i in range(5):
+                self.convs.append(conv_block(nc+i*gc+latent_input_channels,gc if i<4 else nc,kernel_size if i<4 else 3,stride,bias=bias,pad_type=pad_type, \
+                    norm_type=norm_type, act_type=act_type if i<4 else last_act, mode=mode))
+            self.convs = nn.ModuleList(self.convs)
+        else:
+            self.conv1 = conv_block(nc+latent_input_channels, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
+                norm_type=norm_type, act_type=act_type, mode=mode)
+            self.conv2 = conv_block(nc+gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
+                norm_type=norm_type, act_type=act_type, mode=mode)
+            self.conv3 = conv_block(nc+2*gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
+                norm_type=norm_type, act_type=act_type, mode=mode)
+            self.conv4 = conv_block(nc+3*gc, gc, kernel_size, stride, bias=bias, pad_type=pad_type, \
+                norm_type=norm_type, act_type=act_type, mode=mode)
+            self.conv5 = conv_block(nc+4*gc, nc, 3, stride, bias=bias, pad_type=pad_type, \
+                norm_type=norm_type, act_type=last_act, mode=mode)
 
     def forward(self, x):
-        x1 = self.conv1(x)
-        x2 = self.conv2(torch.cat((x, x1), 1))
-        x3 = self.conv3(torch.cat((x, x1, x2), 1))
-        x4 = self.conv4(torch.cat((x, x1, x2, x3), 1))
-        x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
-        return x5.mul(0.2) + x
+        if self.USE_MODULE_LIST:
+            outputs = [x]
+            for i,layer in enumerate(self.convs):
+                outputs.append(layer(torch.cat(outputs,1)))
+            return outputs[-1].mul(0.2)+outputs[0][:,-outputs[-1].size()[1]:,...]
+        else:
+            x1 = self.conv1(x)
+            x2 = self.conv2(torch.cat((x, x1), 1))
+            x3 = self.conv3(torch.cat((x, x1, x2), 1))
+            x4 = self.conv4(torch.cat((x, x1, x2, x3), 1))
+            x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
+            return x5.mul(0.2) + x
 
 
 class RRDB(nn.Module):
@@ -215,20 +249,25 @@ class RRDB(nn.Module):
     '''
 
     def __init__(self, nc, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
-            norm_type=None, act_type='leakyrelu', mode='CNA'):
+            norm_type=None, act_type='leakyrelu', mode='CNA',latent_input_channels=0):
         super(RRDB, self).__init__()
+        self.latent_input_channels = latent_input_channels
         self.RDB1 = ResidualDenseBlock_5C(nc, kernel_size, gc, stride, bias, pad_type, \
-            norm_type, act_type, mode)
+            norm_type, act_type, mode,latent_input_channels)
         self.RDB2 = ResidualDenseBlock_5C(nc, kernel_size, gc, stride, bias, pad_type, \
-            norm_type, act_type, mode)
+            norm_type, act_type, mode,latent_input_channels)
         self.RDB3 = ResidualDenseBlock_5C(nc, kernel_size, gc, stride, bias, pad_type, \
-            norm_type, act_type, mode)
+            norm_type, act_type, mode,latent_input_channels)
 
     def forward(self, x):
         out = self.RDB1(x)
+        if self.latent_input_channels>0:
+            out = torch.cat([x[:,0,...].unsqueeze(1),out],1)
         out = self.RDB2(out)
+        if self.latent_input_channels>0:
+            out = torch.cat([x[:,0,...].unsqueeze(1),out],1)
         out = self.RDB3(out)
-        return out.mul(0.2) + x
+        return out.mul(0.2) + x[:,-out.size()[1]:,...]
 
 
 ####################

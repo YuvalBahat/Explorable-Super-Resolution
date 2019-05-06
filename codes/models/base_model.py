@@ -105,16 +105,28 @@ class BaseModel():
         if self.opt['network_G']['DTE_arch']:
             loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
         # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))
-        if self.noise_input is not None:
-            loaded_state_dict = self.add_random_noise_weights_2_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
+        loaded_state_dict = self.process_loaded_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 
-    def add_random_noise_weights_2_state_dict(self,loaded_state_dict,current_state_dict):
+    def process_loaded_state_dict(self,loaded_state_dict,current_state_dict):
         modified_state_dict = collections.OrderedDict()
         SET_Z_WEIGHTS_2_ZERO = True
-        for key in loaded_state_dict.keys():
-            if 'weight' in key and loaded_state_dict[key].dim()>1 and loaded_state_dict[key].size()[1]+1==current_state_dict[key].size()[1]:
-                modified_state_dict[key] = torch.cat([(0 if SET_Z_WEIGHTS_2_ZERO else 1)*current_state_dict[key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
+        NUM_LATENT_CHANNELS = 1
+        current_keys = [k for k in current_state_dict.keys()]
+        assert len(current_keys)==len([key for key in loaded_state_dict.keys()]),'Loaded model and current one should have the same number of parameters'
+        modified_key_names_counter = 0
+        for i,key in enumerate(loaded_state_dict.keys()):
+            current_key = current_keys[i]
+            loaded_size = loaded_state_dict[key].size()
+            current_size = current_state_dict[current_key].size()
+            if key!=current_key:
+                assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
+                modified_key_names_counter += 1
+            if self.latent_input is not None and \
+                'weight' in key and loaded_state_dict[key].dim()>1 and loaded_state_dict[key].size()[1]+NUM_LATENT_CHANNELS==current_state_dict[current_key].size()[1]:
+                modified_state_dict[current_key] = torch.cat([(0 if SET_Z_WEIGHTS_2_ZERO else 1)*current_state_dict[current_key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
             else:
-                modified_state_dict[key] = loaded_state_dict[key]
+                modified_state_dict[current_key] = loaded_state_dict[key]
+        if modified_key_names_counter>0:
+            print('Warning: Modified %d key names due to the change to using ModuleLists' % (modified_key_names_counter))
         return modified_state_dict

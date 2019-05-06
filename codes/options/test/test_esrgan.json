@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGD_NonRel_VerifyingDonPrev_NoLossLR__Gnoise_debug" //,"RRDB_ESRGAN_x4"
+  "name": "0Dinit_V10Dupdate_DTE_batch24_LRG1e-5D1e-4_Range5e3_WGAN10_VGGD_NonRel_VerifyingDonPrev_NoLossLR__Glatent_debug" //,"RRDB_ESRGAN_x4"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4
@@ -28,7 +28,7 @@
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
-    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64

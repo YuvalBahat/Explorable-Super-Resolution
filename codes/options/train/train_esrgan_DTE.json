@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5_VGG_NonRel_Latent10_NoLossLR_GnoiseZeroed_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5_VGG_NonRel_Latent1_NoLossLR_allLayersGlatentZeroed_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 6
+      , "batch_size": 2
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -42,7 +42,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
-    , "noise_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -88,7 +88,7 @@
     , "feature_weight": 0 //1
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
-    , "latent_weight": 10 //Weight on loss on difference between z and the output of E(G(LR,z))
+    , "latent_weight": 1 //Weight on loss on difference between z and the output of E(G(LR,z))
     , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps

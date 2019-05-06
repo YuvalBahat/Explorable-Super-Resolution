@@ -86,7 +86,7 @@ def define_G(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
-    opt_net['noise_input'] = opt_net['noise_input'] if opt_net['noise_input']!="None" else None
+    opt_net['latent_input'] = opt_net['latent_input'] if opt_net['latent_input']!="None" else None
     # if opt['network_G']['DTE_arch']:#Prevent a bug when using DTE, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
     #     import os
     #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -102,7 +102,7 @@ def define_G(opt,DTE=None):
     elif which_model == 'RRDB_net':  # RRDB
         netG = arch.RRDBNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'],
             nb=opt_net['nb'], gc=opt_net['gc'], upscale=opt_net['scale'], norm_type=opt_net['norm_type'],
-            act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',noise_input=opt_net['noise_input'])
+            act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',latent_input=opt_net['latent_input'])
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
     if opt['network_G']['DTE_arch']:
