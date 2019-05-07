@@ -41,8 +41,8 @@ model = create_model(opt)
 SAVE_IMAGE_COLLAGE = True
 SAVE_GIF_4_STOCHASTIC = True
 # Parameters for GIF:
-LATENT_RANGE = 0.8
-NUM_SAMPLES = 15#Must be odd for a collage to be saved
+LATENT_RANGE = 0.9
+NUM_SAMPLES = 31#Must be odd for a collage to be saved
 assert SAVE_IMAGE_COLLAGE or not SAVE_GIF_4_STOCHASTIC,'Must use image collage for creating GIF'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2,'Pick an odd number of samples'
 for test_loader in test_loaders:
@@ -153,4 +153,7 @@ for test_loader in test_loaders:
                     .format(ave_psnr_y, ave_ssim_y))
     if SAVE_GIF_4_STOCHASTIC:
         frames = [frame[:,:,::-1] for frame in frames]#Channels are originally ordered as BGR for cv2
-        imageio.mimsave(os.path.join(dataset_dir+ suffix + '_%d.gif'%(model.gradient_step_num)),frames+frames[-2:0:-1],fps=2)
+        os.mkdir(os.path.join(dataset_dir+ suffix + '_%d_frames'%(model.gradient_step_num)))
+        for i,frame in enumerate(frames+frames[-2:0:-1]):
+            imageio.imsave(os.path.join(dataset_dir+ suffix + '_%d_frames'%(model.gradient_step_num),'%d.png'%(i)),frame)
+        # imageio.mimsave(os.path.join(dataset_dir+ suffix + '_%d.gif'%(model.gradient_step_num)),frames+frames[-2:0:-1],fps=2)

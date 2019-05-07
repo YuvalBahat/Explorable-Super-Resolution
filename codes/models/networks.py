@@ -187,7 +187,7 @@ def define_E(input_nc, output_nc, ndf, net_type,init_type='xavier', init_gain=0.
                         nl_layer=nl_layer, vaeLike=vaeLike)
     else:
         raise NotImplementedError('Encoder model name [%s] is not recognized' % net_type)
-    init_weights(netE, init_type='kaiming', scale=0.1)
+    init_weights(netE, init_type='kaiming', scale=1)
     if gpu_ids:
         assert torch.cuda.is_available()
         netE = nn.DataParallel(netE)

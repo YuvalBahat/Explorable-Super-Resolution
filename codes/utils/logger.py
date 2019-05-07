@@ -50,7 +50,7 @@ class Logger(object):
             message = '<epoch:{:3d}, iter:{:8,d}, time:{:.2f}> '.format(epoch, iters, time)
 
         for label, value in rlt.items():
-            if label in ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished']:
+            if label in ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD','l_g_pix']:
                 continue
             if mode == 'train':
                 message += '{:s}: {:.2e} '.format(label, value)

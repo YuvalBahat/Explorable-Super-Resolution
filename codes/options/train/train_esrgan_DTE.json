@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5_VGG_NonRel_Latent1_NoLossLR_allLayersGlatentZeroed_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit4e4Einit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5LRE1e-4_VGG_NonRel_Latent1_NoLossLR_allLayersGlatent1e3STD_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 2
+      , "batch_size": 6
       , "batch_size_4_grads_G": 24
       , "batch_size_4_grads_D": 24
       , "HR_size": 256
@@ -72,6 +72,7 @@
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4
+    , "lr_E": 1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -101,11 +102,12 @@
     //for wgan-gp
     // , "D_update_ratio": 1
      , "D_init_iters": 0
+     , "E_init_iters": 40000
      , "gp_weigth": 10
 
     , "manual_seed": 0
     , "niter": 500100 //5e5
-    , "val_freq": 500 //5e3
+    , "val_freq": 100 //5e3
   }
 
   , "logger": {
