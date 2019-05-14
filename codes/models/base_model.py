@@ -110,7 +110,7 @@ class BaseModel():
 
     def process_loaded_state_dict(self,loaded_state_dict,current_state_dict):
         modified_state_dict = collections.OrderedDict()
-        LATENT_WEIGHTS_RELATIVE_STD = 1000.
+        LATENT_WEIGHTS_RELATIVE_STD = 0.
         NUM_LATENT_CHANNELS = 1
         current_keys = [k for k in current_state_dict.keys()]
         assert len(current_keys)==len([key for key in loaded_state_dict.keys()]),'Loaded model and current one should have the same number of parameters'
@@ -127,6 +127,7 @@ class BaseModel():
                 loaded_weights_STD = loaded_state_dict[key].std()
                 modified_state_dict[current_key] = torch.cat([LATENT_WEIGHTS_RELATIVE_STD*loaded_weights_STD/current_state_dict[current_key][:,0,:,:].std()*\
                     current_state_dict[current_key][:,0,:,:].unsqueeze(1).cuda(),loaded_state_dict[key].cuda()],1)
+                self.channels_idx_4_grad_amplification[i] = [c for c in range(NUM_LATENT_CHANNELS)]
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]
         if modified_key_names_counter>0:

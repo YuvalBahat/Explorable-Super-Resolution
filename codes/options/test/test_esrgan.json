@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch24_LR1e-5_VGG_NonRel_Latent1_NoLossLR_allLayersGlatentZeroed_debug" //,"RRDB_ESRGAN_x4"
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersUlatent0STD_noE_debug" //,"RRDB_ESRGAN_x4"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4

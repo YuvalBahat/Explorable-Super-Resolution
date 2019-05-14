@@ -4,7 +4,7 @@ import time
 import argparse
 import numpy as np
 from collections import OrderedDict
-
+import cv2
 import options.options as option
 import utils.util as util
 from data.util import bgr2ycbcr
@@ -41,6 +41,7 @@ model = create_model(opt)
 SAVE_IMAGE_COLLAGE = True
 SAVE_GIF_4_STOCHASTIC = True
 # Parameters for GIF:
+LATENT_DISTRIBUTION = 'Uniform'#,'Gaussian'
 LATENT_RANGE = 0.9
 NUM_SAMPLES = 31#Must be odd for a collage to be saved
 assert SAVE_IMAGE_COLLAGE or not SAVE_GIF_4_STOCHASTIC,'Must use image collage for creating GIF'
@@ -67,13 +68,17 @@ for test_loader in test_loaders:
     test_results['ssim_y'] = []
     SAVE_GIF_4_STOCHASTIC = SAVE_GIF_4_STOCHASTIC and opt['network_G']['latent_input']
     if SAVE_GIF_4_STOCHASTIC:
-        optional_Zs = np.arange(start=-2,stop=0,step=0.001)
-        optional_Zs = optional_Zs[int(np.argwhere(norm.cdf(optional_Zs)>=(1-LATENT_RANGE)/2)[0]):]
-        optional_Zs = optional_Zs#+[0]+[-1*val for val in optional_Zs[::-1]]
-        Z_latent = []
-        for frame_num in range(int((NUM_SAMPLES-1)/2)):
-            Z_latent.append(optional_Zs[int(frame_num*len(optional_Zs)/((NUM_SAMPLES-1)/2))])
-        Z_latent = Z_latent+[0]+[-1*val for val in Z_latent[::-1]]
+        if LATENT_DISTRIBUTION=='Gaussian':#When I used Gaussian latent input, I set the range to cover LATENT_RANGE of the probability:
+            optional_Zs = np.arange(start=-2,stop=0,step=0.001)
+            optional_Zs = optional_Zs[int(np.argwhere(norm.cdf(optional_Zs)>=(1-LATENT_RANGE)/2)[0]):]
+            optional_Zs = optional_Zs#+[0]+[-1*val for val in optional_Zs[::-1]]
+            Z_latent = []
+            for frame_num in range(int((NUM_SAMPLES-1)/2)):
+                Z_latent.append(optional_Zs[int(frame_num*len(optional_Zs)/((NUM_SAMPLES-1)/2))])
+            Z_latent = Z_latent+[0]+[-1*val for val in Z_latent[::-1]]
+        elif LATENT_DISTRIBUTION=='Uniform':
+            Z_latent = list(np.linspace(start=-LATENT_RANGE,stop=0,num=np.ceil(NUM_SAMPLES/2)))[:-1]
+            Z_latent = Z_latent+[0]+[-z for z in Z_latent[::-1]]
     else:
         Z_latent = [0]
     frames = []
@@ -138,6 +143,7 @@ for test_loader in test_loaders:
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                               save_img_path%'_GT_HR')
         if SAVE_GIF_4_STOCHASTIC:
+            cur_collage = cv2.putText(cur_collage, '%.2f'%(cur_Z), (0, 50),cv2.FONT_HERSHEY_SCRIPT_COMPLEX, fontScale=2.0, color=(255, 255, 255))
             frames.append(cur_collage)
         if need_HR and cur_Z==0:  # metrics
             # Average PSNR/SSIM results

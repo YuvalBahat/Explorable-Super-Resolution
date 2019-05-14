@@ -157,8 +157,6 @@ def main():
                             if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
                             idx += 1
                             img_name = os.path.splitext(os.path.basename(val_data['LR_path'][0]))[0]
-                            img_dir = os.path.join(opt['path']['val_images'], img_name)
-                            util.mkdir(img_dir)
                             val_data['Z'] = cur_Z
                             model.feed_data(val_data)
                             model.test()
@@ -183,6 +181,8 @@ def main():
                                     GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
                             else:
                                 # Save SR images for reference
+                                img_dir = os.path.join(opt['path']['val_images'], img_name)
+                                util.mkdir(img_dir)
                                 save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
                                 util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
 
