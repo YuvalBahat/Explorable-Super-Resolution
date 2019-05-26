@@ -80,20 +80,20 @@ class ShortcutBlock(nn.Module):
         if use_module_list:
             submodule = nn.ModuleList(submodule)
         self.sub = submodule
-        self.latent_input_channels = latent_input_channels
+        self.num_latent_channels = latent_input_channels
 
     def forward(self, x):
         if isinstance(self.sub,nn.ModuleList):#Supporint latent input to each module by using nn.ModuleList
-            if self.latent_input_channels>0:
-                latent_input = x[:,0,...].unsqueeze(1)
+            if self.num_latent_channels>0:
+                latent_input = x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:]))
             output = x
             for i,module in enumerate(self.sub):
-                if i>0 and self.latent_input_channels>0:
+                if i>0 and self.num_latent_channels>0:
                     output = torch.cat([latent_input,output],1)
                 output = module(output)
         else:
             output = self.sub(x)
-        output = x[:,self.latent_input_channels:,...] + output
+        output = x[:,self.num_latent_channels:,...] + output
         return output
 
     def __repr__(self):
@@ -251,7 +251,7 @@ class RRDB(nn.Module):
     def __init__(self, nc, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
             norm_type=None, act_type='leakyrelu', mode='CNA',latent_input_channels=0):
         super(RRDB, self).__init__()
-        self.latent_input_channels = latent_input_channels
+        self.num_latent_channels = latent_input_channels
         self.RDB1 = ResidualDenseBlock_5C(nc, kernel_size, gc, stride, bias, pad_type, \
             norm_type, act_type, mode,latent_input_channels)
         self.RDB2 = ResidualDenseBlock_5C(nc, kernel_size, gc, stride, bias, pad_type, \
@@ -261,11 +261,11 @@ class RRDB(nn.Module):
 
     def forward(self, x):
         out = self.RDB1(x)
-        if self.latent_input_channels>0:
-            out = torch.cat([x[:,0,...].unsqueeze(1),out],1)
+        if self.num_latent_channels>0:
+            out = torch.cat([x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:])),out],1)
         out = self.RDB2(out)
-        if self.latent_input_channels>0:
-            out = torch.cat([x[:,0,...].unsqueeze(1),out],1)
+        if self.num_latent_channels>0:
+            out = torch.cat([x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:])),out],1)
         out = self.RDB3(out)
         return out.mul(0.2) + x[:,-out.size()[1]:,...]
 

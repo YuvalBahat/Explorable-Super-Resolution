@@ -15,7 +15,7 @@ def create_dataloader(dataset, dataset_opt):
         dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
 
 
-def create_dataset(dataset_opt):
+def create_dataset(dataset_opt,**kwargs):
     mode = dataset_opt['mode']
     if mode == 'LR':
         from data.LR_dataset import LRDataset as D
@@ -25,7 +25,7 @@ def create_dataset(dataset_opt):
         from data.LRHR_seg_bg_dataset import LRHRSeg_BG_Dataset as D
     else:
         raise NotImplementedError('Dataset [{:s}] is not recognized.'.format(mode))
-    dataset = D(dataset_opt)
+    dataset = D(dataset_opt,**kwargs)
     print('Dataset [{:s} - {:s}] is created.'.format(dataset.__class__.__name__,
                                                      dataset_opt['name']))
     return dataset

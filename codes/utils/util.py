@@ -6,6 +6,9 @@ import cv2
 from torchvision.utils import make_grid
 import GPUtil
 import time
+from skimage.transform import resize
+from scipy.signal import convolve2d
+import torch
 ####################
 # miscellaneous
 ####################
@@ -86,6 +89,91 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1)):
 
 def save_img(img, img_path, mode='RGB'):
     cv2.imwrite(img_path, img)
+
+def Convert_Im_2_Zinput(Z_image,im_size,Z_range,single_channel=False):
+    SMOOTHING_WIN_SIZE = 5
+    Z_image = resize(Z_image,im_size)
+    if single_channel:
+        Z_image = np.mean(Z_image,2,keepdims=True)
+    if np.any(np.std(Z_image,(0,1))>0):
+        Z_image = (Z_image-np.min(Z_image))/(np.max(Z_image)-np.min(Z_image))*2*Z_range-Z_range
+        pad_size = SMOOTHING_WIN_SIZE//2
+        for c_num in range(Z_image.shape[2]):
+            Z_image[:,:,c_num] = convolve2d(np.pad(Z_image[:,:,c_num],[[pad_size,pad_size],[pad_size,pad_size]],mode='edge'),
+                                            np.ones([SMOOTHING_WIN_SIZE,SMOOTHING_WIN_SIZE]),mode='valid')/SMOOTHING_WIN_SIZE**2
+    else:
+        Z_image = Z_image*2*Z_range-Z_range
+    return np.expand_dims(Z_image.transpose((2,0,1)),0)
+
+def crop_center(image,margins):
+    if margins[0]>0:
+        image = image[margins[0]:-margins[0],...]
+    if margins[1]>0:
+        image = image[:,margins[1]:-margins[1],...]
+    return  image
+
+class Optimizable_Z(torch.nn.Module):
+    def __init__(self,Z_shape,Z_range=None):
+        super(Optimizable_Z, self).__init__()
+        # self.device = torch.device('cuda')
+        self.Z = torch.nn.Parameter(data=torch.zeros(Z_shape).type(torch.cuda.FloatTensor))
+        self.Z_range = Z_range
+        if Z_range is not None:
+            self.tanh = torch.nn.Tanh()
+        # self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
+
+
+    def forward(self):
+        if self.Z_range is not None:
+            return self.Z_range*self.tanh(self.Z)
+        else:
+            return self.Z
+    # def Loss(self,im1,im2):
+    #     return self.loss(im1.to(self.device),im2.to(self.device))
+
+class Z_optimizer():
+    MIN_LR = 1e-5
+    def __init__(self,objective,image_shape,model,Z_range,initial_LR,logger,max_iters,data):
+        self.Z_model = Optimizable_Z(Z_shape=[1, 1] + list(image_shape), Z_range=Z_range)
+        self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
+        self.objective = objective
+        self.data = data
+        self.device = torch.device('cuda')
+        if 'L1' in objective:
+            self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
+            # scheduler_threshold = 1e-2
+        elif 'STD' in objective:
+            assert self.objective in ['max_STD', 'min_STD']
+            # scheduler_threshold = 0.9999
+        elif 'VGG' in objective:
+            self.GT_HR_VGG = model.netF(self.data['HR']).detach().to(self.device)
+            self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
+        self.model = model
+        self.logger = logger
+        self.max_iters = max_iters
+    def optimize(self):
+        for z_iter in range(self.max_iters):
+            self.optimizer.zero_grad()
+            self.data['Z'] = self.Z_model()
+            self.model.feed_data(self.data, need_HR=False)
+            self.model.test(prevent_grads_calc=False)
+            if 'L1' in self.objective:
+                Z_loss = self.loss(self.model.fake_H.to(self.device), self.data['HR'].to(self.device))
+            elif 'STD' in self.objective:
+                Z_loss = self.model.fake_H.std().to(self.device)
+            elif 'VGG' in self.objective:
+                Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
+            if 'max' in self.objective:
+                Z_loss = -1*Z_loss
+            Z_loss.backward()
+            self.optimizer.step()
+            self.scheduler.step(Z_loss)
+            cur_LR = self.optimizer.param_groups[0]['lr']
+            if cur_LR<=1.2*self.MIN_LR:
+                break
+            self.logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': Z_loss.item()}, dont_print=True)
+        return self.Z_model()
 
 
 ####################

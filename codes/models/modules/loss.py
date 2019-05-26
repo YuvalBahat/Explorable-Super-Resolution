@@ -1,5 +1,91 @@
 import torch
 import torch.nn as nn
+import numpy as np
+import cv2
+from collections import deque
+
+class FilterLoss(nn.Module):
+    def __init__(self,latent_channels):
+        super(FilterLoss,self).__init__()
+        self.latent_channels = latent_channels
+        self.NOISE_STD = 1/255
+        if latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
+            self.num_channels = 2
+            DELTA_SIZE = 7
+            delta_im = np.zeros([DELTA_SIZE,DELTA_SIZE]); delta_im[DELTA_SIZE//2,DELTA_SIZE//2] = 1;
+            dir_filter = cv2.Sobel(delta_im,ddepth=cv2.CV_64F,dx=1,dy=0)
+            filter_margins = np.argwhere(np.any(dir_filter!=0,0))[0][0]
+            dir_filter = dir_filter[filter_margins:-filter_margins,filter_margins:-filter_margins]
+            self.filter = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=dir_filter.shape,bias=False,groups=3)
+            self.filter.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(dir_filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+            self.filter.filter_layer = True
+        elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
+            self.num_channels = 3
+        else:
+            raise Exception('Unknown latent channel setting %s' % (opt['network_G']['latent_channels']))
+        # self.dynamic_range = torch.ones([2,self.num_channels]).cuda()
+        self.collected_ratios = [deque(maxlen=10000) for i in range(self.num_channels)]
+
+        # if filter is not None:
+        # else:
+        #     self.filter = None
+
+    def forward(self, data):
+        image_shape = list(data['HR'].size())
+        LOWER_PERCENTILE,HIGHER_PERCENTILE = 5,95
+        cur_Z = data['Z'].mean(dim=(2,3))
+        if self.latent_channels == 'STD_1dir':
+            dir_filter_output_SR = self.filter(data['SR'])
+            dir_filter_output_HR = self.filter(data['HR'])
+            dir_magnitude_ratio = dir_filter_output_SR.abs().mean(dim=(1, 2, 3)) / (
+            dir_filter_output_HR.abs().mean(dim=(1, 2, 3)) + self.NOISE_STD)
+            STD_ratio = data['SR'].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) /\
+                        (data['HR'].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) + self.NOISE_STD)
+            normalized_Z = []
+            for ch_num in range(self.num_channels):
+                self.collected_ratios[ch_num] += [val.item() for val in list(actual_ratios[:, ch_num])]
+                upper_bound = np.percentile(self.collected_ratios[ch_num], HIGHER_PERCENTILE)
+                lower_bound = np.percentile(self.collected_ratios[ch_num], LOWER_PERCENTILE)
+                normalized_Z.append(
+                    (cur_Z[:, ch_num]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
+            normalized_Z = torch.stack(normalized_Z, 1)
+        elif self.latent_channels == 'STD_directional':
+            # horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2]).mean(1,keepdim=True)[:,:,1:-1,:]
+            # vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :]).mean(1,keepdim=True)[:,:,:,1:-1]
+            # horizontal_derivative_HR = (data['HR'][:, :, :, 2:] - data['HR'][:, :, :, :-2]).mean(1,keepdim=True)[:,:,1:-1,:]
+            # vertical_derivative_HR = (data['HR'][:, :, 2:, :] - data['HR'][:, :, :-2, :]).mean(1,keepdim=True)[:,:,:,1:-1]
+            horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2])[:,:,1:-1,:].unsqueeze(1)/2
+            vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
+            horizontal_derivative_HR = (data['HR'][:, :, :, 2:] - data['HR'][:, :, :, :-2])[:,:,1:-1,:].unsqueeze(1)/2
+            vertical_derivative_HR = (data['HR'][:, :, 2:, :] - data['HR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
+            dir_normal = cur_Z[:,1:3]
+            dir_normal = dir_normal/torch.sqrt(torch.sum(dir_normal**2,dim=1,keepdim=True))
+            dir_filter_output_SR = (dir_normal.unsqueeze(2).unsqueeze(3).unsqueeze(4)*torch.cat([horizontal_derivative_SR,vertical_derivative_SR],dim=1)).sum(1)
+            dir_filter_output_HR = (dir_normal.unsqueeze(2).unsqueeze(3).unsqueeze(4) * torch.cat([horizontal_derivative_HR, vertical_derivative_HR],dim=1)).sum(1)
+            dir_magnitude_ratio = dir_filter_output_SR.abs().mean(dim=(1,2,3))/(dir_filter_output_HR.abs().mean(dim=(1,2,3))+self.NOISE_STD)
+            self.collected_ratios[1] += [val.item() for val in list(dir_magnitude_ratio)]
+            STD_ratio = (data['SR'][:,:,1:-1,1:-1]-dir_filter_output_SR).abs().mean(dim=(1,2,3))/((data['HR'][:,:,1:-1,1:-1]-dir_filter_output_HR).abs().mean(dim=(1,2,3))+self.NOISE_STD)
+            self.collected_ratios[0] += [val.item() for val in list(STD_ratio)]
+            STD_upper_bound = np.percentile(self.collected_ratios[0], HIGHER_PERCENTILE)
+            STD_lower_bound = np.percentile(self.collected_ratios[0],LOWER_PERCENTILE)
+            dir_magnitude_upper_bound = np.percentile(self.collected_ratios[1], HIGHER_PERCENTILE)
+            dir_magnitude_lower_bound = np.percentile(self.collected_ratios[1], LOWER_PERCENTILE)
+            mag_normal = (cur_Z[:,1:3]**2).sum(1).sqrt()
+            normalized_Z = torch.stack([cur_Z[:,0]/2*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
+                                        mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
+        actual_ratios = torch.stack([STD_ratio,dir_magnitude_ratio],1)
+
+        # self.dynamic_range[0,:] = torch.min(input=self.dynamic_range[0,:],other=torch.min(actual_ratios,dim=0)[0]).detach()
+        # self.dynamic_range[1,:] = torch.max(input=self.dynamic_range[1,:],other=torch.max(actual_ratios,dim=0)[0]).detach()
+        # normalized_Z = []
+        # for ch_num in range(self.num_channels):
+        #     self.collected_ratios[ch_num] += [val.item() for val in list(actual_ratios[:,ch_num])]
+        #     upper_bound = np.percentile(self.collected_ratios[ch_num],HIGHER_PERCENTILE)
+        #     lower_bound = np.percentile(self.collected_ratios[ch_num],LOWER_PERCENTILE)
+        #     normalized_Z.append((cur_Z[:,ch_num])/2*(upper_bound-lower_bound)+np.mean([upper_bound,lower_bound]))
+        # normalized_Z = torch.stack(normalized_Z,1)
+        # normalized_Z = data['Z'].mean(dim=(2,3))/2*((self.dynamic_range[1]-self.dynamic_range[0]).unsqueeze(0))+self.dynamic_range.mean(dim=0,keepdim=True) # Assuming uniform D per image per channel, in range [-1,1]. Normalizing to the range [0.9,1.1]
+        return torch.mean((actual_ratios-normalized_Z).abs())
 
 
 # Define GAN loss: [vanilla | lsgan | wgan-gp]
