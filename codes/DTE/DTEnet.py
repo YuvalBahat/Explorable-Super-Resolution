@@ -242,8 +242,7 @@ class Filter_Layer(nn.Module):
     def __init__(self,filter,pre_filter_func,post_filter_func=None):
         super(Filter_Layer, self).__init__()
         self.Filter_OP = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
-        self.Filter_OP.weight = nn.Parameter(data=torch.from_numpy(
-            np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+        self.Filter_OP.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
         self.Filter_OP.filter_layer = True
         self.pre_filter_func = pre_filter_func
         self.post_filter_func = (lambda x:x) if post_filter_func is None else post_filter_func

@@ -1,4 +1,4 @@
-def create_model(opt,*kargs):
+def create_model(opt,*kargs,**kwargs):
     model = opt['model']
 
     if model == 'sr':
@@ -11,6 +11,6 @@ def create_model(opt,*kargs):
         from .SFTGAN_ACD_model import SFTGAN_ACD_Model as M
     else:
         raise NotImplementedError('Model [{:s}] not recognized.'.format(model))
-    m = M(opt,*kargs)
+    m = M(opt,*kargs,**kwargs)
     print('Model [{:s}] is created.'.format(m.__class__.__name__))
     return m

@@ -9,18 +9,29 @@ from torch.optim import lr_scheduler
 import re
 import models.networks as networks
 from .base_model import BaseModel
-from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss
+from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss
 from torch.nn import Upsample
 import DTE.DTEnet as DTEnet
 import numpy as np
 import h5py
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt,accumulation_steps_per_batch=None):
+    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
         self.latent_input = opt['network_G']['latent_input'] if opt['network_G']['latent_input']!='None' else None
+        self.num_latent_channels = 0
+        if self.latent_input is not None:
+            # Loss encouraging effect of Z:
+            if self.is_train and train_opt['latent_weight']>0:
+                self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
+                self.num_latent_channels = self.cri_latent.num_channels
+                self.l_latent_w = train_opt['latent_weight']
+            else:
+                self.cri_latent = None
+                assert isinstance(opt['network_G']['latent_channels'],int)
+                self.num_latent_channels = opt['network_G']['latent_channels']
         # define networks and load pretrained models
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
@@ -35,7 +46,7 @@ class SRRaGANModel(BaseModel):
             self.DTE_net = DTEnet.DTEnet(DTE_conf)
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
-        self.netG = networks.define_G(opt,DTE=self.DTE_net).to(self.device)  # G
+        self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_latent']
@@ -43,7 +54,7 @@ class SRRaGANModel(BaseModel):
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
             if self.latent_input:
-                self.using_encoder = train_opt['latent_weight'] > 0
+                self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
                 self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
             self.D_verification = opt['train']['D_verification']
@@ -106,13 +117,13 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Remove range loss.')
                 self.cri_range = None
-            # Loss on latent vector Z reconstruction by encoder E:
-            # if self.latent_input and (train_opt['latent_weight']>0 or self.debug):
-            if self.using_encoder:
-                self.cri_latent = nn.L1Loss().to(self.device)
-                self.l_latent_w = train_opt['latent_weight']
-            else:
-                self.cri_latent = None
+
+            # # Loss on latent vector Z reconstruction by encoder E:
+            # if self.using_encoder:
+            #     self.cri_latent = nn.L1Loss().to(self.device)
+            #     self.l_latent_w = train_opt['latent_weight']
+            # else:
+            #     self.cri_latent = None
             # GD gan loss
             self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
             self.l_gan_w = train_opt['gan_weight']
@@ -167,6 +178,8 @@ class SRRaGANModel(BaseModel):
                 raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
             self.generator_step = False
             self.generator_changed = True#Initializing to true,to save the initial state```````
+        elif init_Fnet:
+            self.netF = networks.define_F(opt, use_bn=False).to(self.device)
         self.load()
 
         print('---------- Model initialized ------------------')
@@ -180,10 +193,14 @@ class SRRaGANModel(BaseModel):
             if 'Z' in data.keys():
                 self.cur_Z = data['Z']
             else:
-                self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),1,1,1])-1
-                # self.cur_Z = torch.normal(mean=torch.from_numpy(np.zeros(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor),
-                #     std=torch.from_numpy(np.ones(shape=[self.var_L.size(dim=0),1,1,1])).type(torch.FloatTensor))
-            self.var_L = torch.cat([(self.cur_Z*torch.ones(size=[1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type()),self.var_L],dim=1)
+                self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),self.num_latent_channels,1,1])-1
+            if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
+                self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels,self.var_L.size()[2],self.var_L.size()[3]])
+            elif self.cur_Z.size(dim=2)==1:
+                self.cur_Z = (self.cur_Z*torch.ones([1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type())
+            if not torch.is_tensor(self.cur_Z):
+                self.cur_Z = torch.from_numpy(self.cur_Z).type(self.var_L.type())
+            self.var_L = torch.cat([self.cur_Z,self.var_L],dim=1)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
@@ -368,7 +385,8 @@ class SRRaGANModel(BaseModel):
                 l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                 l_g_total += self.l_range_w * l_g_range
             if self.cri_latent:
-                l_g_latent = self.cri_latent(self.netE(self.fake_H),self.cur_Z.to(self.fake_H.device))
+                # l_g_latent = self.cri_latent(self.netE(self.fake_H),self.cur_Z.to(self.fake_H.device))#Old code, using Encoder
+                l_g_latent = self.cri_latent({'SR':self.fake_H,'HR':self.var_H,'Z':self.cur_Z})
                 l_g_total += self.l_latent_w * l_g_latent
                 self.l_g_latent_grad_step.append(l_g_latent.item())
             # G gan + cls loss
@@ -409,9 +427,12 @@ class SRRaGANModel(BaseModel):
                 self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
-    def test(self):
+    def test(self,prevent_grads_calc=True):
         self.netG.eval()
-        with torch.no_grad():
+        if prevent_grads_calc:
+            with torch.no_grad():
+                self.fake_H = self.netG(self.var_L)
+        else:
             self.fake_H = self.netG(self.var_L)
         self.netG.train()
 

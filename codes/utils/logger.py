@@ -33,11 +33,11 @@ class Logger(object):
         with open(self.val_log_path, 'a') as log_file:
             log_file.write('================ Time: ' + get_timestamp() + ' ===============\n')
             log_file.write('================ Validation Results ================\n')
-        if self.use_tb_logger and 'debug' not in self.exp_name:
+        if self.use_tb_logger:# and 'debug' not in self.exp_name:
             from tensorboard_logger import Logger as TensorboardLogger
             self.tb_logger = TensorboardLogger('../tb_logger/' + self.exp_name)
 
-    def print_format_results(self, mode, rlt):
+    def print_format_results(self, mode, rlt,dont_print=False):
         epoch = rlt.pop('epoch')
         iters = rlt.pop('iters')
         time = rlt.pop('time')
@@ -57,11 +57,12 @@ class Logger(object):
             elif mode == 'val':
                 message += '{:s}: {:.4e} '.format(label, value)
             # tensorboard logger
-            if self.use_tb_logger and 'debug' not in self.exp_name:
+            if self.use_tb_logger:# and 'debug' not in self.exp_name:
                 self.tb_logger.log_value(label, value, iters)
 
         # print in console
-        print(message)
+        if not dont_print:
+            print(message)
         # write in log file
         if mode == 'train':
             with open(self.loss_log_path, 'a') as log_file:

@@ -14,7 +14,7 @@ class LRHRDataset(data.Dataset):
     The pair is ensured by 'sorted' function, so please check the name convention.
     '''
 
-    def __init__(self, opt):
+    def __init__(self, opt,specific_image=None):
         super(LRHRDataset, self).__init__()
         self.opt = opt
         self.paths_LR = None
@@ -32,7 +32,9 @@ class LRHRDataset(data.Dataset):
         else:  # read image list from lmdb or image files
             self.HR_env, self.paths_HR = util.get_image_paths(opt['data_type'], opt['dataroot_HR'])
             self.LR_env, self.paths_LR = util.get_image_paths(opt['data_type'], opt['dataroot_LR'])
-
+        if specific_image is not None:
+            self.paths_HR = [path for path in self.paths_HR if path.split('/')[-1].split('.')[0]==specific_image]
+            self.paths_LR = [path for path in self.paths_LR if path.split('/')[-1].split('.')[0] == specific_image]
         assert self.paths_HR, 'Error: HR path is empty.'
         if self.paths_LR and self.paths_HR:
             assert len(self.paths_LR) == len(self.paths_HR), \
