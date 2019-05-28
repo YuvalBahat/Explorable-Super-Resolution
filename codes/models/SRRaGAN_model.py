@@ -196,7 +196,7 @@ class SRRaGANModel(BaseModel):
                 self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),self.num_latent_channels,1,1])-1
             if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
                 self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels,self.var_L.size()[2],self.var_L.size()[3]])
-            elif self.cur_Z.size(dim=2)==1:
+            elif torch.is_tensor(self.cur_Z) and self.cur_Z.size(dim=2)==1:
                 self.cur_Z = (self.cur_Z*torch.ones([1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type())
             if not torch.is_tensor(self.cur_Z):
                 self.cur_Z = torch.from_numpy(self.cur_Z).type(self.var_L.type())

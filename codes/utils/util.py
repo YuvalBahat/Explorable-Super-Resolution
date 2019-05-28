@@ -112,6 +112,11 @@ def crop_center(image,margins):
         image = image[:,margins[1]:-margins[1],...]
     return  image
 
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
 class Optimizable_Z(torch.nn.Module):
     def __init__(self,Z_shape,Z_range=None):
         super(Optimizable_Z, self).__init__()
@@ -134,7 +139,7 @@ class Optimizable_Z(torch.nn.Module):
 class Z_optimizer():
     MIN_LR = 1e-5
     def __init__(self,objective,image_shape,model,Z_range,initial_LR,logger,max_iters,data):
-        self.Z_model = Optimizable_Z(Z_shape=[1, 1] + list(image_shape), Z_range=Z_range)
+        self.Z_model = Optimizable_Z(Z_shape=[1,model.num_latent_channels] + list(image_shape), Z_range=Z_range)
         self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
         self.objective = objective
         self.data = data

@@ -20,7 +20,7 @@ import subprocess
 SAVE_IMAGE_COLLAGE = True
 TEST_LATENT_INPUT = 'GIF'#'GIF','video',None
 # Parameters for GIF:
-LATENT_DISTRIBUTION = 'Uniform'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG'
+LATENT_DISTRIBUTION = 'UnDesired_Im'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle'
 NUM_Z_ITERS = 250
 DETERMINISTIC_Z_INPUTS = ['Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG']
 LATENT_RANGE = 1
@@ -29,8 +29,8 @@ INPUT_Z_IM_PATH = os.path.join('/home/ybahat/Dropbox/PhD/DataTermEnforcingArch/R
 if 'Desired_Im' in LATENT_DISTRIBUTION:
     INPUT_Z_IM_PATH = INPUT_Z_IM_PATH.replace(LATENT_DISTRIBUTION,'Desired_Im')
 TEST_IMAGE = 'comic'#None
-LATENT_CHANNEL_NUM = 0
-OTHER_CHANNELS_VAL = -1
+LATENT_CHANNEL_NUM = 0#Overridden when UnitCircle
+OTHER_CHANNELS_VAL = 0
 # options
 parser = argparse.ArgumentParser()
 parser.add_argument('-opt', type=str, required=True, help='Path to options JSON file.')
@@ -104,6 +104,10 @@ for test_loader in test_loaders:
                 logger = Logger(opt)
                 Z_image_names = [im for im in Z_image_names if im.split('.')[0]==TEST_IMAGE]
             Z_latent = [imageio.imread(os.path.join(INPUT_Z_IM_PATH,im)) for im in Z_image_names]
+        elif LATENT_DISTRIBUTION=='UnitCircle':
+            LATENT_CHANNEL_NUM = 1#For folder name only
+            thetas = np.linspace(0,2*np.pi*(NUM_SAMPLES-1)/NUM_SAMPLES,num=NUM_SAMPLES)
+            Z_latent = [np.reshape([OTHER_CHANNELS_VAL]+list(util.pol2cart(1,theta)),newshape=[1,3,1,1]) for theta in thetas]
         else:
             logger = Logger(opt)
             Z_latent = [None]
@@ -111,17 +115,19 @@ for test_loader in test_loaders:
     else:
         Z_latent = [0]
     frames = []
-    if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS:
+    if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS+['UnitCircle']:
         Z_latent = sorted(Z_latent)
     for cur_Z in Z_latent:
         if SAVE_IMAGE_COLLAGE:
             image_collage, GT_image_collage = [], []
         if LATENT_DISTRIBUTION in DETERMINISTIC_Z_INPUTS:
             cur_Z_image = cur_Z
-        elif LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS and model.num_latent_channels > 1:
+        elif LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS+['UnitCircle'] and model.num_latent_channels > 1:
             cur_Z = np.reshape(np.stack((model.num_latent_channels * [OTHER_CHANNELS_VAL])[:LATENT_CHANNEL_NUM] +
                                         [cur_Z] + (model.num_latent_channels * [OTHER_CHANNELS_VAL])[LATENT_CHANNEL_NUM + 1:],0),[1,-1,1,1])
             cur_channel_cur_Z = cur_Z if isinstance(cur_Z, int) else cur_Z[0, LATENT_CHANNEL_NUM].squeeze()
+        elif LATENT_DISTRIBUTION=='UnitCircle':
+            cur_channel_cur_Z = np.mod(np.arctan2(cur_Z[0,2],cur_Z[0,1]),2*np.pi)/2/np.pi*360
         idx = 0
         for data in test_loader:
             if SAVE_IMAGE_COLLAGE and idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([])
@@ -130,7 +136,7 @@ for test_loader in test_loaders:
             img_path = data['LR_path'][0]
             img_name = os.path.splitext(os.path.basename(img_path))[0]
             if LATENT_DISTRIBUTION == 'Input_Z_Im':
-                cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=True)
+                cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
             elif 'Desired_Im' in LATENT_DISTRIBUTION:
                 LR_Z = 1e-1
                 objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else 'L1')
@@ -208,14 +214,14 @@ for test_loader in test_loaders:
                     .format(ave_psnr_y, ave_ssim_y))
     if TEST_LATENT_INPUT:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS else ''))
-        if model.num_latent_channels>1:
+        if model.num_latent_channels>1 and LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS:
             folder_name += '_Ch%d'%(LATENT_CHANNEL_NUM)
         if TEST_LATENT_INPUT=='GIF':
             frames = [frame[:,:,::-1] for frame in frames]#Channels are originally ordered as BGR for cv2
         elif TEST_LATENT_INPUT == 'video':
             video = cv2.VideoWriter(folder_name+'.avi',0,25,frames[0].shape[:2])
         if not os.path.isdir(folder_name):        os.mkdir(folder_name)
-        for i,frame in enumerate(frames+(frames[-2:0:-1] if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS else [])):
+        for i,frame in enumerate(frames+(frames[-2:0:-1] if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS+['UnitCircle'] else [])):
             if TEST_LATENT_INPUT == 'GIF':
                 if LATENT_DISTRIBUTION in DETERMINISTIC_Z_INPUTS:
                     im_name = ''
@@ -234,6 +240,6 @@ for test_loader in test_loaders:
         if TEST_LATENT_INPUT == 'video':
             cv2.destroyAllWindows()
             video.release()
-        else:
+        elif LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS:
             os.chdir(folder_name)
-            subprocess.call(['ffmpeg', '-r','15','-i', '%d.png','-b:v','2000k', 'CH_%d.avi'%(LATENT_CHANNEL_NUM)])
+            subprocess.call(['ffmpeg', '-r','5','-i', '%d.png','-b:v','2000k', 'CH_%d.avi'%(LATENT_CHANNEL_NUM)])

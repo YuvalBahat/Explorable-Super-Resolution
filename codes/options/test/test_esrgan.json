@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_STD_1dirX_percentileRatio_debug" //,"RRDB_ESRGAN_x4"
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_STD_directional_percentileRatio_debug" //,"RRDB_ESRGAN_x4"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4
@@ -29,7 +29,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": 2
+    , "latent_channels": 3
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
