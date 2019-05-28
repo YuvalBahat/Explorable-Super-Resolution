@@ -15,6 +15,13 @@ import DTE.DTEnet as DTEnet
 import numpy as np
 import h5py
 
+def Unit_Circle_rejection_Sampling(batch_size):
+    cur_Z = torch.rand([batch_size,3,1,1])
+    while torch.any((cur_Z[:,1:3,:,:]**2).sum(1)>1):
+        rejected_samples = ((cur_Z[:,1:3,:,:]**2).sum(1)>1).squeeze()
+        cur_Z[rejected_samples] = torch.rand([rejected_samples.sum().item(),3,1,1])
+    return cur_Z
+
 class SRRaGANModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None):
         super(SRRaGANModel, self).__init__(opt)
@@ -193,7 +200,10 @@ class SRRaGANModel(BaseModel):
             if 'Z' in data.keys():
                 self.cur_Z = data['Z']
             else:
-                self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),self.num_latent_channels,1,1])-1
+                if self.opt['network_G']['latent_channels']=='STD_directional':
+                    self.cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
+                else:
+                    self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),self.num_latent_channels,1,1])-1
             if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
                 self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels,self.var_L.size()[2],self.var_L.size()[3]])
             elif self.cur_Z.size(dim=2)==1:
