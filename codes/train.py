@@ -22,7 +22,7 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     if parser.parse_args().single_GPU:
-        util.Assign_GPU()
+        available_GPUs = util.Assign_GPU()
     else:
         available_GPUs = util.Assign_GPU(max_GPUs=None)
     opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs))

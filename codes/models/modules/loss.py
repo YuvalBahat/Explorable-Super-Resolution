@@ -71,7 +71,7 @@ class FilterLoss(nn.Module):
             dir_magnitude_upper_bound = np.percentile(self.collected_ratios[1], HIGHER_PERCENTILE)
             dir_magnitude_lower_bound = np.percentile(self.collected_ratios[1], LOWER_PERCENTILE)
             mag_normal = (cur_Z[:,1:3]**2).sum(1).sqrt()
-            normalized_Z = torch.stack([cur_Z[:,0]/2*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
+            normalized_Z = torch.stack([cur_Z[:,0]*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
         actual_ratios = torch.stack([STD_ratio,dir_magnitude_ratio],1)
 

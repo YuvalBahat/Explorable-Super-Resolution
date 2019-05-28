@@ -15,9 +15,9 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 3
-      , "batch_size_4_grads_G": 4
-      , "batch_size_4_grads_D": 4
+      , "batch_size": 6
+      , "batch_size_4_grads_G": 48
+      , "batch_size_4_grads_D": 48
       , "HR_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -113,7 +113,7 @@
   }
 
   , "logger": {
-    "print_freq": 10 //200
+    "print_freq": 100 //200
     , "save_checkpoint_freq": 500 //5e3
   }
 }

@@ -53,6 +53,7 @@ def Assign_GPU(max_GPUs=1):
     if max_GPUs is not None:
         print('Using GPU #%d'%(GPU_2_use[0]))
         os.environ["CUDA_VISIBLE_DEVICES"] = "%d"%(GPU_2_use[0]) # Limit to 1 GPU when using an interactive session
+        return [GPU_2_use[0]]
     else:
         return GPU_2_use
 ####################
