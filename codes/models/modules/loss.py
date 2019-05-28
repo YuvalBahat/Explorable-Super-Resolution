@@ -21,6 +21,15 @@ class FilterLoss(nn.Module):
             self.filter.filter_layer = True
         elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
             self.num_channels = 3
+        elif self.latent_channels == 'structure_tensor':
+            self.num_channels = 3
+            gradient_filters = [[[1,-1],[0,0]],[[1,0],[-1,0]]]
+            self.filters = []
+            for filter in gradient_filters:
+                conv_layer = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
+                conv_layer.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+                conv_layer.filter_layer = True
+                self.filters.append(conv_layer)
         else:
             raise Exception('Unknown latent channel setting %s' % (opt['network_G']['latent_channels']))
         # self.dynamic_range = torch.ones([2,self.num_channels]).cuda()
@@ -50,10 +59,6 @@ class FilterLoss(nn.Module):
                     (cur_Z[:, ch_num]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
             normalized_Z = torch.stack(normalized_Z, 1)
         elif self.latent_channels == 'STD_directional':
-            # horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2]).mean(1,keepdim=True)[:,:,1:-1,:]
-            # vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :]).mean(1,keepdim=True)[:,:,:,1:-1]
-            # horizontal_derivative_HR = (data['HR'][:, :, :, 2:] - data['HR'][:, :, :, :-2]).mean(1,keepdim=True)[:,:,1:-1,:]
-            # vertical_derivative_HR = (data['HR'][:, :, 2:, :] - data['HR'][:, :, :-2, :]).mean(1,keepdim=True)[:,:,:,1:-1]
             horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2])[:,:,1:-1,:].unsqueeze(1)/2
             vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
             horizontal_derivative_HR = (data['HR'][:, :, :, 2:] - data['HR'][:, :, :, :-2])[:,:,1:-1,:].unsqueeze(1)/2
@@ -73,6 +78,8 @@ class FilterLoss(nn.Module):
             mag_normal = (cur_Z[:,1:3]**2).sum(1).sqrt()
             normalized_Z = torch.stack([cur_Z[:,0]*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
+        elif self.latent_channels == 'structure_tensor':
+            pass
         actual_ratios = torch.stack([STD_ratio,dir_magnitude_ratio],1)
 
         # self.dynamic_range[0,:] = torch.min(input=self.dynamic_range[0,:],other=torch.min(actual_ratios,dim=0)[0]).detach()

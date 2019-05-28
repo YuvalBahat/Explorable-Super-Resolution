@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_STD_directional_percentileRatio_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_percentileRatio_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -43,7 +43,7 @@
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
     , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": "STD_directional" //,"STD_1dir" //2,"STD_directional"
+    , "latent_channels": "structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
