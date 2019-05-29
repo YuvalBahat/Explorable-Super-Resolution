@@ -78,7 +78,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None):
         if path and key in opt['path']:
             opt['path'][key] = os.path.expanduser(path)
     if 'tiras' in os.getcwd():
-        opt['path']['root'] = opt['path']['root'].replace('/ybahat/PycharmProjects/', '/tiras/ybahat/')
+        opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
     opt['path']['models'] = os.path.join(experiments_root, 'models')
