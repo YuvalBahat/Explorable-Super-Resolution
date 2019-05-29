@@ -11,7 +11,7 @@ except:
 import time
 
 
-running_on_Technion = gethostname() in ['ybahat-System-Product-Name','tiras']
+running_on_Technion = gethostname() in ['Yuval-Technion','tiras']
 def Assign_GPU():
     excluded_IDs = [2]
     GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
@@ -46,9 +46,9 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None):
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
     scale = opt['scale']
-    dataset_root_path =  '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/Datasets' if running_on_Technion else '/home/ybahat/data/Databases'
+    dataset_root_path =  '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets' if running_on_Technion else '/home/ybahat/data/Databases'
     if 'root' not in opt['path']:
-        opt['path']['root'] = '/home/ybahat/PycharmProjects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
+        opt['path']['root'] = '/media/ybahat/data/projects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
     # if running_on_Technion:
     #     opt['datasets']['train']['n_workers'] = 0
     # datasets

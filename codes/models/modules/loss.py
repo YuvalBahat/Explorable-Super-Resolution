@@ -23,9 +23,11 @@ class FilterLoss(nn.Module):
             self.num_channels = 3
         elif self.latent_channels == 'structure_tensor':
             self.num_channels = 3
-            gradient_filters = [[[1,-1],[0,0]],[[1,0],[-1,0]]]
+            self.NOISE_STD = 1e-7
+            gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
             self.filters = []
             for filter in gradient_filters:
+                filter = np.array(filter)
                 conv_layer = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
                 conv_layer.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
                 conv_layer.filter_layer = True
@@ -58,6 +60,7 @@ class FilterLoss(nn.Module):
                 normalized_Z.append(
                     (cur_Z[:, ch_num]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
             normalized_Z = torch.stack(normalized_Z, 1)
+            actual_ratios = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
         elif self.latent_channels == 'STD_directional':
             horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2])[:,:,1:-1,:].unsqueeze(1)/2
             vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
@@ -78,9 +81,30 @@ class FilterLoss(nn.Module):
             mag_normal = (cur_Z[:,1:3]**2).sum(1).sqrt()
             normalized_Z = torch.stack([cur_Z[:,0]*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
+            actual_ratios = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
         elif self.latent_channels == 'structure_tensor':
-            pass
-        actual_ratios = torch.stack([STD_ratio,dir_magnitude_ratio],1)
+            derivatives_SR,derivatives_HR = [],[]
+            for filter in self.filters:
+                derivatives_SR.append(filter(data['SR']))
+                derivatives_HR.append(filter(data['HR']))
+            derivatives_SR = torch.stack(derivatives_SR,0)
+            derivatives_SR = torch.cat([derivatives_SR**2,torch.prod(derivatives_SR,dim=0,keepdim=True)],0)
+            # derivatives_SR[:2,...] = derivatives_SR[:2,...]**2
+            derivatives_SR = derivatives_SR.mean(dim=(2,3,4))
+            derivatives_HR = torch.stack(derivatives_HR, 0)
+            derivatives_HR = torch.cat([derivatives_HR**2,torch.prod(derivatives_HR,dim=0,keepdim=True)],0)
+            # derivatives_HR[:2,...] = derivatives_HR[:2,...]**2
+            derivatives_HR = derivatives_HR.mean(dim=(2,3,4))
+            actual_ratios = [derivatives_SR[i]/(derivatives_HR[i]+torch.sign(derivatives_SR[i])*self.NOISE_STD) for i in range(derivatives_SR.size(0))]
+            normalized_Z = []
+            for i in range(len(self.collected_ratios)):
+                self.collected_ratios[i] += [val.item() for val in actual_ratios[i]]
+                upper_bound = np.percentile(self.collected_ratios[i], HIGHER_PERCENTILE)
+                lower_bound = np.percentile(self.collected_ratios[i], LOWER_PERCENTILE)
+                normalized_Z.append((cur_Z[:, i]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
+            actual_ratios = torch.stack(actual_ratios,1)
+            normalized_Z = torch.stack(normalized_Z, 1)
+
 
         # self.dynamic_range[0,:] = torch.min(input=self.dynamic_range[0,:],other=torch.min(actual_ratios,dim=0)[0]).detach()
         # self.dynamic_range[1,:] = torch.max(input=self.dynamic_range[1,:],other=torch.max(actual_ratios,dim=0)[0]).detach()

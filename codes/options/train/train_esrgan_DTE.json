@@ -15,9 +15,9 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 6
-      , "batch_size_4_grads_G": 48
-      , "batch_size_4_grads_D": 48
+      , "batch_size": 3
+      , "batch_size_4_grads_G": 4
+      , "batch_size_4_grads_D": 4
       , "HR_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -31,7 +31,7 @@
   }
 
   , "path": {
-    "root": "/home/ybahat/PycharmProjects/SRGAN"
+    "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
     , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
