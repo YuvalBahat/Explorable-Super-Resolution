@@ -108,7 +108,7 @@ class FilterLoss(nn.Module):
             measured_values = torch.stack(measured_values,1)
             normalized_Z = torch.stack(normalized_Z, 1)
 
-        return torch.mean((measured_values-normalized_Z).abs())
+        return torch.mean((measured_values-normalized_Z).abs(),dim=0)
 
 
 # Define GAN loss: [vanilla | lsgan | wgan-gp]

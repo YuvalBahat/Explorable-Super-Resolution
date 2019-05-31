@@ -154,6 +154,13 @@ class Z_optimizer():
         elif 'VGG' in objective:
             self.GT_HR_VGG = model.netF(self.data['HR']).detach().to(self.device)
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
+        elif 'Hist' in objective:
+            def HistogramLoss(model_output,desired_Im):
+                num_pixels = model_output.numel()/model_output.size(1)
+                output_hist = torch.histc(model_output.mean(1),bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
+                desired_hist = torch.histc(desired_Im.mean(1), bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
+                return torch.nn.functional.kl_div(torch.log(output_hist+1e-9),desired_hist)
+            self.loss = HistogramLoss
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
         self.model = model
         self.logger = logger
@@ -164,7 +171,7 @@ class Z_optimizer():
             self.data['Z'] = self.Z_model()
             self.model.feed_data(self.data, need_HR=False)
             self.model.test(prevent_grads_calc=False)
-            if 'L1' in self.objective:
+            if self.objective in ['L1','Hist']:
                 Z_loss = self.loss(self.model.fake_H.to(self.device), self.data['HR'].to(self.device))
             elif 'STD' in self.objective:
                 Z_loss = self.model.fake_H.std().to(self.device)

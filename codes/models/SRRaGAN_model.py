@@ -56,7 +56,7 @@ class SRRaGANModel(BaseModel):
         self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
-                       'l_e','l_g_latent']
+                       'l_e']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.debug = 'debug' in opt['path']['log']
         if self.is_train:
@@ -395,10 +395,9 @@ class SRRaGANModel(BaseModel):
                 l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                 l_g_total += self.l_range_w * l_g_range
             if self.cri_latent:
-                # l_g_latent = self.cri_latent(self.netE(self.fake_H),self.cur_Z.to(self.fake_H.device))#Old code, using Encoder
                 l_g_latent = self.cri_latent({'SR':self.fake_H,'HR':self.var_H,'Z':self.cur_Z})
-                l_g_total += self.l_latent_w * l_g_latent
-                self.l_g_latent_grad_step.append(l_g_latent.item())
+                l_g_total += self.l_latent_w * l_g_latent.mean()
+                self.l_g_latent_grad_step.append([l.item() for l in l_g_latent])
             # G gan + cls loss
             # pred_g_fake = self.netD(torch.cat(self.fake_H,1) if self.decomposed_output else self.fake_H)
             # pred_d_real = self.netD(torch.cat([self.fake_H[0],self.var_ref-self.fake_H[0]],1) if self.decomposed_output else self.var_ref).detach()
@@ -433,7 +432,8 @@ class SRRaGANModel(BaseModel):
                 if self.cri_range:
                     self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
                 if self.cri_latent:
-                    self.log_dict['l_g_latent'].append((self.gradient_step_num, np.mean(self.l_g_latent_grad_step)))
+                    for channel_num in range(self.num_latent_channels):
+                        self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
                 self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
