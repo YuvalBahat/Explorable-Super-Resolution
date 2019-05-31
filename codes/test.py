@@ -20,7 +20,7 @@ import subprocess
 SAVE_IMAGE_COLLAGE = True
 TEST_LATENT_INPUT = 'GIF'#'GIF','video',None
 # Parameters for GIF:
-LATENT_DISTRIBUTION = 'UnDesired_Im'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle'
+LATENT_DISTRIBUTION = 'Uniform'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle'
 NUM_Z_ITERS = 250
 DETERMINISTIC_Z_INPUTS = ['Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG']
 LATENT_RANGE = 1
