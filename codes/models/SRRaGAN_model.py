@@ -14,6 +14,8 @@ from torch.nn import Upsample
 import DTE.DTEnet as DTEnet
 import numpy as np
 import h5py
+from collections import deque
+
 
 def Unit_Circle_rejection_Sampling(batch_size):
     cur_Z = torch.rand([batch_size,3,1,1])
@@ -520,6 +522,8 @@ class SRRaGANModel(BaseModel):
         return dict_2_return
     def save_log(self):
         np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
+        if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
+            np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
     def load_log(self,max_step=None):
         loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
@@ -532,9 +536,15 @@ class SRRaGANModel(BaseModel):
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
             if max_step is not None:
                 self.log_dict[key] = [pair for pair in self.log_dict[key] if pair[0]<=max_step]
+        if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
+            collected_stats = np.load(os.path.join(self.log_path,'collected_stats.npz'))
+            for i,file in enumerate(collected_stats.files):
+                self.cri_latent.collected_ratios[i] = deque(collected_stats[file],maxlen=self.cri_latent.collected_ratios[i].maxlen)
+
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
+                          'l_g_latent_0','l_g_latent_1','l_g_latent_2']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)

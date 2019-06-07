@@ -83,27 +83,31 @@ class FilterLoss(nn.Module):
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
             measured_values = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
         elif self.latent_channels == 'structure_tensor':
-            RATIO_LOSS = False
+            RATIO_LOSS = 'OnlyDiagonals' #'No','All','OnlyDiagonals'
+            ZERO_CENTERED_IxIy = True
+            assert not (RATIO_LOSS=='All' and ZERO_CENTERED_IxIy),'Do I want to combine these two flags?'
             derivatives_SR,derivatives_HR = [],[]
             for filter in self.filters:
                 derivatives_SR.append(filter(data['SR']))
-                if RATIO_LOSS:
+                if RATIO_LOSS!='No':
                     derivatives_HR.append(filter(data['HR']))
             derivatives_SR = torch.stack(derivatives_SR,0)
             derivatives_SR = torch.cat([derivatives_SR**2,torch.prod(derivatives_SR,dim=0,keepdim=True)],0)
             derivatives_SR = derivatives_SR.mean(dim=(2,3,4))
-            if RATIO_LOSS:
+            measured_values = [derivatives_SR[i] for i in range(derivatives_SR.size(0))]
+            if RATIO_LOSS!='No':
                 derivatives_HR = torch.stack(derivatives_HR, 0)
                 derivatives_HR = torch.cat([derivatives_HR**2,torch.prod(derivatives_HR,dim=0,keepdim=True)],0)
                 derivatives_HR = derivatives_HR.mean(dim=(2,3,4))
-                measured_values = [derivatives_SR[i]/(derivatives_HR[i]+torch.sign(derivatives_SR[i])*self.NOISE_STD) for i in range(derivatives_SR.size(0))]
-            else:
-                measured_values = [derivatives_SR[i] for i in range(derivatives_SR.size(0))]
+                measured_values = [measured_values[i]/((derivatives_HR[i]+torch.sign(measured_values[i])*self.NOISE_STD) if (i<2 or RATIO_LOSS=='All') else 1) for i in range(derivatives_SR.size(0))]
             normalized_Z = []
             for i in range(len(self.collected_ratios)):
                 self.collected_ratios[i] += [val.item() for val in measured_values[i]]
                 upper_bound = np.percentile(self.collected_ratios[i], HIGHER_PERCENTILE)
                 lower_bound = np.percentile(self.collected_ratios[i], LOWER_PERCENTILE)
+                if i==2 and ZERO_CENTERED_IxIy:
+                    upper_bound = np.max(np.abs([upper_bound,lower_bound]))
+                    lower_bound = -1*upper_bound
                 normalized_Z.append((cur_Z[:, i]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
             measured_values = torch.stack(measured_values,1)
             normalized_Z = torch.stack(normalized_Z, 1)
