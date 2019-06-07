@@ -140,11 +140,11 @@ for test_loader in test_loaders:
             elif 'Desired_Im' in LATENT_DISTRIBUTION:
                 LR_Z = 1e-1
                 objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('Hist' if 'Hist' in LATENT_DISTRIBUTION else 'L1'))
-                Z_optimizer = util.Z_optimizer(objective=objective,image_shape=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
+                Z_optimizer = util.Z_optimizer(objective=objective,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
                 cur_Z = Z_optimizer.optimize()
             elif 'STD' in LATENT_DISTRIBUTION:
                 LR_Z = 1e-1
-                Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,image_shape=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
+                Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
                 cur_Z = Z_optimizer.optimize()
             data['Z'] = cur_Z
             model.feed_data(data, need_HR=need_HR)

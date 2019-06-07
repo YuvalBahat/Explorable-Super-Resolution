@@ -12,14 +12,20 @@ import types
 from models import create_model
 import options.options as option
 import utils.util as util
+from utils.logger import Logger
 import data.util as data_util
 import numpy as np
 import torch
 import qimage2ndarray
+import cv2
+import imageio
 
 BRUSH_MULT = 3
 SPRAY_PAINT_MULT = 5
 SPRAY_PAINT_N = 100
+USE_SVD = True
+VERBOSITY = False
+MAX_SVD_LAMBDA = 1.5
 
 COLORS = [
     '#000000', '#82817f', '#820300', '#868417', '#007e03', '#037e7b', '#040079',
@@ -33,14 +39,14 @@ FONT_SIZES = [7, 8, 9, 10, 11, 12, 13, 14, 18, 24, 36, 48, 64, 72, 96, 144, 288]
 
 MODES = [
     'selectpoly', 'selectrect',
-    'eraser', 'fill',
-    'dropper', 'stamp',
-    'pen', 'brush',
-    'spray', 'text',
-    'line', #'rand_Z',#'polyline',
+    #'eraser', 'fill',
+    #'dropper', 'stamp',
+    'pen',
+    #'spray', 'text',
+    #'line', #'rand_Z',#'polyline',
     #'rect',
-    'polygon',
-    'ellipse', 'roundrect'
+    #'polygon',
+    #'ellipse', 'roundrect'
 ]
 
 CANVAS_DIMENSIONS = 600, 400
@@ -103,9 +109,9 @@ class Canvas(QLabel):
         self.eraser_color.setAlpha(100)
         self.reset()
 
-    def reset(self):
+    def reset(self,canvas_dimensions=CANVAS_DIMENSIONS):
         # Create the pixmap for display.
-        self.setPixmap(QPixmap(*CANVAS_DIMENSIONS))
+        self.setPixmap(QPixmap(*canvas_dimensions))
 
         # Clear the canvas.
         self.pixmap().fill(self.background_color)
@@ -213,6 +219,16 @@ class Canvas(QLabel):
     def selectpoly_mouseDoubleClickEvent(self, e):
         self.current_pos = e.pos()
         self.locked = True
+        self.HR_selected_mask = np.zeros(self.HR_size)
+        self.LR_mask_vertices = [(p.x(),p.y()) for p in (self.history_pos + [self.current_pos])]
+        self.HR_selected_mask = cv2.fillPoly(self.HR_selected_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
+        self.Z_mask = np.zeros(self.LR_size)
+        self.LR_mask_vertices = [(int(p[0]/self.DTE_opt['scale']),int(p[1]/self.DTE_opt['scale'])) for p in self.LR_mask_vertices]
+        self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
+        # self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array([(int(p.x()/self.DTE_opt['scale']),int(p.y()/self.DTE_opt['scale'])) for p in (self.history_pos + [self.current_pos])])],(1,1,1))
+        self.Update_Z_Sliders()
+        self.Z_optimizer = None
+        # self.selectpoly_copy()#I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
 
     def selectpoly_copy(self):
         """
@@ -261,6 +277,20 @@ class Canvas(QLabel):
     def selectrect_mouseReleaseEvent(self, e):
         self.current_pos = e.pos()
         self.locked = True
+        self.HR_selected_mask = np.zeros(self.HR_size)
+        self.LR_mask_vertices = [(p.x(),p.y()) for p in [self.origin_pos, self.current_pos]]
+        self.HR_selected_mask = cv2.rectangle(self.HR_selected_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
+        self.Z_mask = np.zeros(self.LR_size)
+        self.LR_mask_vertices = [(int(p[0]/self.DTE_opt['scale']),int(p[1]/self.DTE_opt['scale'])) for p in self.LR_mask_vertices]
+        self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
+        self.Update_Z_Sliders()
+        self.Z_optimizer = None
+        # self.selectrect_copy()  # I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
+
+    def Update_Z_Sliders(self):
+        self.sliderZ0.setSliderPosition(100*np.sum(self.lambda0.data.cpu().numpy()*self.Z_mask)/np.sum(self.Z_mask))
+        self.sliderZ1.setSliderPosition(100*np.sum(self.lambda1.data.cpu().numpy()*self.Z_mask)/np.sum(self.Z_mask))
+        self.third_latent_channel.setSliderPosition(100*np.sum(self.theta.data.cpu().numpy()*self.Z_mask)/np.sum(self.Z_mask))
 
     def selectrect_copy(self):
         """
@@ -482,6 +512,10 @@ class Canvas(QLabel):
             pen.setDashOffset(self.dash_offset)
             p.setPen(pen)
             getattr(p, self.active_shape_fn)(QRect(self.origin_pos, self.current_pos), *self.active_shape_args)
+        # else:
+        #     print('Now its final')
+            # print(self.current_pos)
+        # self.dash_offset = 0
 
         self.update()
         self.last_pos = self.current_pos
@@ -685,11 +719,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Editable SR:
         opt = option.parse('./options/test/GUI_esrgan.json', is_train=False)
         opt = option.dict_to_nonedict(opt)
-        self.SR_model = create_model(opt)
+        self.SR_model = create_model(opt,init_Dnet=True)
+        self.saved_outputs_counter = 0
+        self.canvas.Z_optimizer = None
+        self.desired_hist_image = None
 
         # Replace canvas placeholder from QtDesigner.
         self.horizontalLayout.removeWidget(self.canvas)
         self.canvas = Canvas()
+        self.canvas.DTE_opt = opt
         self.canvas.initialize()
         # We need to enable mouse tracking to follow the mouse without the button pressed.
         self.canvas.setMouseTracking(True)
@@ -707,23 +745,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             mode_group.addButton(btn)
 
         # Setup the color selection buttons.
-        self.primaryButton.pressed.connect(lambda: self.choose_color(self.set_primary_color))
-        self.secondaryButton.pressed.connect(lambda: self.choose_color(self.set_secondary_color))
+        # self.primaryButton.pressed.connect(lambda: self.choose_color(self.set_primary_color))
+        # self.secondaryButton.pressed.connect(lambda: self.choose_color(self.set_secondary_color))
 
         # Initialize button colours.
-        for n, hex in enumerate(COLORS, 1):
-            btn = getattr(self, 'colorButton_%d' % n)
-            btn.setStyleSheet('QPushButton { background-color: %s; }' % hex)
-            btn.hex = hex  # For use in the event below
-
-            def patch_mousePressEvent(self_, e):
-                if e.button() == Qt.LeftButton:
-                    self.set_primary_color(self_.hex)
-
-                elif e.button() == Qt.RightButton:
-                    self.set_secondary_color(self_.hex)
-
-            btn.mousePressEvent = types.MethodType(patch_mousePressEvent, btn)
+        # for n, hex in enumerate(COLORS, 1):
+        #     btn = getattr(self, 'colorButton_%d' % n)
+        #     btn.setStyleSheet('QPushButton { background-color: %s; }' % hex)
+        #     btn.hex = hex  # For use in the event below
+        #
+        #     def patch_mousePressEvent(self_, e):
+        #         if e.button() == Qt.LeftButton:
+        #             self.set_primary_color(self_.hex)
+        #
+        #         elif e.button() == Qt.RightButton:
+        #             self.set_secondary_color(self_.hex)
+        #
+        #     btn.mousePressEvent = types.MethodType(patch_mousePressEvent, btn)
 
         # Setup up action signals
         self.actionCopy.triggered.connect(self.copy_to_clipboard)
@@ -735,12 +773,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.timer.start()
 
         # Setup to agree with Canvas.
-        self.set_primary_color('#000000')
-        self.set_secondary_color('#ffffff')
+        # self.set_primary_color('#000000')
+        # self.set_secondary_color('#ffffff')
 
-        # Signals for canvas-initiated color changes (dropper).
-        self.canvas.primary_color_updated.connect(self.set_primary_color)
-        self.canvas.secondary_color_updated.connect(self.set_secondary_color)
+        # # Signals for canvas-initiated color changes (dropper).
+        # self.canvas.primary_color_updated.connect(self.set_primary_color)
+        # self.canvas.secondary_color_updated.connect(self.set_secondary_color)
 
         # Setup the stamp state.
         self.current_stamp_n = -1
@@ -752,9 +790,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionOpenImage.triggered.connect(self.open_file)
 
         self.actionProcessRandZ.triggered.connect(self.Process_Random_Z)
+        self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('max_STD'))
+        self.actionIDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('min_STD'))
+        self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('Hist'))
+        self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
+
+        self.UnselectButton.pressed.connect(self.Clear_Z_Mask)
+        self.invertSelectionButton.pressed.connect(self.Invert_Z_Mask)
+        self.desiredHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=False))
+        self.desiredImageHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=True))
+
         # self.actionReProcess.triggered.connect(self.ReProcess)
 
         self.actionSaveImage.triggered.connect(self.save_file)
+        self.actionAutoSaveImage.triggered.connect(self.save_file_and_Z_map)
         self.actionClearImage.triggered.connect(self.canvas.reset)
         self.actionInvertColors.triggered.connect(self.invert)
         self.actionFlipHorizontal.triggered.connect(self.flip_horizontal)
@@ -783,53 +832,85 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         sizeicon = QLabel()
         sizeicon.setPixmap(QPixmap(os.path.join('images', 'border-weight.png')))
-        self.drawingToolbar.addWidget(sizeicon)
+        # self.drawingToolbar.addWidget(sizeicon)
         self.sizeselect = QSlider()
         self.sizeselect.setRange(1,20)
         self.sizeselect.setOrientation(Qt.Horizontal)
         self.sizeselect.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
-        self.drawingToolbar.addWidget(self.sizeselect)
-
+        # self.drawingToolbar.addWidget(self.sizeselect)
+        if USE_SVD:
+            self.canvas.lambda0 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+            self.canvas.lambda1 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+            self.canvas.theta = torch.tensor(0)#*np.ones(self.canvas.LR_size)
+            if VERBOSITY:
+                self.latent_mins = 100*torch.ones([1,3,1,1])
+                self.latent_maxs = -100*torch.ones([1,3,1,1])
         self.sliderZ0 = QSlider()
         self.sliderZ0.setObjectName('sliderZ0')
-        self.sliderZ0.setRange(-100,100)
+        if USE_SVD:
+            self.sliderZ0.setRange(0, 100*MAX_SVD_LAMBDA)
+            self.sliderZ0.setSliderPosition(100*MAX_SVD_LAMBDA/2)
+        else:
+            self.sliderZ0.setRange(-100,100)
         self.sliderZ0.setSingleStep(1)
         self.sliderZ0.setOrientation(Qt.Vertical)
         self.sliderZ0.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=0))
         self.ZToolbar.addWidget(self.sliderZ0)
         self.sliderZ1 = QSlider()
         self.sliderZ1.setObjectName('sliderZ1')
-        self.sliderZ1.setRange(-100,100)
+        if USE_SVD:
+            self.sliderZ1.setRange(0, 100*MAX_SVD_LAMBDA)
+            self.sliderZ1.setSliderPosition(100*MAX_SVD_LAMBDA/2)
+        else:
+            self.sliderZ1.setRange(-100,100)
         self.sliderZ1.setSingleStep(1)
         self.sliderZ1.setOrientation(Qt.Vertical)
         self.sliderZ1.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=1))
         self.ZToolbar.addWidget(self.sliderZ1)
-        self.sliderZ2 = QSlider()
-        self.sliderZ2.setObjectName('sliderZ2')
-        self.sliderZ2.setRange(-100,100)
-        self.sliderZ2.setSingleStep(1)
-        self.sliderZ2.setOrientation(Qt.Vertical)
-        self.sliderZ2.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=2))
-        self.ZToolbar.addWidget(self.sliderZ2)
+        if USE_SVD:
+            self.third_latent_channel = QDial()
+            self.third_latent_channel.setWrapping(True)
+            self.third_latent_channel.setNotchesVisible(True)
+        else:
+            self.third_latent_channel = QSlider()
+        self.third_latent_channel.setObjectName('third_latent_channel')
+        if USE_SVD:
+            self.third_latent_channel.setRange(-100*np.pi, 100*np.pi)
+        else:
+            self.third_latent_channel.setRange(-100,100)
+        self.third_latent_channel.setSingleStep(1)
+        self.third_latent_channel.setOrientation(Qt.Vertical)
+        self.third_latent_channel.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=2))
+        self.ZToolbar.addWidget(self.third_latent_channel)
+        self.ZToolbar.addAction(self.actionProcessRandZ)
+        self.ZToolbar.insertSeparator(self.actionProcessRandZ)
+        self.ZToolbar.addAction(self.actionIncreaseSTD)
+        self.ZToolbar.addAction(self.actionIDecreaseSTD)
+        self.ZToolbar.addAction(self.actionImitateHist)
+        self.ZToolbar.addAction(self.actionFoolAdversary)
+
+        self.canvas.sliderZ0 = self.sliderZ0
+        self.canvas.sliderZ1 = self.sliderZ1
+        self.canvas.third_latent_channel = self.third_latent_channel
 
         self.actionFillShapes.triggered.connect(lambda s: self.canvas.set_config('fill', s))
-        self.drawingToolbar.addAction(self.actionFillShapes)
+        # self.drawingToolbar.addAction(self.actionFillShapes)
         self.actionFillShapes.setChecked(True)
         self.open_file()
         self.show()
 
-    def choose_color(self, callback):
-        dlg = QColorDialog()
-        if dlg.exec():
-            callback( dlg.selectedColor().name() )
-
-    def set_primary_color(self, hex):
-        self.canvas.set_primary_color(hex)
-        self.primaryButton.setStyleSheet('QPushButton { background-color: %s; }' % hex)
-
-    def set_secondary_color(self, hex):
-        self.canvas.set_secondary_color(hex)
-        self.secondaryButton.setStyleSheet('QPushButton { background-color: %s; }' % hex)
+    # def choose_color(self, callback):
+    #     dlg = QColorDialog()
+    #     if dlg.exec():
+    #         callback( dlg.selectedColor().name() )
+    #
+    # def set_primary_color(self, hex):
+    #     self.canvas.set_primary_color(hex)
+    #     self.primaryButton.setStyleSheet('QPushButton { background-color: %s; }' % hex)
+    #
+    # def set_secondary_color(self, hex):
+    #     self.canvas.set_secondary_color(hex)
+    #     self.secondaryButton.setStyleSheet('QPushButton { background-color: %s; }' % hex)
 
     # def next_stamp(self):
     #     self.current_stamp_n += 1
@@ -840,6 +921,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     #     self.stampnextButton.setIcon(QIcon(pixmap))
     #
     #     self.canvas.current_stamp = pixmap
+    def DesiredHistMode(self,checked,another_image):
+        if checked:
+            self.MasksStorage(True)
+            # self.stored_Z_mask = 1*self.canvas.Z_mask
+            # self.stored_HR_selected_mask = 1*self.canvas.HR_selected_mask
+            # self.stored_mask_vertices = 1*self.canvas.LR_mask_vertices
+            self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
+            if another_image:
+                path, _ = QFileDialog.getOpenFileName(self, "Desired image for histogram imitation", "",
+                                                      "PNG image files (*.png); JPEG image files (*jpg); All files (*.*)")
+                if path:
+                    self.desired_hist_image = data_util.read_img(None, path)
+                    if self.desired_hist_image.shape[2] == 3:
+                        self.desired_hist_image = self.desired_hist_image[:, :, [2, 1, 0]]
+                    pixmap = QPixmap()
+                    pixmap.convertFromImage(qimage2ndarray.array2qimage(255*self.desired_hist_image))
+                    self.canvas.setPixmap(pixmap)
+                    self.canvas.setGeometry(QRect(0,0,self.desired_hist_image.shape[0],self.desired_hist_image.shape[1]))
+            else:
+                self.desired_hist_image = self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0)
+
+        else:
+            self.desired_hist_image_HR_mask = 1*self.canvas.HR_selected_mask
+            self.MasksStorage(False)
+            # self.canvas.Z_mask = 1*self.stored_Z_mask
+            # self.canvas.HR_selected_mask = 1*self.stored_HR_selected_mask
+            # self.canvas.LR_mask_vertices = 1*self.stored_mask_vertices
+            self.Update_HR_Display()
+        # print(checked)
+        # print('Enterring desired hist mode')
 
     def copy_to_clipboard(self):
         clipboard = QApplication.clipboard()
@@ -852,30 +963,150 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         else:
             clipboard.setPixmap(self.canvas.pixmap())
-    def Compute_SR_QImage(self):
+    def Compute_SR_Image(self):
         if self.cur_Z.size(2)==1:
-            self.SR_model.cur_Z = ((self.cur_Z * torch.ones([1, 1] + list(self.var_L.size())[2:]) - 0.5) * 2).type(self.var_L.type())
+            self.SR_model.cur_Z = ((self.cur_Z * torch.ones([1, 1] + self.canvas.LR_size) - 0.5) * 2).type(self.var_L.type())
         else:
-            self.SR_model.cur_Z = self.cur_Z.type(self.SR_model.var_L.type())
+            self.SR_model.cur_Z = self.cur_Z.type(self.var_L.type())
         self.SR_model.var_L = torch.cat([self.SR_model.cur_Z, self.var_L], dim=1)
         self.SR_model.netG.eval()
         with torch.no_grad():
             self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
-        HR_image = 255 * self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1, 2, 0).copy()
-        return qimage2ndarray.array2qimage(HR_image)
+
+    def DrawRandChannel(self,min_val,max_val,uniform=False):
+        return (max_val-min_val)*torch.rand([1,1]+([1,1] if uniform else self.canvas.LR_size))+min_val
 
     def Process_Random_Z(self):
-        self.cur_Z = torch.rand([1,self.SR_model.num_latent_channels,1,1])
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
+        if USE_SVD:
+            self.canvas.lambda0 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True)+(1-Z_mask)*self.canvas.lambda0
+            self.canvas.lambda1 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True)+(1-Z_mask)*self.canvas.lambda1
+            self.canvas.theta = Z_mask*self.DrawRandChannel(0,np.pi,True)+(1-Z_mask)*self.canvas.theta
+            self.Recompose_cur_Z()
+            self.canvas.Update_Z_Sliders()
+        else:
+            random_Z = (torch.rand([1,self.SR_model.num_latent_channels]+self.canvas.LR_size)-0.5)*2
+            self.cur_Z = Z_mask*random_Z+(1-Z_mask)*self.cur_Z
         self.ReProcess()
+    def Validate_Z_optimizer(self,objective):
+        if self.canvas.Z_optimizer is not None:
+            if self.canvas.Z_optimizer.objective!=objective:
+                self.canvas.Z_optimizer = None
+
+    def MasksStorage(self,store):
+        if store:
+            self.stored_Z_mask = 1*self.canvas.Z_mask
+            self.stored_HR_selected_mask = 1*self.canvas.HR_selected_mask
+            self.stored_mask_vertices = 1*self.canvas.LR_mask_vertices
+        else:
+            self.canvas.Z_mask = 1*self.stored_Z_mask
+            self.canvas.HR_selected_mask = 1*self.stored_HR_selected_mask
+            self.canvas.LR_mask_vertices = 1*self.stored_mask_vertices
+
+    def Crop2BoundingRect(self,array,bounding_rect,HR=False):
+        bounding_rect = 1 * bounding_rect
+        if HR:
+            bounding_rect = self.canvas.DTE_opt['scale']*bounding_rect
+        if isinstance(array,np.ndarray):
+            return array[bounding_rect[1]:bounding_rect[1]+bounding_rect[3],bounding_rect[0]:bounding_rect[0]+bounding_rect[2]]
+        elif torch.is_tensor(array):
+            return array[:,:,bounding_rect[1]:bounding_rect[1] + bounding_rect[3],bounding_rect[0]:bounding_rect[0] + bounding_rect[2]]
+
+    def Optimize_Z(self,objective):
+        ITERS_PER_ROUND = 5
+        D_EXPECTED_LR_SIZE = 64
+        MARGINS_AROUND_REGION_OF_INTEREST = 5
+        self.Validate_Z_optimizer(objective)
+        data = {'LR':self.var_L}
+        if self.canvas.Z_optimizer is None:
+            if not np.all(self.canvas.HR_selected_mask):#Cropping an image region to be optimized, to save on computations and allow adversarial loss
+                self.optimizing_region = True
+                self.bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.canvas.LR_mask_vertices],1).transpose()))
+                if np.all(self.bounding_rect[2:]<=D_EXPECTED_LR_SIZE-2*MARGINS_AROUND_REGION_OF_INTEREST) or objective=='Adversarial':
+                    #Use this D_EXPECTED_LR_SIZE LR_image cropped size when the region of interest is smaller, or when using D that can only work with this size (non mapGAN)
+                    gaps = D_EXPECTED_LR_SIZE-self.bounding_rect[2:]
+                    self.bounding_rect = np.concatenate([np.maximum(self.bounding_rect[:2]-gaps//2,0),np.array(2*[D_EXPECTED_LR_SIZE])])
+                else:
+                    self.bounding_rect = np.concatenate([np.maximum(self.bounding_rect[:2]-MARGINS_AROUND_REGION_OF_INTEREST//2,0),
+                                                         self.bounding_rect[2:]+MARGINS_AROUND_REGION_OF_INTEREST])
+                self.bounding_rect[:2] = np.minimum(self.bounding_rect[:2]+self.bounding_rect[2:],self.canvas.LR_size)-self.bounding_rect[2:]
+                self.MasksStorage(True)
+                self.canvas.HR_selected_mask = self.Crop2BoundingRect(self.canvas.HR_selected_mask,self.bounding_rect,HR=True)
+                self.canvas.Z_mask = self.Crop2BoundingRect(self.canvas.Z_mask,self.bounding_rect)
+                data['LR'] = self.Crop2BoundingRect(self.var_L, self.bounding_rect)
+                self.SR_model.cur_Z = self.Crop2BoundingRect(self.SR_model.cur_Z,self.bounding_rect)#Because I'm saving initial Z when initializing optimizer
+            else:
+                self.optimizing_region = False
+                self.bounding_rect = np.array([0,0]+self.canvas.LR_size)
+
+            if objective == 'Hist':
+                if self.desired_hist_image is None:
+                    return
+                data['HR'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.desired_hist_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
+                data['Desired_Im_Mask'] = torch.from_numpy(self.desired_hist_image_HR_mask).type(torch.ByteTensor).to(self.SR_model.device)
+
+            self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,LR_size=list(data['LR'].size()[2:]),model=self.SR_model,Z_range=MAX_SVD_LAMBDA,data=data,
+                initial_LR=1e-1,logger=Logger(self.canvas.DTE_opt),max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask)
+            if self.optimizing_region:
+                self.MasksStorage(False)
+        if self.optimizing_region:
+            self.stored_Z = 1 * self.cur_Z
+        self.cur_Z = self.canvas.Z_optimizer.optimize()
+        if self.optimizing_region:
+            temp_Z = 1*self.cur_Z
+            self.cur_Z = 1*self.stored_Z
+            self.cur_Z[:,:,self.bounding_rect[1]:self.bounding_rect[1]+self.bounding_rect[3],self.bounding_rect[0]:self.bounding_rect[0]+self.bounding_rect[2]] = temp_Z
+            self.Compute_SR_Image()
+        self.Update_HR_Display()
+
+    def Clear_Z_Mask(self):
+        self.canvas.Z_mask = np.ones(self.canvas.LR_size)
+        self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
+        self.canvas.LR_mask_vertices = []
+        self.canvas.Update_Z_Sliders()
+        self.canvas.Z_optimizer = None
+
+    def Invert_Z_Mask(self):
+        self.canvas.Z_mask = 1-self.canvas.Z_mask
+        self.canvas.HR_selected_mask = 1-self.canvas.HR_selected_mask
+
+    def Recompose_cur_Z(self):
+        self.cur_Z[0, 0, ...] = (self.canvas.lambda0 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda1 * np.cos(
+            self.canvas.theta) ** 2 - 0.5) * 2  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
+        self.cur_Z[0, 1, ...] = (self.canvas.lambda1 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda0 * np.cos(
+            self.canvas.theta) ** 2 - 0.5) * 2  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
+        self.cur_Z[0, 2, ...] = 2 * (self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
+            self.canvas.theta)  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
 
     def SetZ(self,value,index):
-        self.cur_Z[0,index] = value
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
+        if USE_SVD:
+            if index==0:
+                self.canvas.lambda0 = Z_mask*value+(1-Z_mask)*self.canvas.lambda0
+            elif index == 1:
+                self.canvas.lambda1 = Z_mask*value+(1-Z_mask)*self.canvas.lambda1
+            elif index == 2:
+                self.canvas.theta = Z_mask*value+(1-Z_mask)*self.canvas.theta
+            self.Recompose_cur_Z()
+            if VERBOSITY:
+                self.latent_mins = torch.min(torch.cat([self.cur_Z,self.latent_mins],0),dim=0,keepdim=True)[0]
+                self.latent_maxs = torch.max(torch.cat([self.cur_Z,self.latent_maxs],0),dim=0,keepdim=True)[0]
+                print(self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta)
+                print('mins:',[z.item() for z in self.latent_mins.view([-1])])
+                print('maxs:', [z.item() for z in self.latent_maxs.view([-1])])
+        else:
+            raise Exception('Should recode to support Z-mask')
+            self.cur_Z[0,index] = value
         self.ReProcess()
+    def Update_HR_Display(self):
+        pixmap = QPixmap()
+        HR_image = 255 * self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1, 2, 0).copy()
+        pixmap.convertFromImage(qimage2ndarray.array2qimage(HR_image))
+        self.canvas.setPixmap(pixmap)
 
     def ReProcess(self):
-        pixmap = QPixmap()
-        pixmap.convertFromImage(self.Compute_SR_QImage())
-        self.canvas.setPixmap(pixmap)
+        self.Compute_SR_Image()
+        self.Update_HR_Display()
 
     def open_file(self):
         """
@@ -889,45 +1120,57 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if LR_image.shape[2] == 3:
                 LR_image = LR_image[:, :, [2, 1, 0]]
             self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(LR_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
-            LR_size = list(self.var_L.size()[2:])
-            self.cur_Z = torch.zeros(size=[1,self.SR_model.num_latent_channels,1,1])
+            self.canvas.LR_size = list(self.var_L.size()[2:])
+            self.canvas.Z_mask = np.ones(self.canvas.LR_size)
+            # self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
+            self.cur_Z = torch.zeros(size=[1,self.SR_model.num_latent_channels]+self.canvas.LR_size)
+            self.image_name = path.split('/')[-1].split('.')[0]
+            if USE_SVD:
+                self.canvas.lambda0 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
+                self.canvas.lambda1 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
+                self.canvas.theta = torch.tensor(0)  # *np.ones(self.canvas.LR_size)
 
             # self.SR_model.var_L = torch.cat([self.SR_model.cur_Z, self.SR_model.var_L], dim=1)
             # self.SR_model.netG.eval()
             # self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
-
-            pixmap = QPixmap()
+            self.ReProcess()
+            # pixmap = QPixmap()
             # HR_image = 255*self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1,2,0).copy()
             # HR_image = QImage(HR_image,HR_image.shape[1],HR_image.shape[0],QImage.Format_RGB32)
             # HR_image = qimage2ndarray.array2qimage(HR_image)
-            pixmap.convertFromImage(self.Compute_SR_QImage())
+            # pixmap.convertFromImage(self.Compute_SR_Image())
+            self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
+            self.canvas.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
+            self.Clear_Z_Mask()
+
+            # self.horizontalLayout.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
             # self.canvas.adjustSize(pixmap.size())
             # self.setPixmap(QPixmap(*CANVAS_DIMENSIONS))
 
             # pixmap.load(path)
 
             # We need to crop down to the size of our canvas. Get the size of the loaded image.
-            iw = pixmap.width()
-            ih = pixmap.height()
+            # iw = pixmap.width()
+            # ih = pixmap.height()
 
             # Get the size of the space we're filling.
-            cw, ch = CANVAS_DIMENSIONS
-            if False:
-                if iw/cw < ih/ch:  # The height is relatively bigger than the width.
-                    pixmap = pixmap.scaledToWidth(cw)
-                    hoff = (pixmap.height() - ch) // 2
-                    pixmap = pixmap.copy(
-                        QRect(QPoint(0, hoff), QPoint(cw, pixmap.height()-hoff-1))
-                    )
+            # cw, ch = CANVAS_DIMENSIONS
+            # if False:
+            #     if iw/cw < ih/ch:  # The height is relatively bigger than the width.
+            #         pixmap = pixmap.scaledToWidth(cw)
+            #         hoff = (pixmap.height() - ch) // 2
+            #         pixmap = pixmap.copy(
+            #             QRect(QPoint(0, hoff), QPoint(cw, pixmap.height()-hoff-1))
+            #         )
+            #
+            #     elif iw/cw > ih/ch:  # The height is relatively bigger than the width.
+            #         pixmap = pixmap.scaledToHeight(ch)
+            #         woff = (pixmap.width() - cw) // 2
+            #         pixmap = pixmap.copy(
+            #             QRect(QPoint(woff, 0), QPoint(pixmap.width()-woff, ch))
+            #         )
 
-                elif iw/cw > ih/ch:  # The height is relatively bigger than the width.
-                    pixmap = pixmap.scaledToHeight(ch)
-                    woff = (pixmap.width() - cw) // 2
-                    pixmap = pixmap.copy(
-                        QRect(QPoint(woff, 0), QPoint(pixmap.width()-woff, ch))
-                    )
-
-            self.canvas.setPixmap(pixmap)
+            # self.canvas.setPixmap(pixmap)
 
 
     def save_file(self):
@@ -938,8 +1181,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save file", "", "PNG Image file (*.png)")
 
         if path:
-            pixmap = self.canvas.pixmap()
-            pixmap.save(path, "PNG" )
+            imageio.imsave(path,np.clip(255*self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0),0,255).astype(np.uint8))
+            # pixmap = self.canvas.pixmap()
+            # pixmap.save(path, "PNG" )
+
+    def save_file_and_Z_map(self):
+        """
+        Save active canvas and cur_Z map to image file.
+        :return:
+        """
+        path = os.path.join('/media/ybahat/data/projects/SRGAN/GUI_outputs','%s_%d%s.png'%(self.image_name,self.saved_outputs_counter,'%s'))
+
+        if path:
+            imageio.imsave(path%(''),np.clip(255*self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0),0,255).astype(np.uint8))
+            imageio.imsave(path%('_Z'),np.clip(255/2*(1+self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)),0,255).astype(np.uint8))
+            # pixmap = self.canvas.pixmap()
+            # pixmap.save(path%(''), "PNG" )
+            # Z_pixmap = QPixmap()
+            # Z_pixmap.convertFromImage(qimage2ndarray.array2qimage((self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)+1)/2*255))
+            # Z_pixmap.save(path%('_Z'),'PNG')
+            self.saved_outputs_counter += 1
 
     def invert(self):
         img = QImage(self.canvas.pixmap())

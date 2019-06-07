@@ -23,6 +23,8 @@ class Logger(object):
         self.use_tb_logger = opt['use_tb_logger']
         self.opt = opt['logger']
         self.log_dir = opt['path']['log']
+        if not os.path.isdir(self.log_dir):
+            os.mkdir(self.log_dir)
         # loss log file
         self.loss_log_path = os.path.join(self.log_dir, 'loss_log.txt')
         with open(self.loss_log_path, 'a') as log_file:
@@ -35,7 +37,14 @@ class Logger(object):
             log_file.write('================ Validation Results ================\n')
         if self.use_tb_logger:# and 'debug' not in self.exp_name:
             from tensorboard_logger import Logger as TensorboardLogger
-            self.tb_logger = TensorboardLogger('../tb_logger/' + self.exp_name)
+            logger_dir_num = 0
+            tb_logger_dir = self.log_dir.replace('results', 'logs')
+            if not os.path.isdir(tb_logger_dir):
+                os.mkdir(tb_logger_dir)
+            existing_dirs = sorted([dir for dir in os.listdir(tb_logger_dir) if os.path.isdir(os.path.join(tb_logger_dir,dir))],key=lambda x:int(x))
+            if len(existing_dirs)>0:
+                logger_dir_num = int(existing_dirs[-1])+1
+            self.tb_logger = TensorboardLogger(os.path.join(tb_logger_dir,str(logger_dir_num)))
 
     def print_format_results(self, mode, rlt,dont_print=False):
         epoch = rlt.pop('epoch')

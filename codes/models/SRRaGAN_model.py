@@ -23,7 +23,7 @@ def Unit_Circle_rejection_Sampling(batch_size):
     return cur_Z
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None):
+    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
@@ -185,8 +185,12 @@ class SRRaGANModel(BaseModel):
                 raise NotImplementedError('MultiStepLR learning rate scheme is enough.')
             self.generator_step = False
             self.generator_changed = True#Initializing to true,to save the initial state```````
-        elif init_Fnet:
-            self.netF = networks.define_F(opt, use_bn=False).to(self.device)
+        elif init_Fnet or init_Dnet:
+            if init_Fnet:
+                self.netF = networks.define_F(opt, use_bn=False).to(self.device)
+            if init_Dnet:
+                self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)
+                self.netD.eval()
         self.load()
 
         print('---------- Model initialized ------------------')
@@ -669,6 +673,10 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
+                if 'netD' in self.__dict__.keys(): #When running from GUI
+                    model_name = model_name.replace('_G','_D')
+                    print('Loading also model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'], model_name)))
+                    self.load_network(os.path.join(self.opt['path']['models'], model_name), self.netD)
                 self.gradient_step_num = loaded_model_step
 
         else:

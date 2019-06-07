@@ -9,6 +9,8 @@ import time
 from skimage.transform import resize
 from scipy.signal import convolve2d
 import torch
+from models.modules.loss import GANLoss
+
 ####################
 # miscellaneous
 ####################
@@ -118,11 +120,53 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+class SoftHistogramLoss(torch.nn.Module):
+    def __init__(self,bins,min,max,desired_hist_image,desired_hist_image_mask,gray_scale=True,input_im_HR_mask=None):
+        super(SoftHistogramLoss,self).__init__()
+        assert gray_scale,'Multi-dimensional histogram is not yet supported'
+        bin_width = (max-min)/bins
+        self.max = max
+        self.bin_centers = torch.linspace(min+bin_width/2,max-bin_width/2,bins)
+        self.gray_scale = gray_scale
+        self.temperature = 3e-13
+        self.exp_power = 0.15
+        self.SQRT_EPSILON = 1e-7
+        self.image_mask = None
+        if gray_scale:
+            self.bins = 1.*self.bin_centers.view([1]+list(self.bin_centers.size())).to(desired_hist_image.device)
+            self.image_mask = desired_hist_image_mask.view([-1] + [1] * (self.bins.dim() - 1)).type(torch.ByteTensor)
+            self.desired_hist = self.ComputeSoftHistogram(desired_hist_image.mean(1,keepdim=True),return_log_hist=False).detach()
+            self.image_mask = input_im_HR_mask.view([-1] + [1] * (self.bins.dim() - 1)).type(torch.ByteTensor) if input_im_HR_mask is not None else None
+        self.KLdiv_loss = torch.nn.KLDivLoss()
+
+    def ComputeSoftHistogram(self,image,return_log_hist,wrap_hist=True):
+        if self.gray_scale:
+            image = image.view([-1]+[1]*(self.bins.dim()-1))
+            if self.image_mask is not None:
+                image = image[self.image_mask].view([-1]+[1]*(self.bins.dim()-1))
+            if wrap_hist:
+                hist = torch.min(torch.min((image-self.bins).abs(),(image-self.bins-self.max).abs()),(image-self.bins+self.max).abs())
+            else:
+                hist = (image-self.bins).abs()
+            hist = -((hist/self.temperature+self.SQRT_EPSILON)**self.exp_power).mean(0,keepdim=True)
+            if return_log_hist:
+                return hist
+            hist = torch.exp(hist)
+            return hist/hist.sum()
+
+    def forward(self,cur_image):
+        if self.gray_scale:
+            cur_image = cur_image.mean(1,keepdim=True)
+        cur_image_hist = self.ComputeSoftHistogram(cur_image,return_log_hist=True)
+        return self.KLdiv_loss(cur_image_hist,self.desired_hist)
+
 class Optimizable_Z(torch.nn.Module):
-    def __init__(self,Z_shape,Z_range=None):
+    def __init__(self,Z_shape,Z_range=None,initial_Z=None):
         super(Optimizable_Z, self).__init__()
         # self.device = torch.device('cuda')
         self.Z = torch.nn.Parameter(data=torch.zeros(Z_shape).type(torch.cuda.FloatTensor))
+        if initial_Z is not None:
+            self.Z.data = initial_Z
         self.Z_range = Z_range
         if Z_range is not None:
             self.tanh = torch.nn.Tanh()
@@ -134,17 +178,34 @@ class Optimizable_Z(torch.nn.Module):
             return self.Z_range*self.tanh(self.Z)
         else:
             return self.Z
+
+    def PreTanhZ(self):
+        return self.Z.data
     # def Loss(self,im1,im2):
     #     return self.loss(im1.to(self.device),im2.to(self.device))
 
 class Z_optimizer():
     MIN_LR = 1e-5
-    def __init__(self,objective,image_shape,model,Z_range,initial_LR,logger,max_iters,data):
-        self.Z_model = Optimizable_Z(Z_shape=[1,model.num_latent_channels] + list(image_shape), Z_range=Z_range)
-        self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
+    def __init__(self,objective,LR_size,model,Z_range,logger,max_iters,data,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None):
+        self.Z_model = Optimizable_Z(Z_shape=[1,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
+        assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
+        if existing_optimizer is None:
+            self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
+        else:
+            self.optimizer = existing_optimizer
         self.objective = objective
         self.data = data
         self.device = torch.device('cuda')
+        if image_mask is None:
+            self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)
+            self.Z_mask = None#torch.ones(LR_size).type(model.fake_H.dtype).to(self.device)
+        else:
+            assert Z_mask is not None,'Should either supply both masks or niether'
+            self.image_mask = torch.from_numpy(image_mask).type(model.fake_H.dtype).to(self.device)
+            self.Z_mask = torch.from_numpy(Z_mask).type(model.fake_H.dtype).to(self.device)
+            self.initial_Z = 1.*model.cur_Z
+        self.Z_mask.requires_grad = False
+        self.image_mask.requires_grad = False
         if 'L1' in objective:
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
             # scheduler_threshold = 1e-2
@@ -152,41 +213,70 @@ class Z_optimizer():
             assert self.objective in ['max_STD', 'min_STD']
             # scheduler_threshold = 0.9999
         elif 'VGG' in objective:
-            self.GT_HR_VGG = model.netF(self.data['HR']).detach().to(self.device)
+            self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
         elif 'Hist' in objective:
-            def HistogramLoss(model_output,desired_Im):
-                num_pixels = model_output.numel()/model_output.size(1)
-                output_hist = torch.histc(model_output.mean(1),bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
-                desired_hist = torch.histc(desired_Im.mean(1), bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
-                return torch.nn.functional.kl_div(torch.log(output_hist+1e-9),desired_hist)
-            self.loss = HistogramLoss
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
+            # def HistogramLoss(model_output,desired_Im):
+            #     num_pixels = model_output.numel()/model_output.size(1)
+            #     output_hist = torch.histc(model_output.mean(1),bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
+            #     desired_hist = torch.histc(desired_Im.mean(1), bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
+            #     return torch.nn.functional.kl_div(torch.log(output_hist+1e-9),desired_hist)
+            self.loss = SoftHistogramLoss(bins=255//3,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
+                input_im_HR_mask=self.image_mask)
+        elif 'Adversarial' in objective:
+            self.netD = model.netD
+            self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)
+
+        self.scheduler = None#torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
         self.model = model
         self.logger = logger
+        self.cur_iter = 0
         self.max_iters = max_iters
     def optimize(self):
-        for z_iter in range(self.max_iters):
+        if 'Adversarial' in self.objective:
+            self.model.netG.train(True) # Preventing image padding in the DTE code, to have the output fitD's input size
+        for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
+            # self.data['Z'] = self.Z_mask*self.Z_model()+(1-self.Z_mask)*self.model.cur_Z
             self.model.feed_data(self.data, need_HR=False)
-            self.model.test(prevent_grads_calc=False)
-            if self.objective in ['L1','Hist']:
-                Z_loss = self.loss(self.model.fake_H.to(self.device), self.data['HR'].to(self.device))
+            self.model.fake_H = self.model.netG(self.model.var_L)
+            # self.model.test(prevent_grads_calc=False)
+            if 'L1' in self.objective:
+                Z_loss = self.loss(self.model.fake_H.to(self.device), self.GT_HR.to(self.device))
+            elif 'Hist' in self.objective:
+                Z_loss = self.loss(self.model.fake_H.to(self.device))
+            elif 'Adversarial' in self.objective:
+                Z_loss = self.loss(self.netD(self.model.DTE_net.HR_unpadder(self.model.fake_H).to(self.device)),True)
             elif 'STD' in self.objective:
-                Z_loss = self.model.fake_H.std().to(self.device)
+                Z_loss = (self.model.fake_H*self.image_mask).std().to(self.device)
             elif 'VGG' in self.objective:
                 Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:
                 Z_loss = -1*Z_loss
             Z_loss.backward()
             self.optimizer.step()
-            self.scheduler.step(Z_loss)
+            if self.scheduler is not None:
+                self.scheduler.step(Z_loss)
             cur_LR = self.optimizer.param_groups[0]['lr']
             if cur_LR<=1.2*self.MIN_LR:
                 break
             self.logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': Z_loss.item()}, dont_print=True)
-        return self.Z_model()
+        if 'Adversarial' in self.objective:
+            self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
+        self.cur_iter = z_iter+1
+        Z_2_return = self.Z_model()
+        if self.Z_mask is not None:
+            Z_2_return = self.Z_mask * self.Z_model() + (1 - self.Z_mask) * self.initial_Z
+            self.data['Z'] = Z_2_return
+            self.model.feed_data(self.data, need_HR=False)
+            # self.model.test(prevent_grads_calc=True)
+            with torch.no_grad():
+                self.model.fake_H = self.model.netG(self.model.var_L)
+        return Z_2_return
+
+    def ReturnStatus(self):
+        return self.Z_model.PreTanhZ(),self.optimizer
 
 
 ####################

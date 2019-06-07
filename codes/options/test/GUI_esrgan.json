@@ -1,5 +1,8 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_percentileRatio_debug" //,"RRDB_ESRGAN_x4"
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_IxIyCentered_percentileRatio_debug"
+  // "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_percentileRatio_debug" //,"RRDB_ESRGAN_x4"
+  // "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensorNonRatio_percentileRatio_debug"
+  // "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensorNonRatioIxIyCentered_percentileRatio_debug"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4
@@ -39,5 +42,22 @@
 
     , "gc": 32
     , "group": 1
+  },
+  "network_D": { //For Z-optimization with D
+    "which_model_D": "discriminator_vgg_128" //,"PatchGAN"
+    , "relativistic": 0
+    , "decomposed_input": 0
+    , "pre_clipping": 0 //1
+    , "add_quantization_noise": 0 //1
+    , "norm_type": "batch"
+    , "act_type": "leakyrelu"
+    , "mode": "CNA"
+    , "n_layers": 6
+    , "nf": 64
+    , "in_nc": 3
+  }
+, "datasets": {
+    "train": {
+       "HR_size": 256}
   }
 }
