@@ -17,7 +17,7 @@ import torch
 import subprocess
 
 # Parameters:
-SAVE_IMAGE_COLLAGE = True
+SAVE_IMAGE_COLLAGE = False
 TEST_LATENT_INPUT = 'GIF'#'GIF','video',None
 # Parameters for GIF:
 LATENT_DISTRIBUTION = 'Desired_Im_Hist'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_Hist
@@ -28,7 +28,7 @@ NUM_SAMPLES = 31#Must be odd for a collage to be saved
 INPUT_Z_IM_PATH = os.path.join('/home/ybahat/Dropbox/PhD/DataTermEnforcingArch/Results/SRGAN/NoiseInput',LATENT_DISTRIBUTION)
 if 'Desired_Im' in LATENT_DISTRIBUTION:
     INPUT_Z_IM_PATH = INPUT_Z_IM_PATH.replace(LATENT_DISTRIBUTION,'Desired_Im')
-TEST_IMAGE = 'comic'#None
+TEST_IMAGE = None#'comic'#None
 LATENT_CHANNEL_NUM = 0#Overridden when UnitCircle
 OTHER_CHANNELS_VAL = 0
 # options
@@ -63,7 +63,8 @@ if 'VGG' in LATENT_DISTRIBUTION:
 else:
     model = create_model(opt)
 # assert SAVE_IMAGE_COLLAGE or not TEST_LATENT_INPUT,'Must use image collage for creating GIF'
-assert len(test_set)==1 or LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS,'Use 1 image only for these Z input types'
+TEST_LATENT_INPUT = TEST_LATENT_INPUT if opt['network_G']['latent_input'] else None
+assert len(test_set)==1 or LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS or not TEST_LATENT_INPUT,'Use 1 image only for these Z input types'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2,'Pick an odd number of samples'
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
@@ -85,7 +86,6 @@ for test_loader in test_loaders:
     test_results['ssim'] = []
     test_results['psnr_y'] = []
     test_results['ssim_y'] = []
-    TEST_LATENT_INPUT = TEST_LATENT_INPUT if opt['network_G']['latent_input'] else None
     if TEST_LATENT_INPUT:
         if LATENT_DISTRIBUTION=='Gaussian':#When I used Gaussian latent input, I set the range to cover LATENT_RANGE of the probability:
             optional_Zs = np.arange(start=-2,stop=0,step=0.001)
@@ -135,17 +135,18 @@ for test_loader in test_loaders:
             need_HR = False if test_loader.dataset.opt['dataroot_HR'] is None else True
             img_path = data['LR_path'][0]
             img_name = os.path.splitext(os.path.basename(img_path))[0]
-            if LATENT_DISTRIBUTION == 'Input_Z_Im':
-                cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
-            elif 'Desired_Im' in LATENT_DISTRIBUTION:
-                LR_Z = 1e-1
-                objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('Hist' if 'Hist' in LATENT_DISTRIBUTION else 'L1'))
-                Z_optimizer = util.Z_optimizer(objective=objective,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
-                cur_Z = Z_optimizer.optimize()
-            elif 'STD' in LATENT_DISTRIBUTION:
-                LR_Z = 1e-1
-                Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
-                cur_Z = Z_optimizer.optimize()
+            if TEST_LATENT_INPUT:
+                if LATENT_DISTRIBUTION == 'Input_Z_Im':
+                    cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
+                elif 'Desired_Im' in LATENT_DISTRIBUTION:
+                    LR_Z = 1e-1
+                    objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('Hist' if 'Hist' in LATENT_DISTRIBUTION else 'L1'))
+                    Z_optimizer = util.Z_optimizer(objective=objective,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
+                    cur_Z = Z_optimizer.optimize()
+                elif 'STD' in LATENT_DISTRIBUTION:
+                    LR_Z = 1e-1
+                    Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
+                    cur_Z = Z_optimizer.optimize()
             data['Z'] = cur_Z
             model.feed_data(data, need_HR=need_HR)
 
@@ -161,7 +162,7 @@ for test_loader in test_loaders:
                     save_img_path = os.path.join(dataset_dir, img_name + suffix + '.png')
                 else:
                     save_img_path = os.path.join(dataset_dir, img_name + '.png')
-                util.save_img(sr_img, save_img_path)
+                util.save_img((255*sr_img).astype(np.uint8), save_img_path)
 
             # calculate PSNR and SSIM
             if need_HR:
@@ -194,13 +195,12 @@ for test_loader in test_loaders:
                     save_img_path = os.path.join(dataset_dir+ '.png')
                 util.save_img(cur_collage, save_img_path%(''))
                 # Save GT HR images:
-                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
-                              save_img_path%'_GT_HR')
+                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),save_img_path%'_GT_HR')
         if TEST_LATENT_INPUT:
             if LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS:
                 cur_collage = cv2.putText(cur_collage, '%.2f'%(cur_channel_cur_Z), (0, 50),cv2.FONT_HERSHEY_SCRIPT_COMPLEX, fontScale=2.0, color=(255, 255, 255))
             frames.append(cur_collage)
-        if need_HR and LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS and cur_channel_cur_Z==0:  # metrics
+        if need_HR and ((LATENT_DISTRIBUTION not in DETERMINISTIC_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_INPUT):  # metrics
             # Average PSNR/SSIM results
             ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
             ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])

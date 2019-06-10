@@ -770,12 +770,12 @@ class Ui_MainWindow(object):
 
         self.actionFoolAdversary = QtWidgets.QAction(MainWindow)
         self.actionFoolAdversary.setObjectName("actionFoolAdversary")
+        icon_pixmap = QtGui.QPixmap("images/adversary.png")
+        # icon_pixmap.scaledToWidth(40)
         icon_adversary = QtGui.QIcon()
-        icon_adversary.addPixmap(QtGui.QPixmap("images/adversary.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon_adversary.addPixmap(icon_pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        # icon_adversary.actualSize(QtCore.QSize(60, 60))
         self.actionFoolAdversary.setIcon(icon_adversary)
-
-
-
 
         # self.actionReProcess = QtWidgets.QAction(MainWindow)
         # self.actionReProcess.setText("Re-process")

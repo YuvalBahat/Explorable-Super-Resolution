@@ -283,7 +283,7 @@ class DTE_PyTorch(nn.Module):
         if self.pre_pad:
             x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
-        x = x[:,-3:,:,:]# Handling the caase of adding nosie channel(s) - Using only last 3 image channels
+        x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
         projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
         projected_generated_im = self.DownscaleOP(generated_image)

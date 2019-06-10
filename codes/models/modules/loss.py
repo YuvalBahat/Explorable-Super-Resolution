@@ -4,11 +4,32 @@ import numpy as np
 import cv2
 from collections import deque
 
+EPSILON = 1e-50
+
+
+def ValidStructTensorIndicator(a,d,b):
+    return 1-(a**2==d**2)*(b*(a+d)==0)
+
+def SVD_Symmetric_2x2(a,d,b):
+    theta = 0.5 * torch.atan2(2 * b * (a + d),a ** 2 - d ** 2)
+    # theta = b
+    # theta = np.pi/2-0.5 * torch.atan2(2 * b * (a + d),a ** 2 - d ** 2)#Adding half pi because the formula I used (https://www.lucidar.me/en/mathematics/singular-value-decomposition-of-a-2x2-matrix/)
+    #                                                                     # was derived for U matrix with reverese ordered vectors (sin(theta) and cos(theta) in opposite order).
+    FACTOR_4_NUMERIC_ISSUE = 10
+    a,d,b = FACTOR_4_NUMERIC_ISSUE*(a.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(d.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(b.type(torch.cuda.DoubleTensor))
+    S_1 = a ** 2 + d ** 2 + 2 * (b ** 2)
+    S_2 = torch.sqrt((a ** 2 - d ** 2) ** 2 + (2 * b * (a + d)) ** 2+EPSILON)
+    S_1,S_2 = S_1/(FACTOR_4_NUMERIC_ISSUE**2),S_2/(FACTOR_4_NUMERIC_ISSUE**2)
+    S_2 = torch.min(S_1,S_2) # A patchy solution to a super-odd problem. I analitically showed S_1>=S_2 for ALL a,d,b, but for some reason ~20% of cases do not satisfy this. I suspect numerical reasons, so I enforce this here.
+    lambda0 = torch.sqrt((S_1 + S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
+    lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
+    return lambda0,lambda1,theta
+
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels):
         super(FilterLoss,self).__init__()
         self.latent_channels = latent_channels
-        self.NOISE_STD = 1/255
+        self.NOISE_STD = 1e-15#1/255
         if latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
             self.num_channels = 2
             DELTA_SIZE = 7
@@ -21,7 +42,7 @@ class FilterLoss(nn.Module):
             self.filter.filter_layer = True
         elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
             self.num_channels = 3
-        elif self.latent_channels == 'structure_tensor':
+        elif 'structure_tensor' in self.latent_channels:
             self.num_channels = 3
             self.NOISE_STD = 1e-7
             gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
@@ -82,37 +103,74 @@ class FilterLoss(nn.Module):
             normalized_Z = torch.stack([cur_Z[:,0]*(STD_upper_bound-STD_lower_bound)+np.mean([STD_upper_bound,STD_lower_bound]),
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
             measured_values = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
-        elif self.latent_channels == 'structure_tensor':
-            RATIO_LOSS = 'OnlyDiagonals' #'No','All','OnlyDiagonals'
-            ZERO_CENTERED_IxIy = True
-            assert not (RATIO_LOSS=='All' and ZERO_CENTERED_IxIy),'Do I want to combine these two flags?'
+        elif'structure_tensor' in self.latent_channels:
+            if self.latent_channels == 'SVD_structure_tensor':
+                RATIO_LOSS = 'OnlyDiagonals'
+            else:
+                RATIO_LOSS = 'OnlyDiagonals' #'No','All','OnlyDiagonals','Diagonals_IxIyRelative'
+                ZERO_CENTERED_IxIy = True
+                assert not (RATIO_LOSS=='All' and ZERO_CENTERED_IxIy),'Do I want to combine these two flags?'
             derivatives_SR,derivatives_HR = [],[]
             for filter in self.filters:
                 derivatives_SR.append(filter(data['SR']))
                 if RATIO_LOSS!='No':
                     derivatives_HR.append(filter(data['HR']))
-            derivatives_SR = torch.stack(derivatives_SR,0)
-            derivatives_SR = torch.cat([derivatives_SR**2,torch.prod(derivatives_SR,dim=0,keepdim=True)],0)
-            derivatives_SR = derivatives_SR.mean(dim=(2,3,4))
-            measured_values = [derivatives_SR[i] for i in range(derivatives_SR.size(0))]
+            non_squared_derivatives_SR = torch.stack(derivatives_SR,0)
+            derivatives_SR = torch.cat([non_squared_derivatives_SR**2,torch.prod(non_squared_derivatives_SR,dim=0,keepdim=True)],0)
+            derivatives_SR = derivatives_SR.mean(dim=(2, 3,4))  # In ALL configurations, I also average all values before taking ratios - should think whether it might be a problem.
+            if self.latent_channels == 'SVD_structure_tensor':
+                lambda0_SR,lambda1_SR,theta_SR = SVD_Symmetric_2x2(*derivatives_SR)
+                images_validity_4_backprop = ValidStructTensorIndicator(*derivatives_SR)
+            else:
+                measured_values = [derivatives_SR[i] for i in range(derivatives_SR.size(0))]
             if RATIO_LOSS!='No':
                 derivatives_HR = torch.stack(derivatives_HR, 0)
                 derivatives_HR = torch.cat([derivatives_HR**2,torch.prod(derivatives_HR,dim=0,keepdim=True)],0)
-                derivatives_HR = derivatives_HR.mean(dim=(2,3,4))
-                measured_values = [measured_values[i]/((derivatives_HR[i]+torch.sign(measured_values[i])*self.NOISE_STD) if (i<2 or RATIO_LOSS=='All') else 1) for i in range(derivatives_SR.size(0))]
+                derivatives_HR = derivatives_HR.mean(dim=(2, 3, 4))
+                if self.latent_channels == 'SVD_structure_tensor':
+                    lambda0_HR, lambda1_HR, theta_HR = SVD_Symmetric_2x2(*derivatives_HR)
+                    images_validity_4_backprop = images_validity_4_backprop*ValidStructTensorIndicator(*derivatives_HR)
+                    measured_values = [lambda0_SR/(lambda0_HR+self.NOISE_STD),lambda1_SR/(lambda1_HR+self.NOISE_STD),theta_SR]
+                    # measured_values = [val.mean(dim=(1,2,3)).to() for val in measured_values]
+                else:
+                    measured_values = [measured_values[i]/((derivatives_HR[i]+torch.sign(measured_values[i])*self.NOISE_STD)
+                        if (i<2 or RATIO_LOSS=='All') else 1) for i in range(derivatives_SR.size(0))]
             normalized_Z = []
             for i in range(len(self.collected_ratios)):
                 self.collected_ratios[i] += [val.item() for val in measured_values[i]]
                 upper_bound = np.percentile(self.collected_ratios[i], HIGHER_PERCENTILE)
                 lower_bound = np.percentile(self.collected_ratios[i], LOWER_PERCENTILE)
-                if i==2 and ZERO_CENTERED_IxIy:
-                    upper_bound = np.max(np.abs([upper_bound,lower_bound]))
-                    lower_bound = -1*upper_bound
-                normalized_Z.append((cur_Z[:, i]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
-            measured_values = torch.stack(measured_values,1)
-            normalized_Z = torch.stack(normalized_Z, 1)
-
-        return torch.mean((measured_values-normalized_Z).abs(),dim=0)
+                if self.latent_channels == 'structure_tensor':
+                    if i==2 and ZERO_CENTERED_IxIy:
+                        upper_bound = np.max(np.abs([upper_bound, lower_bound]))
+                        lower_bound = -1 * upper_bound
+                    normalized_Z.append((cur_Z[:, i]) / 2 * (upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
+                elif self.latent_channels == 'SVD_structure_tensor':
+                    if i<2:
+                        measured_values[i] = (measured_values[i]-np.mean([upper_bound, lower_bound]))/(upper_bound - lower_bound+EPSILON)+0.5
+                        normalized_Z.append(data['SVD']['lambda%d_ratio'%(i)])
+                    else:
+                        measured_values[i] = measured_values[i]/np.pi
+                        normalized_Z.append((torch.fmod(data['SVD']['theta'],torch.tensor(np.pi))-np.pi/2)/np.pi)
+                    # if i<2:
+                    #     normalized_Z.append((data['SVD']['lambda%d_ratio'%(i)]-0.5)*(upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
+                    # else:
+                    #     normalized_Z.append((torch.fmod(data['SVD']['theta'],torch.tensor(np.pi))-np.pi/2)/np.pi*(upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
+            if self.latent_channels == 'structure_tensor':
+                measured_values = torch.stack(measured_values,1)
+                normalized_Z = torch.stack(normalized_Z, 1)
+        if self.latent_channels == 'SVD_structure_tensor':
+            normalized_Z = [item.mean(dim=(1,2)).to(measured_values[0].device) for item in normalized_Z]
+            abs_differences = []
+            for i in range(2):
+                abs_differences.append((measured_values[i]-normalized_Z[i]).abs())
+            abs_differences.append(torch.min(torch.min((measured_values[2]-normalized_Z[2]).abs(),(measured_values[2]-normalized_Z[2]+np.pi).abs()),(measured_values[2]-normalized_Z[2]-np.pi).abs()))
+            if images_validity_4_backprop.float().sum()>=1:
+                return torch.mean(torch.stack(abs_differences,1)[images_validity_4_backprop],dim=0)
+            else:
+                return torch.tensor(0).type(abs_differences[0].dtype)
+        else:
+            return torch.mean((measured_values-normalized_Z).abs(),dim=0)
 
 
 # Define GAN loss: [vanilla | lsgan | wgan-gp]

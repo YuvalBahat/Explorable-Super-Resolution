@@ -19,6 +19,7 @@ import torch
 import qimage2ndarray
 import cv2
 import imageio
+import matplotlib
 
 BRUSH_MULT = 3
 SPRAY_PAINT_MULT = 5
@@ -223,7 +224,7 @@ class Canvas(QLabel):
         self.LR_mask_vertices = [(p.x(),p.y()) for p in (self.history_pos + [self.current_pos])]
         self.HR_selected_mask = cv2.fillPoly(self.HR_selected_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
         self.Z_mask = np.zeros(self.LR_size)
-        self.LR_mask_vertices = [(int(p[0]/self.DTE_opt['scale']),int(p[1]/self.DTE_opt['scale'])) for p in self.LR_mask_vertices]
+        self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
         self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
         # self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array([(int(p.x()/self.DTE_opt['scale']),int(p.y()/self.DTE_opt['scale'])) for p in (self.history_pos + [self.current_pos])])],(1,1,1))
         self.Update_Z_Sliders()
@@ -281,7 +282,7 @@ class Canvas(QLabel):
         self.LR_mask_vertices = [(p.x(),p.y()) for p in [self.origin_pos, self.current_pos]]
         self.HR_selected_mask = cv2.rectangle(self.HR_selected_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Z_mask = np.zeros(self.LR_size)
-        self.LR_mask_vertices = [(int(p[0]/self.DTE_opt['scale']),int(p[1]/self.DTE_opt['scale'])) for p in self.LR_mask_vertices]
+        self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
         self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Update_Z_Sliders()
         self.Z_optimizer = None
@@ -720,6 +721,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         opt = option.parse('./options/test/GUI_esrgan.json', is_train=False)
         opt = option.dict_to_nonedict(opt)
         self.SR_model = create_model(opt,init_Dnet=True)
+        matplotlib.use('Qt5Agg')
+        matplotlib.interactive(True)
+
         self.saved_outputs_counter = 0
         self.canvas.Z_optimizer = None
         self.desired_hist_image = None

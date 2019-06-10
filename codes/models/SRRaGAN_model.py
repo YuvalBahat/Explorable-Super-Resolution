@@ -209,7 +209,17 @@ class SRRaGANModel(BaseModel):
                 if self.opt['network_G']['latent_channels']=='STD_directional':
                     self.cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
                 else:
-                    self.cur_Z = 2*torch.rand([self.var_L.size(dim=0),self.num_latent_channels,1,1])-1
+                    self.cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
+                if self.opt['network_G']['latent_channels']=='SVD_structure_tensor':
+                    theta = 2*np.pi*self.cur_Z[:,-1,...]
+                    self.SVD = {'theta':theta,'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
+                    self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,
+                                  2*(self.cur_Z[:,0,...]*(torch.sin(theta)**2)+self.cur_Z[:,1,...]*(torch.cos(theta)**2))-1,#Normalizing range to have negative values as well,trying to match [-1,1]
+                                  2*(self.cur_Z[:,0,...]-self.cur_Z[:,1,...])*torch.sin(theta)*torch.cos(theta)]
+                    self.cur_Z = torch.stack(self.cur_Z,1).detach()
+                else:
+                    self.cur_Z = 2*self.cur_Z-1
+
             if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
                 self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels,self.var_L.size()[2],self.var_L.size()[3]])
             elif torch.is_tensor(self.cur_Z) and self.cur_Z.size(dim=2)==1:
@@ -401,7 +411,10 @@ class SRRaGANModel(BaseModel):
                 l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                 l_g_total += self.l_range_w * l_g_range
             if self.cri_latent:
-                l_g_latent = self.cri_latent({'SR':self.fake_H,'HR':self.var_H,'Z':self.cur_Z})
+                latent_loss_dict = {'SR':self.fake_H,'HR':self.var_H,'Z':self.cur_Z}
+                if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
+                    latent_loss_dict['SVD'] = self.SVD
+                l_g_latent = self.cri_latent(latent_loss_dict)
                 l_g_total += self.l_latent_w * l_g_latent.mean()
                 self.l_g_latent_grad_step.append([l.item() for l in l_g_latent])
             # G gan + cls loss
