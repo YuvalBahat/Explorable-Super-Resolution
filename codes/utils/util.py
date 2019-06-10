@@ -123,36 +123,70 @@ def pol2cart(rho, phi):
 class SoftHistogramLoss(torch.nn.Module):
     def __init__(self,bins,min,max,desired_hist_image,desired_hist_image_mask,gray_scale=True,input_im_HR_mask=None):
         super(SoftHistogramLoss,self).__init__()
-        assert gray_scale,'Multi-dimensional histogram is not yet supported'
-        bin_width = (max-min)/bins
+        # assert gray_scale,'Multi-dimensional histogram is not yet supported'
+        self.bin_width = (max-min)/bins
         self.max = max
-        self.bin_centers = torch.linspace(min+bin_width/2,max-bin_width/2,bins)
+        self.bin_centers = torch.linspace(min+self.bin_width/2,max-self.bin_width/2,bins)
         self.gray_scale = gray_scale
-        self.temperature = 3e-13
-        self.exp_power = 0.15
+        self.temperature = 0.006#3e-13#0.02#0.006
+        self.temperature *= self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
+        self.exp_power = 6#0.15#2#6
         self.SQRT_EPSILON = 1e-7
         self.image_mask = None
+        self.bins = 1. * self.bin_centers.view([1] + list(self.bin_centers.size())).type(torch.cuda.DoubleTensor)
+        # self.image_mask = desired_hist_image_mask.view([-1] + [1] * (self.bins.dim() - 1)).type(torch.ByteTensor)
+        self.image_mask = desired_hist_image_mask.view([-1]).type(torch.ByteTensor)
+        self.num_dims = 1
         if gray_scale:
-            self.bins = 1.*self.bin_centers.view([1]+list(self.bin_centers.size())).to(desired_hist_image.device)
-            self.image_mask = desired_hist_image_mask.view([-1] + [1] * (self.bins.dim() - 1)).type(torch.ByteTensor)
-            self.desired_hist = self.ComputeSoftHistogram(desired_hist_image.mean(1,keepdim=True),return_log_hist=False).detach()
-            self.image_mask = input_im_HR_mask.view([-1] + [1] * (self.bins.dim() - 1)).type(torch.ByteTensor) if input_im_HR_mask is not None else None
+            desired_hist_image = desired_hist_image.mean(1, keepdim=True)
+        else:
+            self.num_dims = desired_hist_image.size(1)
+            per_channel_bins = 1*self.bins
+            self.bins = torch.zeros([self.num_dims]+[bins]*self.num_dims)
+            for dim_num in range(self.num_dims):
+                self.bins[dim_num,:, :, :] = per_channel_bins.view([1]*dim_num+[-1]+(self.num_dims-dim_num-1)*[1])
+        self.bins = self.bins.view([self.num_dims,-1]).type(torch.cuda.DoubleTensor)
+        if gray_scale:
+            self.bins = self.bins.unsqueeze(-1)
+            desired_hist_image = desired_hist_image.unsqueeze(-1)
+        self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,return_log_hist=False).detach()
+        self.image_mask = input_im_HR_mask.view([-1]).type(torch.ByteTensor) if input_im_HR_mask is not None else None
         self.KLdiv_loss = torch.nn.KLDivLoss()
 
     def ComputeSoftHistogram(self,image,return_log_hist,wrap_hist=True):
-        if self.gray_scale:
-            image = image.view([-1]+[1]*(self.bins.dim()-1))
-            if self.image_mask is not None:
-                image = image[self.image_mask].view([-1]+[1]*(self.bins.dim()-1))
-            if wrap_hist:
-                hist = torch.min(torch.min((image-self.bins).abs(),(image-self.bins-self.max).abs()),(image-self.bins+self.max).abs())
-            else:
-                hist = (image-self.bins).abs()
-            hist = -((hist/self.temperature+self.SQRT_EPSILON)**self.exp_power).mean(0,keepdim=True)
-            if return_log_hist:
-                return hist
+        AVERAGE_AFTER_EXP = False#This works for showing the resulting soft-histogram and comparing with hard histogram, but for some reason it prevents optimizing over Z (Z remains unchanged). When put to False, Z seems to be optimized correctly.
+        image = image.view([image.size(1)] + [-1]).type(torch.cuda.DoubleTensor)
+        if self.image_mask is not None:
+            # image = image[:, self.image_mask].view([-1] + [1] * (self.bins.dim() - 1))
+            image = image[:, self.image_mask]
+        if self.num_dims > 1:
+            valid_bins = []
+            for bin_num in range(self.bins.size(1)):
+                cur_bin = self.bins[:, bin_num].unsqueeze(-1)
+                cur_bin_value = torch.min(torch.min((image - cur_bin).abs(), (image - cur_bin - self.max).abs()),
+                                          (image - cur_bin + self.max).abs())
+                if (cur_bin_value < self.bin_width / 2).all(dim=0).any():
+                    valid_bins.append(bin_num)
+            self.bins = self.bins[:, np.array(valid_bins).astype(np.int32)]
+        if wrap_hist:
+            hist = torch.min(torch.min((image-self.bins).abs(),(image-self.bins-self.max).abs()),(image-self.bins+self.max).abs())
+        else:
+            hist = (image-self.bins).abs()
+        if self.num_dims==1:
+            hist = hist.squeeze(0)
+        if AVERAGE_AFTER_EXP:
+            hist = -((hist/self.temperature+self.SQRT_EPSILON)**self.exp_power)
+        else:
+            hist = -((hist/self.temperature+self.SQRT_EPSILON)**self.exp_power).mean(1,keepdim=True)
+
+        hist = hist - hist.max()
+        if return_log_hist:
+            return hist.type(torch.cuda.FloatTensor)
+        if AVERAGE_AFTER_EXP:
+            hist = torch.exp(hist).mean(1,keepdim=True)
+        else:
             hist = torch.exp(hist)
-            return hist/hist.sum()
+        return (hist/hist.sum()).type(torch.cuda.FloatTensor)
 
     def forward(self,cur_image):
         if self.gray_scale:
@@ -187,6 +221,9 @@ class Optimizable_Z(torch.nn.Module):
 class Z_optimizer():
     MIN_LR = 1e-5
     def __init__(self,objective,LR_size,model,Z_range,logger,max_iters,data,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None):
+        if initial_pre_tanh_Z is None:
+            initial_pre_tanh_Z = 1.*model.cur_Z/2/(Z_range+1e-7)
+            initial_pre_tanh_Z = 0.5*torch.log(1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z)
         self.Z_model = Optimizable_Z(Z_shape=[1,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
         if existing_optimizer is None:
@@ -221,8 +258,8 @@ class Z_optimizer():
             #     output_hist = torch.histc(model_output.mean(1),bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
             #     desired_hist = torch.histc(desired_Im.mean(1), bins=255,min=0,max=1).type(model_output.dtype)/num_pixels
             #     return torch.nn.functional.kl_div(torch.log(output_hist+1e-9),desired_hist)
-            self.loss = SoftHistogramLoss(bins=255//3,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
-                input_im_HR_mask=self.image_mask)
+            self.loss = SoftHistogramLoss(bins=255,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
+                input_im_HR_mask=self.image_mask,gray_scale=True)
         elif 'Adversarial' in objective:
             self.netD = model.netD
             self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)

@@ -1083,6 +1083,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.theta)  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
 
     def SetZ(self,value,index):
+        self.canvas.Z_optimizer = None
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
         if USE_SVD:
             if index==0:
