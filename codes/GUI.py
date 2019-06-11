@@ -858,7 +858,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ0.setRange(-100,100)
         self.sliderZ0.setSingleStep(1)
         self.sliderZ0.setOrientation(Qt.Vertical)
-        self.sliderZ0.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=0))
+        self.sliderZ0.sliderReleased.connect(lambda s=self.sliderZ0.sliderPosition():self.SetZ(value=self.sliderZ0.sliderPosition()/100,index=0))
         self.ZToolbar.addWidget(self.sliderZ0)
         self.sliderZ1 = QSlider()
         self.sliderZ1.setObjectName('sliderZ1')
@@ -869,7 +869,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ1.setRange(-100,100)
         self.sliderZ1.setSingleStep(1)
         self.sliderZ1.setOrientation(Qt.Vertical)
-        self.sliderZ1.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=1))
+        self.sliderZ1.sliderReleased.connect(lambda s=self.sliderZ1.sliderPosition():self.SetZ(value=self.sliderZ1.sliderPosition()/100,index=1))
         self.ZToolbar.addWidget(self.sliderZ1)
         if USE_SVD:
             self.third_latent_channel = QDial()
@@ -884,7 +884,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.third_latent_channel.setRange(-100,100)
         self.third_latent_channel.setSingleStep(1)
         self.third_latent_channel.setOrientation(Qt.Vertical)
-        self.third_latent_channel.valueChanged.connect(lambda s:self.SetZ(value=s/100,index=2))
+        self.third_latent_channel.sliderReleased.connect(lambda s=self.third_latent_channel.sliderPosition():self.SetZ(value=self.third_latent_channel.sliderPosition()/100,index=2))
         self.ZToolbar.addWidget(self.third_latent_channel)
         self.ZToolbar.addAction(self.actionProcessRandZ)
         self.ZToolbar.insertSeparator(self.actionProcessRandZ)
@@ -1075,12 +1075,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.HR_selected_mask = 1-self.canvas.HR_selected_mask
 
     def Recompose_cur_Z(self):
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
         self.cur_Z[0, 0, ...] = (self.canvas.lambda0 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda1 * np.cos(
-            self.canvas.theta) ** 2 - 0.5) * 2  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
+            self.canvas.theta) ** 2 - 0.5) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 0, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
         self.cur_Z[0, 1, ...] = (self.canvas.lambda1 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda0 * np.cos(
-            self.canvas.theta) ** 2 - 0.5) * 2  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
+            self.canvas.theta) ** 2 - 0.5) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 1, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
         self.cur_Z[0, 2, ...] = 2 * (self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
-            self.canvas.theta)  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
+            self.canvas.theta)*Z_mask+(1-Z_mask)*self.cur_Z[0, 2, ...]  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
 
     def SetZ(self,value,index):
         self.canvas.Z_optimizer = None
@@ -1199,7 +1200,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         if path:
             imageio.imsave(path%(''),np.clip(255*self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0),0,255).astype(np.uint8))
-            imageio.imsave(path%('_Z'),np.clip(255/2*(1+self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)),0,255).astype(np.uint8))
+            imageio.imsave(path%('_Z'),np.clip(255/2/MAX_SVD_LAMBDA*(MAX_SVD_LAMBDA+self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)),0,255).astype(np.uint8))
             # pixmap = self.canvas.pixmap()
             # pixmap.save(path%(''), "PNG" )
             # Z_pixmap = QPixmap()

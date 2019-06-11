@@ -140,6 +140,7 @@ class SoftHistogramLoss(torch.nn.Module):
         if gray_scale:
             desired_hist_image = desired_hist_image.mean(1, keepdim=True)
         else:
+            self.Relevant_Bins_And_Hist(desired_hist_image,1*self.bins)
             self.num_dims = desired_hist_image.size(1)
             per_channel_bins = 1*self.bins
             self.bins = torch.zeros([self.num_dims]+[bins]*self.num_dims)
@@ -152,6 +153,12 @@ class SoftHistogramLoss(torch.nn.Module):
         self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,return_log_hist=False).detach()
         self.image_mask = input_im_HR_mask.view([-1]).type(torch.ByteTensor) if input_im_HR_mask is not None else None
         self.KLdiv_loss = torch.nn.KLDivLoss()
+    def Relevant_Bins_And_Hist(self,desired_hist_image,per_channel_optional_bins):
+        per_channel_bins = 1 * self.bins
+        relevant_bins = []
+        for dim_num in range(self.num_dims):
+            distances = torch.min(torch.min((desired_hist_image[dim_num,:]-per_channel_bins).abs(),(desired_hist_image[dim_num,:]-per_channel_bins+self.max).abs()),(desired_hist_image[dim_num,:]-per_channel_bins-self.max).abs())
+            small_enough = distances<=self.bin_width / 2
 
     def ComputeSoftHistogram(self,image,return_log_hist,wrap_hist=True):
         AVERAGE_AFTER_EXP = False#This works for showing the resulting soft-histogram and comparing with hard histogram, but for some reason it prevents optimizing over Z (Z remains unchanged). When put to False, Z seems to be optimized correctly.

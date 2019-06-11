@@ -43,7 +43,7 @@
     , "DTE_arch": 1
     , "sigmoid_range_limit": 0
     , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": "SVD_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64

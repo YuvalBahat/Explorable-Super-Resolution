@@ -210,7 +210,7 @@ class SRRaGANModel(BaseModel):
                     self.cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
                 else:
                     self.cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
-                if self.opt['network_G']['latent_channels']=='SVD_structure_tensor':
+                if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
                     theta = 2*np.pi*self.cur_Z[:,-1,...]
                     self.SVD = {'theta':theta,'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
                     self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,

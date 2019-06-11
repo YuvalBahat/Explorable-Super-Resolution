@@ -106,6 +106,8 @@ class FilterLoss(nn.Module):
         elif'structure_tensor' in self.latent_channels:
             if self.latent_channels == 'SVD_structure_tensor':
                 RATIO_LOSS = 'OnlyDiagonals'
+            elif self.latent_channels=='SVDinNormedOut_structure_tensor':
+                RATIO_LOSS = 'SingleNormalizer'
             else:
                 RATIO_LOSS = 'OnlyDiagonals' #'No','All','OnlyDiagonals','Diagonals_IxIyRelative'
                 ZERO_CENTERED_IxIy = True
@@ -124,14 +126,17 @@ class FilterLoss(nn.Module):
             else:
                 measured_values = [derivatives_SR[i] for i in range(derivatives_SR.size(0))]
             if RATIO_LOSS!='No':
-                derivatives_HR = torch.stack(derivatives_HR, 0)
-                derivatives_HR = torch.cat([derivatives_HR**2,torch.prod(derivatives_HR,dim=0,keepdim=True)],0)
+                non_squared_derivatives_HR = torch.stack(derivatives_HR, 0)
+                derivatives_HR = torch.cat([non_squared_derivatives_HR**2,torch.prod(non_squared_derivatives_HR,dim=0,keepdim=True)],0)
                 derivatives_HR = derivatives_HR.mean(dim=(2, 3, 4))
                 if self.latent_channels == 'SVD_structure_tensor':
                     lambda0_HR, lambda1_HR, theta_HR = SVD_Symmetric_2x2(*derivatives_HR)
                     images_validity_4_backprop = images_validity_4_backprop*ValidStructTensorIndicator(*derivatives_HR)
                     measured_values = [lambda0_SR/(lambda0_HR+self.NOISE_STD),lambda1_SR/(lambda1_HR+self.NOISE_STD),theta_SR]
                     # measured_values = [val.mean(dim=(1,2,3)).to() for val in measured_values]
+                elif self.latent_channels=='SVDinNormedOut_structure_tensor':
+                    tensor_normalizer = torch.prod(non_squared_derivatives_HR.abs(),dim=0,keepdim=True)
+                    measured_values = [measured_val/(tensor_normalizer+self.NOISE_STD) for measured_val in measured_values]
                 else:
                     measured_values = [measured_values[i]/((derivatives_HR[i]+torch.sign(measured_values[i])*self.NOISE_STD)
                         if (i<2 or RATIO_LOSS=='All') else 1) for i in range(derivatives_SR.size(0))]
