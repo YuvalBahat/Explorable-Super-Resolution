@@ -107,13 +107,13 @@ class FilterLoss(nn.Module):
                                         mag_normal/np.sqrt(2)*(dir_magnitude_upper_bound-dir_magnitude_lower_bound)+np.mean([dir_magnitude_upper_bound,dir_magnitude_lower_bound])],1)
             measured_values = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
         elif'structure_tensor' in self.latent_channels:
+            ZERO_CENTERED_IxIy = False
             if self.latent_channels == 'SVD_structure_tensor':
                 RATIO_LOSS = 'OnlyDiagonals'
             elif self.latent_channels=='SVDinNormedOut_structure_tensor':
                 RATIO_LOSS = 'SingleNormalizer'
             else:
                 RATIO_LOSS = 'OnlyDiagonals' #'No','All','OnlyDiagonals','Diagonals_IxIyRelative'
-                ZERO_CENTERED_IxIy = True
                 assert not (RATIO_LOSS=='All' and ZERO_CENTERED_IxIy),'Do I want to combine these two flags?'
             derivatives_SR,derivatives_HR = [],[]
             for filter in self.filters:
@@ -138,7 +138,7 @@ class FilterLoss(nn.Module):
                     measured_values = [lambda0_SR/(lambda0_HR+self.NOISE_STD),lambda1_SR/(lambda1_HR+self.NOISE_STD),theta_SR]
                     # measured_values = [val.mean(dim=(1,2,3)).to() for val in measured_values]
                 elif self.latent_channels=='SVDinNormedOut_structure_tensor':
-                    tensor_normalizer = torch.prod(non_squared_derivatives_HR.abs(),dim=0,keepdim=True)
+                    tensor_normalizer = torch.prod(torch.sqrt(derivatives_HR[:2]),dim=0)
                     measured_values = [measured_val/(tensor_normalizer+self.NOISE_STD) for measured_val in measured_values]
                 else:
                     measured_values = [measured_values[i]/((derivatives_HR[i]+torch.sign(measured_values[i])*self.NOISE_STD)
@@ -148,7 +148,7 @@ class FilterLoss(nn.Module):
                 self.collected_ratios[i] += [val.item() for val in measured_values[i]]
                 upper_bound = np.percentile(self.collected_ratios[i], HIGHER_PERCENTILE)
                 lower_bound = np.percentile(self.collected_ratios[i], LOWER_PERCENTILE)
-                if self.latent_channels == 'structure_tensor':
+                if self.latent_channels in ['structure_tensor','SVDinNormedOut_structure_tensor']:
                     if i==2 and ZERO_CENTERED_IxIy:
                         upper_bound = np.max(np.abs([upper_bound, lower_bound]))
                         lower_bound = -1 * upper_bound
@@ -164,7 +164,7 @@ class FilterLoss(nn.Module):
                     #     normalized_Z.append((data['SVD']['lambda%d_ratio'%(i)]-0.5)*(upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
                     # else:
                     #     normalized_Z.append((torch.fmod(data['SVD']['theta'],torch.tensor(np.pi))-np.pi/2)/np.pi*(upper_bound - lower_bound) + np.mean([upper_bound, lower_bound]))
-            if self.latent_channels == 'structure_tensor':
+            if self.latent_channels in ['structure_tensor','SVDinNormedOut_structure_tensor']:
                 measured_values = torch.stack(measured_values,1)
                 normalized_Z = torch.stack(normalized_Z, 1)
         if self.latent_channels == 'SVD_structure_tensor':
