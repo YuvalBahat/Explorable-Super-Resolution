@@ -4,25 +4,28 @@ import numpy as np
 import cv2
 from collections import deque
 
-EPSILON = 1e-50
+EPSILON = 1e-30
 
 
 def ValidStructTensorIndicator(a,d,b):
-    return 1-(a**2==d**2)*(b*(a+d)==0)
+    # return 1-(a**2==d**2)*(b*(a+d)==0)
+    return ((2 * b * (a + d))**2+(a ** 2 - d ** 2)**2)>EPSILON
 
 def SVD_Symmetric_2x2(a,d,b):
-    theta = 0.5 * torch.atan2(2 * b * (a + d),a ** 2 - d ** 2)
-    # theta = b
+    ATAN2_FACTOR = 10000
+    theta = 0.5 * torch.atan2(ATAN2_FACTOR*2 * b * (a + d),ATAN2_FACTOR*(a ** 2 - d ** 2))
+    # theta = torch.ones_like(theta)*np.random.uniform()*np.pi-np.pi/2
     # theta = np.pi/2-0.5 * torch.atan2(2 * b * (a + d),a ** 2 - d ** 2)#Adding half pi because the formula I used (https://www.lucidar.me/en/mathematics/singular-value-decomposition-of-a-2x2-matrix/)
     #                                                                     # was derived for U matrix with reverese ordered vectors (sin(theta) and cos(theta) in opposite order).
     FACTOR_4_NUMERIC_ISSUE = 10
     a,d,b = FACTOR_4_NUMERIC_ISSUE*(a.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(d.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(b.type(torch.cuda.DoubleTensor))
     S_1 = a ** 2 + d ** 2 + 2 * (b ** 2)
-    S_2 = torch.sqrt((a ** 2 - d ** 2) ** 2 + (2 * b * (a + d)) ** 2+EPSILON)
+    S_2 = (a+d)*torch.sqrt((a-d)**2 + (2 * b) ** 2+EPSILON)
     S_1,S_2 = S_1/(FACTOR_4_NUMERIC_ISSUE**2),S_2/(FACTOR_4_NUMERIC_ISSUE**2)
-    S_2 = torch.min(S_1,S_2) # A patchy solution to a super-odd problem. I analitically showed S_1>=S_2 for ALL a,d,b, but for some reason ~20% of cases do not satisfy this. I suspect numerical reasons, so I enforce this here.
+    # S_2 = torch.min(S_1,S_2) # A patchy solution to a super-odd problem. I analitically showed S_1>=S_2 for ALL a,d,b, but for some reason ~20% of cases do not satisfy this. I suspect numerical reasons, so I enforce this here.
     lambda0 = torch.sqrt((S_1 + S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
     lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
+    # lambda0,lambda1 = torch.ones_like(lambda0),0.5*torch.ones_like(lambda1)
     return lambda0,lambda1,theta
 
 class FilterLoss(nn.Module):
@@ -168,7 +171,7 @@ class FilterLoss(nn.Module):
             if images_validity_4_backprop.float().sum()>=1:
                 return torch.mean(torch.stack(abs_differences,1)[images_validity_4_backprop],dim=0)
             else:
-                return torch.tensor(0).type(abs_differences[0].dtype)
+                return torch.zeros([3]).type(abs_differences[0].dtype).view([-1])
         else:
             return torch.mean((measured_values-normalized_Z).abs(),dim=0)
 

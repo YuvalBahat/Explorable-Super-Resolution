@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 3
+      , "batch_size": 6
       , "batch_size_4_grads_G": 48
       , "batch_size_4_grads_D": 48
       , "HR_size": 256
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
