@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_SVDinSingleNormalizerOut_percentileRatio_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,7 +15,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 3
+      , "batch_size": 1
       , "batch_size_4_grads_G": 4
       , "batch_size_4_grads_D": 4
       , "HR_size": 256
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -92,6 +92,8 @@
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
     , "latent_weight": 1 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+    , "optimalZ_loss_type": "l1"  //"None"
+    , "optimalZ_loss_weight": 1
     , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
@@ -113,7 +115,7 @@
   }
 
   , "logger": {
-    "print_freq": 100 //200
+    "print_freq": 10 //200
     , "save_checkpoint_freq": 500 //5e3
   }
 }

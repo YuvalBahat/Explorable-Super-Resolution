@@ -221,10 +221,12 @@ class Canvas(QLabel):
         self.current_pos = e.pos()
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
-        self.LR_mask_vertices = [(p.x(),p.y()) for p in (self.history_pos + [self.current_pos])]
-        self.HR_selected_mask = cv2.fillPoly(self.HR_selected_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
+        # self.LR_mask_vertices = [(p.x(),p.y()) for p in (self.history_pos + [self.current_pos])]
+        self.LR_mask_vertices = [(int(np.round(p.x()/self.DTE_opt['scale'])),int(np.round(p.y()/self.DTE_opt['scale']))) for p in (self.history_pos + [self.current_pos])]
+        HR_mask_vertices = [(coord[0]*self.DTE_opt['scale'],coord[1]*self.DTE_opt['scale']) for coord in self.LR_mask_vertices]
+        self.HR_selected_mask = cv2.fillPoly(self.HR_selected_mask,[np.array(HR_mask_vertices)],(1,1,1))
         self.Z_mask = np.zeros(self.LR_size)
-        self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
+        # self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
         self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
         # self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array([(int(p.x()/self.DTE_opt['scale']),int(p.y()/self.DTE_opt['scale'])) for p in (self.history_pos + [self.current_pos])])],(1,1,1))
         self.Update_Z_Sliders()
@@ -279,10 +281,12 @@ class Canvas(QLabel):
         self.current_pos = e.pos()
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
-        self.LR_mask_vertices = [(p.x(),p.y()) for p in [self.origin_pos, self.current_pos]]
-        self.HR_selected_mask = cv2.rectangle(self.HR_selected_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
+        # self.LR_mask_vertices = [(p.x(),p.y()) for p in [self.origin_pos, self.current_pos]]
+        self.LR_mask_vertices = [(int(np.round(p.x()/self.DTE_opt['scale'])),int(np.round(p.y()/self.DTE_opt['scale']))) for p in [self.origin_pos, self.current_pos]]
+        HR_mask_vertices = [(coord[0]*self.DTE_opt['scale'],coord[1]*self.DTE_opt['scale']) for coord in self.LR_mask_vertices]
+        self.HR_selected_mask = cv2.rectangle(self.HR_selected_mask,HR_mask_vertices[0],HR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Z_mask = np.zeros(self.LR_size)
-        self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
+        # self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
         self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Update_Z_Sliders()
         self.Z_optimizer = None
@@ -797,6 +801,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('max_STD'))
         self.actionIDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('min_STD'))
         self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('Hist'))
+        self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchHist'))
         self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
 
         self.UnselectButton.pressed.connect(self.Clear_Z_Mask)
@@ -858,7 +863,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ0.setRange(-100,100)
         self.sliderZ0.setSingleStep(1)
         self.sliderZ0.setOrientation(Qt.Vertical)
-        self.sliderZ0.sliderReleased.connect(lambda s=self.sliderZ0.sliderPosition():self.SetZ(value=self.sliderZ0.sliderPosition()/100,index=0))
+        self.sliderZ0.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=0))
+        self.sliderZ0.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ0)
         self.sliderZ1 = QSlider()
         self.sliderZ1.setObjectName('sliderZ1')
@@ -869,7 +875,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ1.setRange(-100,100)
         self.sliderZ1.setSingleStep(1)
         self.sliderZ1.setOrientation(Qt.Vertical)
-        self.sliderZ1.sliderReleased.connect(lambda s=self.sliderZ1.sliderPosition():self.SetZ(value=self.sliderZ1.sliderPosition()/100,index=1))
+        self.sliderZ1.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=1))
+        self.sliderZ1.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ1)
         if USE_SVD:
             self.third_latent_channel = QDial()
@@ -884,13 +891,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.third_latent_channel.setRange(-100,100)
         self.third_latent_channel.setSingleStep(1)
         self.third_latent_channel.setOrientation(Qt.Vertical)
-        self.third_latent_channel.sliderReleased.connect(lambda s=self.third_latent_channel.sliderPosition():self.SetZ(value=self.third_latent_channel.sliderPosition()/100,index=2))
+        self.third_latent_channel.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=2))
+        # self.third_latent_channel.sliderReleased.connect(lambda s=self.third_latent_channel.sliderPosition():self.SetZ(value=self.third_latent_channel.sliderPosition()/100,index=2))
+        self.third_latent_channel.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.third_latent_channel)
         self.ZToolbar.addAction(self.actionProcessRandZ)
         self.ZToolbar.insertSeparator(self.actionProcessRandZ)
         self.ZToolbar.addAction(self.actionIncreaseSTD)
         self.ZToolbar.addAction(self.actionIDecreaseSTD)
         self.ZToolbar.addAction(self.actionImitateHist)
+        self.ZToolbar.addAction(self.actionImitatePatchHist)
         self.ZToolbar.addAction(self.actionFoolAdversary)
 
         self.canvas.sliderZ0 = self.sliderZ0
@@ -925,6 +935,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     #     self.stampnextButton.setIcon(QIcon(pixmap))
     #
     #     self.canvas.current_stamp = pixmap
+    def Remember_Zmap(self):
+        pass#I can use this to add current Z-map to some deque to enable undo and redo
+
     def DesiredHistMode(self,checked,another_image):
         if checked:
             self.MasksStorage(True)
@@ -994,7 +1007,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ReProcess()
     def Validate_Z_optimizer(self,objective):
         if self.canvas.Z_optimizer is not None:
-            if self.canvas.Z_optimizer.objective!=objective:
+            if self.canvas.Z_optimizer.objective!=objective or objective=='Hist': # Resetting optimizer in the 'patchHist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
                 self.canvas.Z_optimizer = None
 
     def MasksStorage(self,store):
@@ -1043,11 +1056,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.optimizing_region = False
                 self.bounding_rect = np.array([0,0]+self.canvas.LR_size)
 
-            if objective == 'Hist':
+            if 'Hist' in objective:
                 if self.desired_hist_image is None:
                     return
                 data['HR'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.desired_hist_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
-                data['Desired_Im_Mask'] = torch.from_numpy(self.desired_hist_image_HR_mask).type(torch.ByteTensor).to(self.SR_model.device)
+                data['Desired_Im_Mask'] = self.desired_hist_image_HR_mask
 
             self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,LR_size=list(data['LR'].size()[2:]),model=self.SR_model,Z_range=MAX_SVD_LAMBDA,data=data,
                 initial_LR=1e-1,logger=Logger(self.canvas.DTE_opt),max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask)

@@ -762,11 +762,16 @@ class Ui_MainWindow(object):
         self.actionIDecreaseSTD.setIcon(icon_sigmadown)
 
         self.actionImitateHist = QtWidgets.QAction(MainWindow)
-        # self.actionImitateHist.setText("Imitate Histogram")
         self.actionImitateHist.setObjectName("actionImitateHist")
         icon_hist_imitation = QtGui.QIcon()
         icon_hist_imitation.addPixmap(QtGui.QPixmap("images/hist_imitation.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionImitateHist.setIcon(icon_hist_imitation)
+
+        self.actionImitatePatchHist = QtWidgets.QAction(MainWindow)
+        self.actionImitatePatchHist.setObjectName("actionImitatePatchHist")
+        icon_patch_hist_imitation = QtGui.QIcon()
+        icon_patch_hist_imitation.addPixmap(QtGui.QPixmap("images/hist_imitation_patch.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionImitatePatchHist.setIcon(icon_patch_hist_imitation)
 
         self.actionFoolAdversary = QtWidgets.QAction(MainWindow)
         self.actionFoolAdversary.setObjectName("actionFoolAdversary")
