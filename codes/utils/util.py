@@ -272,8 +272,9 @@ class Optimizable_Z(torch.nn.Module):
 
     def PreTanhZ(self):
         return self.Z.data
-    # def Loss(self,im1,im2):
-    #     return self.loss(im1.to(self.device),im2.to(self.device))
+
+    def Return_Detached_Z(self):
+        return self.forward().detach()
 
 class Z_optimizer():
     MIN_LR = 1e-5
@@ -369,7 +370,8 @@ class Z_optimizer():
                 Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:
                 Z_loss = -1*Z_loss
-            Z_loss.backward(retain_graph=(self.HR_unpadder is not None))
+            # Z_loss.backward(retain_graph=(self.HR_unpadder is not None))
+            Z_loss.backward()
             self.optimizer.step()
             if self.scheduler is not None:
                 self.scheduler.step(Z_loss)
@@ -381,7 +383,7 @@ class Z_optimizer():
         if 'Adversarial' in self.objective:
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         self.cur_iter = z_iter+1
-        Z_2_return = self.Z_model()
+        Z_2_return = self.Z_model.Return_Detached_Z()
         for i,p in enumerate(self.model.netG.parameters()):
             p.requires_grad = original_requires_grad_status[i]
         if self.Z_mask is not None and self.ONLY_MODIFY_MASKED_AREA:
@@ -392,6 +394,8 @@ class Z_optimizer():
             with torch.no_grad():
                 self.model.fake_H = self.model.netG(self.model.var_L)
         elif self.HR_unpadder is not None:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
+            self.data['Z'] = Z_2_return
+            self.model.feed_data(self.data, need_HR=False)
             self.model.fake_H = self.model.netG(self.model.var_L)
         return Z_2_return
 

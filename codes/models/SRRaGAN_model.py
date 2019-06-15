@@ -304,8 +304,8 @@ class SRRaGANModel(BaseModel):
                     self.fake_H = self.DTE_net.HR_unpadder(self.fake_H)
 
             # D (and E, if exists)
-            if first_dual_batch_step:
-                l_d_total = 0
+            # if first_dual_batch_step:
+            l_d_total = 0
             if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
                 not_E_only_step = not (self.using_encoder and self.gradient_step_num<self.E_init_iters)
                 for p in self.netD.parameters():
@@ -375,15 +375,15 @@ class SRRaGANModel(BaseModel):
                                         slope += 0.5 * cur_slope
                                     self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
                                 self.generator_step = 1*self.D_converged
-
+                        # self.generator_step = True#FOR DEBUG ONLY!!!!
                     if self.D_verification=='current' and self.generator_step:
                         self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                             and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
                     if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                             self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
                     l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
-                    if last_dual_batch_step:
-                        l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
+                    # if last_dual_batch_step:
+                    l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
 
                 if self.using_encoder:
                     estimated_z = self.netE(self.fake_H.detach())
@@ -412,8 +412,8 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_e'].append((self.gradient_step_num,np.mean(self.l_e_grad_step)))
 
             # G step:
-            if first_dual_batch_step:
-                l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
+            # if first_dual_batch_step:
+            l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
             if self.generator_step:
                 for p in self.netD.parameters():
                     p.requires_grad = False
@@ -471,8 +471,8 @@ class SRRaGANModel(BaseModel):
 
                 l_g_total += l_g_gan
                 # l_g_total /= self.grad_accumulation_steps_G
-                if last_dual_batch_step:
-                    l_g_total.backward()
+                # if last_dual_batch_step:
+                l_g_total.backward()
                 self.l_g_pix_grad_step.append(l_g_pix.item())
                 self.l_g_fea_grad_step.append(l_g_fea.item())
                 self.l_g_gan_grad_step.append(l_g_gan.item())
