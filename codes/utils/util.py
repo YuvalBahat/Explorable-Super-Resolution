@@ -125,7 +125,7 @@ def pol2cart(rho, phi):
 class SoftHistogramLoss(torch.nn.Module):
     def __init__(self,bins,min,max,desired_hist_image,desired_hist_image_mask,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=None):
         self.temperature = 0.05#0.05**2#0.006**6
-        self.exp_power = 1#2#6
+        self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
 
         super(SoftHistogramLoss,self).__init__()
@@ -147,10 +147,6 @@ class SoftHistogramLoss(torch.nn.Module):
             assert gray_scale,'Not supporting color images for now'
             self.num_dims = patch_size**2
             self.patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(desired_hist_image.device)
-            # patches_indexes = patches_indexes[np.all(patches_indexes>0,1),:]-1
-            # corresponding_mat_rows = np.arange(patches_indexes.size).reshape([-1])
-            # patch_extraction_mat = torch.sparse.FloatTensor(torch.LongTensor([corresponding_mat_rows,patches_indexes.reshape([-1])]),torch.FloatTensor(np.ones([corresponding_mat_rows.size])),
-            #     torch.Size([patches_indexes.size,desired_hist_image_mask.size])).to(desired_hist_image.device)
             desired_hist_image = torch.sparse.mm(self.patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
             self.image_mask = None
         else:
@@ -185,29 +181,40 @@ class SoftHistogramLoss(torch.nn.Module):
         with torch.no_grad():
             self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,return_log_hist=False,reshape_image=False,compute_hist_normalizer=True).detach()
     def TemperatureSearch(self,desired_image,initial_image,desired_KL_div):
-        INITIAL_TEMPERATURE = 1
-        STEP_FACTOR = 1000
+        log_temperature_range = [0.1,1]
+        STEP_SIZE = 10
         KL_DIV_TOLERANCE = 0.1
-        self.temperature = INITIAL_TEMPERATURE
         cur_KL_div = []
+        desired_temp_within_range = False
         with torch.no_grad():
             while True:
+                next_temperature = np.exp(np.mean(log_temperature_range))
+                if np.isinf(next_temperature) or next_temperature==0:
+                    print('KL div. is %.3e even for temperature of %.3e, aborting temperature search with that.'%(cur_KL_div[-1],self.temperature))
+                    break
+                self.temperature = 1*next_temperature
                 desired_im_hist = self.ComputeSoftHistogram(desired_image,return_log_hist=False,reshape_image=False,compute_hist_normalizer=True)
                 initial_image_hist = self.ComputeSoftHistogram(initial_image,return_log_hist=True,reshape_image=False,compute_hist_normalizer=False)
                 cur_KL_div.append(self.KLdiv_loss(initial_image_hist,desired_im_hist).item())
+                KL_div_too_big = cur_KL_div[-1] > desired_KL_div
                 if np.abs(np.log(max([0,cur_KL_div[-1]])/desired_KL_div))<=np.log(1+KL_DIV_TOLERANCE):
+                    print('Automatically set histogram temperature to %.3e'%(self.temperature))
                     break
-                elif len(cur_KL_div)==1:
-                    if cur_KL_div[-1] > desired_KL_div:
-                        temperature_range = [1*self.temperature,STEP_FACTOR*self.temperature]
+                elif not desired_temp_within_range:
+                    if len(cur_KL_div)==1:
+                        initial_KL_div_too_big = KL_div_too_big
                     else:
-                        temperature_range = [self.temperature/STEP_FACTOR,1*self.temperature]
-                else:
-                    if cur_KL_div[-1]>desired_KL_div:
-                        temperature_range = [self.temperature,1*temperature_range[1]]
+                        desired_temp_within_range = initial_KL_div_too_big^KL_div_too_big
+                    if not desired_temp_within_range:
+                        if KL_div_too_big:
+                            log_temperature_range[1] += STEP_SIZE
+                        else:
+                            log_temperature_range[0] -= STEP_SIZE
+                if desired_temp_within_range:
+                    if KL_div_too_big:
+                        log_temperature_range[0] = 1*np.log(self.temperature)
                     else:
-                        temperature_range = [1 * temperature_range[0],self.temperature]
-                self.temperature = np.mean(temperature_range)
+                        log_temperature_range[1] = 1*np.log(self.temperature)
 
     def ReturnPatchExtractionMat(self,mask):
         mask = binary_opening(mask,np.ones([self.patch_size, self.patch_size]).astype(np.bool))
@@ -233,7 +240,7 @@ class SoftHistogramLoss(torch.nn.Module):
         hist = torch.min(hist,(image-self.bins-self.max).abs())
         hist = torch.min(hist,(image-self.bins+self.max).abs())
         hist = -((hist+self.SQRT_EPSILON)**self.exp_power)/self.temperature
-        hist = hist.sum(0)
+        hist = hist.mean(0)
         hist = torch.exp(hist).mean(0)
         if compute_hist_normalizer or not self.KDE:
             self.normalizer = hist.sum()/image.size(1)
@@ -278,12 +285,12 @@ class Optimizable_Z(torch.nn.Module):
 
 class Z_optimizer():
     MIN_LR = 1e-5
-    ONLY_MODIFY_MASKED_AREA = False
+    ONLY_MODIFY_MASKED_AREA = True
     def __init__(self,objective,LR_size,model,Z_range,max_iters,data=None,logger=None,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None,
-                 batch_size=1,HR_unpadder=None):
+                 batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False):
         if initial_pre_tanh_Z is None and 'cur_Z' in model.__dict__.keys():
-            initial_pre_tanh_Z = 1.*model.cur_Z/2/(Z_range+1e-7)
-            initial_pre_tanh_Z = 0.5*torch.log(1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z)
+            initial_pre_tanh_Z = 1.*model.cur_Z/Z_range
+            initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
         if existing_optimizer is None:
@@ -317,14 +324,14 @@ class Z_optimizer():
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
         elif 'Hist' in objective:
             gray_scale_hist = True
-            self.automatic_temperature = gray_scale_hist and 'patch' not in objective
+            self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
                 self.data['Z'] = self.Z_model()
                 model.feed_data(self.data, need_HR=False)
                 with torch.no_grad():
                     model.fake_H = model.netG(model.var_L)
-            self.loss = SoftHistogramLoss(bins=128,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
-                input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=5 if 'patch' in objective else 1,
+            self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
+                input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,
                   automatic_temperature=model.fake_H.to(self.device) if self.automatic_temperature else None)
         elif 'Adversarial' in objective:
             self.netD = model.netD
@@ -336,6 +343,7 @@ class Z_optimizer():
         self.cur_iter = 0
         self.max_iters = max_iters
         self.HR_unpadder = HR_unpadder
+        self.loss_values = []
 
     def feed_data(self,data):
         self.data = data
@@ -372,6 +380,7 @@ class Z_optimizer():
                 Z_loss = -1*Z_loss
             # Z_loss.backward(retain_graph=(self.HR_unpadder is not None))
             Z_loss.backward()
+            self.loss_values.append(Z_loss.item())
             self.optimizer.step()
             if self.scheduler is not None:
                 self.scheduler.step(Z_loss)
@@ -379,7 +388,7 @@ class Z_optimizer():
             if cur_LR<=1.2*self.MIN_LR:
                 break
             if self.logger is not None:
-                self.logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': Z_loss.item()}, dont_print=True)
+                self.logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': self.loss_values[-1]}, dont_print=True)
         if 'Adversarial' in self.objective:
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         self.cur_iter = z_iter+1

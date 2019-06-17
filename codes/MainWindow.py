@@ -169,7 +169,7 @@ class Ui_MainWindow(object):
         icon6_0 = QtGui.QIcon()
         icon6_0.addPixmap(QtGui.QPixmap("images/unselect.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.UnselectButton.setIcon(icon6_0)
-        self.UnselectButton.setCheckable(True)
+        self.UnselectButton.setCheckable(False)
         self.UnselectButton.setObjectName("UnselectButton")
         self.gridLayout.addWidget(self.UnselectButton,3,1, 1, 1)
 
@@ -181,7 +181,7 @@ class Ui_MainWindow(object):
         icon6_0 = QtGui.QIcon()
         icon6_0.addPixmap(QtGui.QPixmap("images/invertSelection.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.invertSelectionButton.setIcon(icon6_0)
-        self.invertSelectionButton.setCheckable(True)
+        self.invertSelectionButton.setCheckable(False)
         self.invertSelectionButton.setObjectName("invertSelectionButton")
         self.gridLayout.addWidget(self.invertSelectionButton,4,1, 1, 1)
 
@@ -208,6 +208,18 @@ class Ui_MainWindow(object):
         self.desiredHistModeButton.setCheckable(True)
         self.desiredHistModeButton.setObjectName("desiredHistModeButton")
         self.gridLayout.addWidget(self.desiredHistModeButton, 5, 0, 1, 1)
+
+        self.auto_hist_temperature_mode_button = QtWidgets.QPushButton(self.widget)
+        self.auto_hist_temperature_mode_button.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Fixed,self.auto_hist_temperature_mode_button.sizePolicy().hasHeightForWidth()))
+        self.auto_hist_temperature_mode_button.setMinimumSize(QtCore.QSize(30, 30))
+        self.auto_hist_temperature_mode_button.setMaximumSize(QtCore.QSize(30, 30))
+        self.auto_hist_temperature_mode_button.setText("")
+        icon5 = QtGui.QIcon()
+        icon5.addPixmap(QtGui.QPixmap("images/auto_temperature.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.auto_hist_temperature_mode_button.setIcon(icon5)
+        self.auto_hist_temperature_mode_button.setCheckable(True)
+        self.auto_hist_temperature_mode_button.setObjectName("auto_hist_temperature_mode_button")
+        self.gridLayout.addWidget(self.auto_hist_temperature_mode_button, 6, 0, 1, 1)
 
 
         # self.brushButton = QtWidgets.QPushButton(self.widget)

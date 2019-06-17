@@ -27,6 +27,7 @@ SPRAY_PAINT_N = 100
 USE_SVD = True
 VERBOSITY = False
 MAX_SVD_LAMBDA = 1.5
+Z_OPTIMIZER_INITIAL_LR = 1e-1
 
 COLORS = [
     '#000000', '#82817f', '#820300', '#868417', '#007e03', '#037e7b', '#040079',
@@ -230,7 +231,7 @@ class Canvas(QLabel):
         self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
         # self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array([(int(p.x()/self.DTE_opt['scale']),int(p.y()/self.DTE_opt['scale'])) for p in (self.history_pos + [self.current_pos])])],(1,1,1))
         self.Update_Z_Sliders()
-        self.Z_optimizer = None
+        self.Z_optimizer_Reset()
         # self.selectpoly_copy()#I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
 
     def selectpoly_copy(self):
@@ -289,8 +290,12 @@ class Canvas(QLabel):
         # self.LR_mask_vertices = [(int(np.round(p[0]/self.DTE_opt['scale'])),int(np.round(p[1]/self.DTE_opt['scale']))) for p in self.LR_mask_vertices]
         self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Update_Z_Sliders()
-        self.Z_optimizer = None
+        self.Z_optimizer_Reset()
         # self.selectrect_copy()  # I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
+
+    def Z_optimizer_Reset(self):
+        self.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR
+        self.Z_optimizer = None
 
     def Update_Z_Sliders(self):
         self.sliderZ0.setSliderPosition(100*np.sum(self.lambda0.data.cpu().numpy()*self.Z_mask)/np.sum(self.Z_mask))
@@ -729,12 +734,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         matplotlib.interactive(True)
 
         self.saved_outputs_counter = 0
-        self.canvas.Z_optimizer = None
         self.desired_hist_image = None
+        self.auto_set_hist_temperature = False
 
         # Replace canvas placeholder from QtDesigner.
         self.horizontalLayout.removeWidget(self.canvas)
         self.canvas = Canvas()
+        self.canvas.Z_optimizer_Reset()
         self.canvas.DTE_opt = opt
         self.canvas.initialize()
         # We need to enable mouse tracking to follow the mouse without the button pressed.
@@ -804,10 +810,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchHist'))
         self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
 
-        self.UnselectButton.pressed.connect(self.Clear_Z_Mask)
-        self.invertSelectionButton.pressed.connect(self.Invert_Z_Mask)
+        self.UnselectButton.clicked.connect(self.Clear_Z_Mask)
+        self.invertSelectionButton.clicked.connect(self.Invert_Z_Mask)
         self.desiredHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=False))
         self.desiredImageHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=True))
+        self.auto_hist_temperature_mode_button.clicked.connect(lambda checked:self.AutoHistTemperatureMode(checked))
 
         # self.actionReProcess.triggered.connect(self.ReProcess)
 
@@ -863,7 +870,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ0.setRange(-100,100)
         self.sliderZ0.setSingleStep(1)
         self.sliderZ0.setOrientation(Qt.Vertical)
-        self.sliderZ0.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=0))
+        self.sliderZ0.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=0))
         self.sliderZ0.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ0)
         self.sliderZ1 = QSlider()
@@ -875,7 +882,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ1.setRange(-100,100)
         self.sliderZ1.setSingleStep(1)
         self.sliderZ1.setOrientation(Qt.Vertical)
-        self.sliderZ1.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=1))
+        self.sliderZ1.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=1))
         self.sliderZ1.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ1)
         if USE_SVD:
@@ -891,7 +898,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.third_latent_channel.setRange(-100,100)
         self.third_latent_channel.setSingleStep(1)
         self.third_latent_channel.setOrientation(Qt.Vertical)
-        self.third_latent_channel.valueChanged.connect(lambda s: self.SetZ(value=s / 100, index=2))
+        self.third_latent_channel.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=2))
         # self.third_latent_channel.sliderReleased.connect(lambda s=self.third_latent_channel.sliderPosition():self.SetZ(value=self.third_latent_channel.sliderPosition()/100,index=2))
         self.third_latent_channel.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.third_latent_channel)
@@ -937,6 +944,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     #     self.canvas.current_stamp = pixmap
     def Remember_Zmap(self):
         pass#I can use this to add current Z-map to some deque to enable undo and redo
+    def AutoHistTemperatureMode(self,checked):
+        if checked:
+            self.auto_set_hist_temperature = True
+            self.canvas.Z_optimizer_Reset()
+        else:
+            self.auto_set_hist_temperature = False
 
     def DesiredHistMode(self,checked,another_image):
         if checked:
@@ -1007,8 +1020,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ReProcess()
     def Validate_Z_optimizer(self,objective):
         if self.canvas.Z_optimizer is not None:
-            if self.canvas.Z_optimizer.objective!=objective or objective=='Hist': # Resetting optimizer in the 'patchHist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
-                self.canvas.Z_optimizer = None
+            if self.canvas.Z_optimizer.objective!=objective:# or objective=='Hist': # Resetting optimizer in the 'patchHist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
+                self.canvas.Z_optimizer_Reset()
 
     def MasksStorage(self,store):
         if store:
@@ -1063,41 +1076,51 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 data['Desired_Im_Mask'] = self.desired_hist_image_HR_mask
 
             self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,LR_size=list(data['LR'].size()[2:]),model=self.SR_model,Z_range=MAX_SVD_LAMBDA,data=data,
-                initial_LR=1e-1,logger=Logger(self.canvas.DTE_opt),max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask)
+                initial_LR=self.canvas.Z_optimizer_initial_LR,logger=Logger(self.canvas.DTE_opt),max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,
+                                                       auto_set_hist_temperature=self.auto_set_hist_temperature)
             if self.optimizing_region:
                 self.MasksStorage(False)
-        if self.optimizing_region:
-            self.stored_Z = 1 * self.cur_Z
+        # if self.optimizing_region:
+        self.stored_Z = 1 * self.cur_Z # Storing previous Z for two reasons: To recover the big picture Z when optimizing_region, and to recover previous Z if loss did not decrease
         self.cur_Z = self.canvas.Z_optimizer.optimize()
-        if self.optimizing_region:
-            temp_Z = 1*self.cur_Z
+        if self.canvas.Z_optimizer.loss_values[0]<=self.canvas.Z_optimizer.loss_values[-1]: #If the loss did not decrease, I decrease the optimizer's learning rate
+            self.canvas.Z_optimizer_initial_LR /= 5
+            self.canvas.Z_optimizer = None
             self.cur_Z = 1*self.stored_Z
-            self.cur_Z[:,:,self.bounding_rect[1]:self.bounding_rect[1]+self.bounding_rect[3],self.bounding_rect[0]:self.bounding_rect[0]+self.bounding_rect[2]] = temp_Z
-            self.Compute_SR_Image()
-        self.Update_HR_Display()
+            self.SR_model.cur_Z = self.cur_Z.type(self.var_L.type())
+            print('Z optimizer loss did not decrease relative to beginning, decreasing learning rate to %.3e'%(self.canvas.Z_optimizer_initial_LR))
+        else: # This means I'm happy with this optimizer (and its learning rate), so I can cancel the auto-hist-temperature setting, in case it was set to True.
+            self.auto_set_hist_temperature = False
+            self.auto_hist_temperature_mode_button.setChecked(False)
+            if self.optimizing_region:
+                temp_Z = 1*self.cur_Z
+                self.cur_Z = 1*self.stored_Z
+                self.cur_Z[:,:,self.bounding_rect[1]:self.bounding_rect[1]+self.bounding_rect[3],self.bounding_rect[0]:self.bounding_rect[0]+self.bounding_rect[2]] = temp_Z
+                self.Compute_SR_Image()
+            self.Update_HR_Display()
 
     def Clear_Z_Mask(self):
         self.canvas.Z_mask = np.ones(self.canvas.LR_size)
         self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
         self.canvas.LR_mask_vertices = []
         self.canvas.Update_Z_Sliders()
-        self.canvas.Z_optimizer = None
+        self.canvas.Z_optimizer_Reset()
 
     def Invert_Z_Mask(self):
         self.canvas.Z_mask = 1-self.canvas.Z_mask
         self.canvas.HR_selected_mask = 1-self.canvas.HR_selected_mask
 
     def Recompose_cur_Z(self):
-        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         self.cur_Z[0, 0, ...] = (self.canvas.lambda0 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda1 * np.cos(
-            self.canvas.theta) ** 2 - 0.5) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 0, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
+            self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 0, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
         self.cur_Z[0, 1, ...] = (self.canvas.lambda1 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda0 * np.cos(
-            self.canvas.theta) ** 2 - 0.5) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 1, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
-        self.cur_Z[0, 2, ...] = 2 * (self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
-            self.canvas.theta)*Z_mask+(1-Z_mask)*self.cur_Z[0, 2, ...]  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
+            self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 1, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
+        self.cur_Z[0, 2, ...] = 2 * ((self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
+            self.canvas.theta)).to(self.cur_Z.device)*Z_mask+(1-Z_mask)*self.cur_Z[0, 2, ...]  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
 
     def SetZ(self,value,index):
-        self.canvas.Z_optimizer = None
+        self.canvas.Z_optimizer_Reset()
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
         if USE_SVD:
             if index==0:
@@ -1141,7 +1164,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(LR_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
             self.canvas.LR_size = list(self.var_L.size()[2:])
             self.canvas.Z_mask = np.ones(self.canvas.LR_size)
-            # self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
             self.cur_Z = torch.zeros(size=[1,self.SR_model.num_latent_channels]+self.canvas.LR_size)
             self.image_name = path.split('/')[-1].split('.')[0]
             if USE_SVD:
@@ -1149,48 +1171,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.canvas.lambda1 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
                 self.canvas.theta = torch.tensor(0)  # *np.ones(self.canvas.LR_size)
 
-            # self.SR_model.var_L = torch.cat([self.SR_model.cur_Z, self.SR_model.var_L], dim=1)
-            # self.SR_model.netG.eval()
-            # self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
             self.ReProcess()
-            # pixmap = QPixmap()
-            # HR_image = 255*self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1,2,0).copy()
-            # HR_image = QImage(HR_image,HR_image.shape[1],HR_image.shape[0],QImage.Format_RGB32)
-            # HR_image = qimage2ndarray.array2qimage(HR_image)
-            # pixmap.convertFromImage(self.Compute_SR_Image())
             self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
             self.canvas.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
             self.Clear_Z_Mask()
-
-            # self.horizontalLayout.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
-            # self.canvas.adjustSize(pixmap.size())
-            # self.setPixmap(QPixmap(*CANVAS_DIMENSIONS))
-
-            # pixmap.load(path)
-
-            # We need to crop down to the size of our canvas. Get the size of the loaded image.
-            # iw = pixmap.width()
-            # ih = pixmap.height()
-
-            # Get the size of the space we're filling.
-            # cw, ch = CANVAS_DIMENSIONS
-            # if False:
-            #     if iw/cw < ih/ch:  # The height is relatively bigger than the width.
-            #         pixmap = pixmap.scaledToWidth(cw)
-            #         hoff = (pixmap.height() - ch) // 2
-            #         pixmap = pixmap.copy(
-            #             QRect(QPoint(0, hoff), QPoint(cw, pixmap.height()-hoff-1))
-            #         )
-            #
-            #     elif iw/cw > ih/ch:  # The height is relatively bigger than the width.
-            #         pixmap = pixmap.scaledToHeight(ch)
-            #         woff = (pixmap.width() - cw) // 2
-            #         pixmap = pixmap.copy(
-            #             QRect(QPoint(woff, 0), QPoint(pixmap.width()-woff, ch))
-            #         )
-
-            # self.canvas.setPixmap(pixmap)
-
 
     def save_file(self):
         """
