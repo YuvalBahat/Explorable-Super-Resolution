@@ -280,6 +280,9 @@ class Optimizable_Z(torch.nn.Module):
     def PreTanhZ(self):
         return self.Z.data
 
+    def Randomize_Z(self):
+        torch.nn.init.xavier_uniform_(self.Z.data)
+
     def Return_Detached_Z(self):
         return self.forward().detach()
 
@@ -342,6 +345,7 @@ class Z_optimizer():
         self.logger = logger
         self.cur_iter = 0
         self.max_iters = max_iters
+        self.model_training = HR_unpadder is not None
         self.HR_unpadder = HR_unpadder
         self.loss_values = []
 
@@ -357,13 +361,15 @@ class Z_optimizer():
         for p in self.model.netG.parameters():
             original_requires_grad_status.append(p.requires_grad)
             p.requires_grad = False
+        if self.model_training:
+            self.Z_model.Randomize_Z()
         for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
             # self.data['Z'] = self.Z_mask*self.Z_model()+(1-self.Z_mask)*self.model.cur_Z
             self.model.feed_data(self.data, need_HR=False)
             self.model.fake_H = self.model.netG(self.model.var_L)
-            if self.HR_unpadder is not None:
+            if self.model_training:
                 self.model.fake_H = self.HR_unpadder(self.model.fake_H)
             # self.model.test(prevent_grads_calc=False)
             if 'l1' in self.objective:
@@ -402,7 +408,7 @@ class Z_optimizer():
             # self.model.test(prevent_grads_calc=True)
             with torch.no_grad():
                 self.model.fake_H = self.model.netG(self.model.var_L)
-        elif self.HR_unpadder is not None:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
+        elif self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)
             self.model.fake_H = self.model.netG(self.model.var_L)

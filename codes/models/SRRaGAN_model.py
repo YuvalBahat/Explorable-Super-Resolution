@@ -115,7 +115,7 @@ class SRRaGANModel(BaseModel):
                     raise NotImplementedError('Loss type [{:s}] not recognized.'.format(self.optimalZ_loss_type))
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,LR_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
-                    max_iters=10,initial_LR=1e-1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
+                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
             else:
                 print('Remove reference loss with optimal Z.')
                 self.cri_optimalZ = None
@@ -291,11 +291,12 @@ class SRRaGANModel(BaseModel):
             if optimized_Z_step:
                 static_Z = 1*self.cur_Z
                 self.Z_optimizer.feed_data({'LR':self.var_L[:,-3:,...],'HR':self.var_H})
-                # self.netG.train(False)
+
                 self.Z_optimizer.optimize()
+
                 self.cur_Z = static_Z
-                # self.netG.train(True)
             else:
+                self.var_L[:,:self.cur_Z.size(1),...] = self.cur_Z
                 self.fake_H = self.netG(self.var_L)
             if self.DTE_net is not None:
                 if self.decomposed_output:
