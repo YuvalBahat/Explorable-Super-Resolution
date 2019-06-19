@@ -285,7 +285,8 @@ class SoftHistogramLoss(torch.nn.Module):
             self.temperature = self.optimizable_temperature()
             self.desired_hist = self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
                                                           reshape_image=False, compute_hist_normalizer=True)
-            return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.temperature,create_graph=True)[0])**2
+            # return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=cur_image,create_graph=True)[0]).norm(p=2)
+            return self.KLdiv_loss(cur_image_hist,self.desired_hist)
         else:
             return self.KLdiv_loss(cur_image_hist,self.desired_hist)
 
@@ -327,10 +328,6 @@ class Z_optimizer():
             initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
-        if existing_optimizer is None:
-            self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
-        else:
-            self.optimizer = existing_optimizer
         self.objective = objective
         self.data = data
         self.device = torch.device('cuda')
@@ -360,7 +357,7 @@ class Z_optimizer():
         elif 'Hist' in objective:
             self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
-                self.Manage_Model_Grad_Requirements(disable=True)
+                # self.Manage_Model_Grad_Requirements(disable=True)
                 self.data['Z'] = self.Z_model.Return_Detached_Z()
                 model.feed_data(self.data, need_HR=False)
                 with torch.no_grad():
@@ -370,12 +367,16 @@ class Z_optimizer():
                 temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=1)
                 temperature_optimizer.zero_grad()
                 initial_image = model.fake_H.to(self.device).detach()
-                for tempertaure_seeking_iter in range(10):
+                initial_image.requires_grad = True
+                temperatures,gradient_sizes = [],[]
+                for tempertaure_seeking_iter in range(100):
                     temperature_gradients_size = d_KLdiv_2_d_temperature(initial_image)
-                    temperature_gradients_size.backward(retain_graph=True)
+                    # temperature_gradients_size.backward(retain_graph=True)
+                    temperature_gradients_size.backward()
                     temperature_optimizer.step()
-                    print(d_KLdiv_2_d_temperature.temperature)
-                self.Manage_Model_Grad_Requirements(disable=False)
+                    temperatures.append(d_KLdiv_2_d_temperature.temperature.item())
+                    gradient_sizes.append(temperature_gradients_size.item())
+                # self.Manage_Model_Grad_Requirements(disable=False)
 
             self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
                 input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,
@@ -384,6 +385,10 @@ class Z_optimizer():
             self.netD = model.netD
             self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)
 
+        if existing_optimizer is None:
+            self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
+        else:
+            self.optimizer = existing_optimizer
         self.scheduler = None#torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
         self.logger = logger
         self.cur_iter = 0
