@@ -122,22 +122,37 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+class Optimizable_Temperature(torch.nn.Module):
+    def __init__(self):
+        super(Optimizable_Temperature,self).__init__()
+        self.log_temperature = torch.nn.Parameter(data=torch.zeros([1]).type(torch.cuda.DoubleTensor))
+
+    def forward(self):
+        return torch.exp(self.log_temperature)
+
 class SoftHistogramLoss(torch.nn.Module):
-    def __init__(self,bins,min,max,desired_hist_image,desired_hist_image_mask,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=None):
+    def __init__(self,bins,min,max,desired_hist_image_mask,desired_hist_image,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False):
         self.temperature = 0.05#0.05**2#0.006**6
         self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
 
         super(SoftHistogramLoss,self).__init__()
         # min correspond to the CENTER of the first bin, and max to the CENTER of the last bin
+        self.device = torch.device('cuda')
         self.bin_width = (max-min)/(bins-1)
         self.max = max
-        self.temperature *= self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
+        # self.temperature = torch.tensor(self.temperature,requires_grad=True).type(torch.cuda.DoubleTensor)
+        self.temperature_optimizer = automatic_temperature
+        if automatic_temperature:
+            self.optimizable_temperature = Optimizable_Temperature()
+        else:
+            self.temperature = torch.tensor(self.temperature).type(torch.cuda.DoubleTensor)
+            self.temperature = self.temperature*self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
         # self.bin_centers = torch.linspace(min+self.bin_width/2,max-self.bin_width/2,bins)
         self.bin_centers = torch.linspace(min,max,bins)
         self.gray_scale = gray_scale
         self.patch_size = patch_size
-        self.num_dims = desired_hist_image.size(1)
+        self.num_dims = 3
         self.KDE = not gray_scale or patch_size>1 # Using Kernel Density Estimation rather than histogram
         if gray_scale:
             self.num_dims = self.num_dims//3
@@ -146,40 +161,50 @@ class SoftHistogramLoss(torch.nn.Module):
         if patch_size>1:
             assert gray_scale,'Not supporting color images for now'
             self.num_dims = patch_size**2
-            self.patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(desired_hist_image.device)
-            desired_hist_image = torch.sparse.mm(self.patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
-            self.image_mask = None
+            desired_im_patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(self.device)
+            desired_hist_image = torch.sparse.mm(desired_im_patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
+            self.desired_hist_image_mask = None
         else:
-            self.image_mask = torch.from_numpy(desired_hist_image_mask).to(desired_hist_image.device).view([-1]).type(torch.ByteTensor) if desired_hist_image_mask is not None else None
+            self.desired_hist_image_mask = torch.from_numpy(desired_hist_image_mask).to(self.device).view([-1]).type(torch.ByteTensor) if desired_hist_image_mask is not None else None
             desired_hist_image = 1 * desired_hist_image.view([self.num_dims, -1, 1])
         if self.KDE:
             # The bins are now simply the multi-dimensional pixels/patches. So now I remove redundant bins, by checking if there is duplicacy:
-            if self.image_mask is not None:
-                desired_hist_image = desired_hist_image[:,self.image_mask,:]
-            # self.image_mask = None # I already used the mask to remove irrelevant pixels here, so should not use it when computing the desired im hist.
-            self.bins = desired_hist_image
-            repeated_elements_mat = (desired_hist_image.view([self.num_dims,-1,1])-desired_hist_image.view([desired_hist_image.size(0)]+[1,-1])).abs()
-            repeated_elements_mat = (repeated_elements_mat < self.bin_width/ 2).all(0)
-            repeated_elements_mat = torch.mul(repeated_elements_mat, (1 - torch.diag(torch.ones([repeated_elements_mat.size(0)]))).type(repeated_elements_mat.dtype).to(repeated_elements_mat.device))
-            repeated_elements_mat = torch.triu(repeated_elements_mat).any(1)^1
-            self.bins = self.bins[:,repeated_elements_mat]
-            del repeated_elements_mat
-        self.bins = self.bins.view([self.num_dims,1,-1]).type(torch.cuda.DoubleTensor)
+            if self.desired_hist_image_mask is not None:
+                desired_hist_image = desired_hist_image[:,self.desired_hist_image_mask,:]
+            self.bins = self.Desired_Im_2_Bins(desired_hist_image)
         self.KLdiv_loss = torch.nn.KLDivLoss()
         if patch_size>1:
-            self.patch_extraction_mat = self.ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy()).to(desired_hist_image.device)
+            self.patch_extraction_mat = self.ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy()).to(self.device)
+            self.image_mask = None
         else:
             self.image_mask = input_im_HR_mask.view([-1]).type(torch.ByteTensor) if input_im_HR_mask is not None else None
-        if automatic_temperature is not None:
-            if patch_size > 1:
-                initial_image = torch.sparse.mm(self.patch_extraction_mat,automatic_temperature.mean(1, keepdim=True).view([-1, 1])).view([self.num_dims, -1, 1])
-            else:
-                initial_image = automatic_temperature.mean(1, keepdim=True).contiguous().view([self.num_dims,-1,1])
-                if self.image_mask is not None:
-                    initial_image = initial_image[:,self.image_mask,:]
-            self.TemperatureSearch(desired_hist_image,initial_image,1e-3)
-        with torch.no_grad():
-            self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,return_log_hist=False,reshape_image=False,compute_hist_normalizer=True).detach()
+        # if automatic_temperature is not None:
+        #     if patch_size > 1:
+        #         initial_image = torch.sparse.mm(self.patch_extraction_mat,automatic_temperature.mean(1, keepdim=True).view([-1, 1])).view([self.num_dims, -1, 1])
+        #     else:
+        #         initial_image = automatic_temperature.mean(1, keepdim=True).contiguous().view([self.num_dims,-1,1])
+        #         if self.image_mask is not None:
+        #             initial_image = initial_image[:,self.image_mask,:]
+        #     self.TemperatureSearch(desired_hist_image,initial_image,1e-3)
+        if not automatic_temperature:
+            with torch.no_grad():
+                self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,image_mask=self.desired_hist_image_mask,return_log_hist=False,
+                                                              reshape_image=False,compute_hist_normalizer=True).detach()
+        else:
+            self.desired_hist = None
+            self.desired_hist_image = desired_hist_image
+
+    def Desired_Im_2_Bins(self,desired_im):
+        bins = 1*desired_im
+        repeated_elements_mat = (desired_im.view([self.num_dims, -1, 1]) - desired_im.view([desired_im.size(0)] + [1, -1])).abs()
+        repeated_elements_mat = (repeated_elements_mat < self.bin_width / 2).all(0)
+        repeated_elements_mat = torch.mul(repeated_elements_mat,(1 - torch.diag(torch.ones([repeated_elements_mat.size(0)]))).type(
+                                              repeated_elements_mat.dtype).to(repeated_elements_mat.device))
+        repeated_elements_mat = torch.triu(repeated_elements_mat).any(1) ^ 1
+        bins = bins[:, repeated_elements_mat]
+        bins = bins.view([desired_im.size(0), 1, -1]).type(torch.cuda.DoubleTensor)
+        return bins
+
     def TemperatureSearch(self,desired_image,initial_image,desired_KL_div):
         log_temperature_range = [0.1,1]
         STEP_SIZE = 10
@@ -193,8 +218,8 @@ class SoftHistogramLoss(torch.nn.Module):
                     print('KL div. is %.3e even for temperature of %.3e, aborting temperature search with that.'%(cur_KL_div[-1],self.temperature))
                     break
                 self.temperature = 1*next_temperature
-                desired_im_hist = self.ComputeSoftHistogram(desired_image,return_log_hist=False,reshape_image=False,compute_hist_normalizer=True)
-                initial_image_hist = self.ComputeSoftHistogram(initial_image,return_log_hist=True,reshape_image=False,compute_hist_normalizer=False)
+                desired_im_hist = self.ComputeSoftHistogram(desired_image,image_mask=self.desired_hist_image_mask,return_log_hist=False,reshape_image=False,compute_hist_normalizer=True)
+                initial_image_hist = self.ComputeSoftHistogram(initial_image,image_mask=self.image_mask,return_log_hist=True,reshape_image=False,compute_hist_normalizer=False)
                 cur_KL_div.append(self.KLdiv_loss(initial_image_hist,desired_im_hist).item())
                 KL_div_too_big = cur_KL_div[-1] > desired_KL_div
                 if np.abs(np.log(max([0,cur_KL_div[-1]])/desired_KL_div))<=np.log(1+KL_DIV_TOLERANCE):
@@ -225,7 +250,7 @@ class SoftHistogramLoss(torch.nn.Module):
             torch.FloatTensor(np.ones([corresponding_mat_rows.size])),torch.Size([patches_indexes.size, mask.size]))
         return patch_extraction_mat
 
-    def ComputeSoftHistogram(self,image,return_log_hist,reshape_image,compute_hist_normalizer):
+    def ComputeSoftHistogram(self,image,image_mask,return_log_hist,reshape_image,compute_hist_normalizer):
         if not reshape_image:
             image = image.type(torch.cuda.DoubleTensor)
         else:
@@ -233,8 +258,8 @@ class SoftHistogramLoss(torch.nn.Module):
                 image = torch.sparse.mm(self.patch_extraction_mat, image.view([-1, 1])).view([self.num_dims, -1])
             else:
                 image = image.contiguous().view([self.num_dims,-1])
-                if self.image_mask is not None:
-                    image = image[:, self.image_mask]
+                if image_mask is not None:
+                    image = image[:, image_mask]
             image = image.unsqueeze(-1).type(torch.cuda.DoubleTensor)
         hist = (image-self.bins).abs()
         hist = torch.min(hist,(image-self.bins-self.max).abs())
@@ -254,9 +279,15 @@ class SoftHistogramLoss(torch.nn.Module):
 
     def forward(self,cur_image):
         if self.gray_scale:
-            cur_image = cur_image.mean(1,keepdim=True)
-        cur_image_hist = self.ComputeSoftHistogram(cur_image,return_log_hist=True,reshape_image=True,compute_hist_normalizer=False)
-        return self.KLdiv_loss(cur_image_hist,self.desired_hist)
+            cur_image = cur_image.mean(1, keepdim=True)
+        cur_image_hist = self.ComputeSoftHistogram(cur_image,self.image_mask,return_log_hist=True,reshape_image=True,compute_hist_normalizer=False)
+        if self.temperature_optimizer:
+            self.temperature = self.optimizable_temperature()
+            self.desired_hist = self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
+                                                          reshape_image=False, compute_hist_normalizer=True)
+            return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.temperature,create_graph=True)[0])**2
+        else:
+            return self.KLdiv_loss(cur_image_hist,self.desired_hist)
 
 class Optimizable_Z(torch.nn.Module):
     def __init__(self,Z_shape,Z_range=None,initial_Z=None):
@@ -303,6 +334,7 @@ class Z_optimizer():
         self.objective = objective
         self.data = data
         self.device = torch.device('cuda')
+        self.model = model
         if image_mask is None:
             if 'fake_H' in model.__dict__.keys():
                 self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)
@@ -326,13 +358,25 @@ class Z_optimizer():
             self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
         elif 'Hist' in objective:
-            gray_scale_hist = True
             self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
-                self.data['Z'] = self.Z_model()
+                self.Manage_Model_Grad_Requirements(disable=True)
+                self.data['Z'] = self.Z_model.Return_Detached_Z()
                 model.feed_data(self.data, need_HR=False)
                 with torch.no_grad():
                     model.fake_H = model.netG(model.var_L)
+                d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
+                    input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,automatic_temperature=True)
+                temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=1)
+                temperature_optimizer.zero_grad()
+                initial_image = model.fake_H.to(self.device).detach()
+                for tempertaure_seeking_iter in range(10):
+                    temperature_gradients_size = d_KLdiv_2_d_temperature(initial_image)
+                    temperature_gradients_size.backward(retain_graph=True)
+                    temperature_optimizer.step()
+                    print(d_KLdiv_2_d_temperature.temperature)
+                self.Manage_Model_Grad_Requirements(disable=False)
+
             self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
                 input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,
                   automatic_temperature=model.fake_H.to(self.device) if self.automatic_temperature else None)
@@ -341,7 +385,6 @@ class Z_optimizer():
             self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)
 
         self.scheduler = None#torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
-        self.model = model
         self.logger = logger
         self.cur_iter = 0
         self.max_iters = max_iters
@@ -354,13 +397,24 @@ class Z_optimizer():
         self.cur_iter = 0
         self.GT_HR = data['HR'].to(self.device)
 
+    def Manage_Model_Grad_Requirements(self,disable):
+        if disable:
+            self.original_requires_grad_status = []
+            for p in self.model.netG.parameters():
+                self.original_requires_grad_status.append(p.requires_grad)
+                p.requires_grad = False
+        else:
+            for i, p in enumerate(self.model.netG.parameters()):
+                p.requires_grad = self.original_requires_grad_status[i]
+
     def optimize(self):
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the DTE code, to have the output fitD's input size
-        original_requires_grad_status = []
-        for p in self.model.netG.parameters():
-            original_requires_grad_status.append(p.requires_grad)
-            p.requires_grad = False
+        self.Manage_Model_Grad_Requirements(disable=True)
+        # original_requires_grad_status = []
+        # for p in self.model.netG.parameters():
+        #     original_requires_grad_status.append(p.requires_grad)
+        #     p.requires_grad = False
         if self.model_training:
             self.Z_model.Randomize_Z()
         for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
@@ -399,8 +453,9 @@ class Z_optimizer():
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
-        for i,p in enumerate(self.model.netG.parameters()):
-            p.requires_grad = original_requires_grad_status[i]
+        self.Manage_Model_Grad_Requirements(disable=False)
+        # for i,p in enumerate(self.model.netG.parameters()):
+        #     p.requires_grad = original_requires_grad_status[i]
         if self.Z_mask is not None and self.ONLY_MODIFY_MASKED_AREA:
             Z_2_return = self.Z_mask * self.Z_model() + (1 - self.Z_mask) * self.initial_Z
             self.data['Z'] = Z_2_return
