@@ -123,16 +123,18 @@ def pol2cart(rho, phi):
     return(x, y)
 
 class Optimizable_Temperature(torch.nn.Module):
-    def __init__(self):
+    def __init__(self,initial_temperature=None):
         super(Optimizable_Temperature,self).__init__()
         self.log_temperature = torch.nn.Parameter(data=torch.zeros([1]).type(torch.cuda.DoubleTensor))
+        if initial_temperature is not None:
+            self.log_temperature.data = torch.log(torch.tensor(initial_temperature).type(torch.cuda.DoubleTensor))
 
     def forward(self):
         return torch.exp(self.log_temperature)
 
 class SoftHistogramLoss(torch.nn.Module):
-    def __init__(self,bins,min,max,desired_hist_image_mask,desired_hist_image,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False):
-        self.temperature = 0.05#0.05**2#0.006**6
+    def __init__(self,bins,min,max,desired_hist_image_mask,desired_hist_image,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False,image_Z=None,temperature=0.05):
+        self.temperature = temperature#0.05**2#0.006**6
         self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
 
@@ -144,10 +146,11 @@ class SoftHistogramLoss(torch.nn.Module):
         # self.temperature = torch.tensor(self.temperature,requires_grad=True).type(torch.cuda.DoubleTensor)
         self.temperature_optimizer = automatic_temperature
         if automatic_temperature:
-            self.optimizable_temperature = Optimizable_Temperature()
+            self.optimizable_temperature = Optimizable_Temperature(self.temperature)
+            self.image_Z = image_Z
         else:
             self.temperature = torch.tensor(self.temperature).type(torch.cuda.DoubleTensor)
-            self.temperature = self.temperature*self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
+            # self.temperature = self.temperature*self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
         # self.bin_centers = torch.linspace(min+self.bin_width/2,max-self.bin_width/2,bins)
         self.bin_centers = torch.linspace(min,max,bins)
         self.gray_scale = gray_scale
@@ -286,7 +289,8 @@ class SoftHistogramLoss(torch.nn.Module):
             self.desired_hist = self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
                                                           reshape_image=False, compute_hist_normalizer=True)
             # return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=cur_image,create_graph=True)[0]).norm(p=2)
-            return self.KLdiv_loss(cur_image_hist,self.desired_hist)
+            return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.image_Z,create_graph=True)[0]).norm(p=2)
+            # return self.KLdiv_loss(cur_image_hist,self.desired_hist)
         else:
             return self.KLdiv_loss(cur_image_hist,self.desired_hist)
 
@@ -358,29 +362,30 @@ class Z_optimizer():
             self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
                 # self.Manage_Model_Grad_Requirements(disable=True)
-                self.data['Z'] = self.Z_model.Return_Detached_Z()
+                self.data['Z'] = self.Z_model()
+                # self.data['Z'] = self.Z_model.Return_Detached_Z()
+                # self.data['Z'].requires_grad = True
+                pre_tanh_Z = self.Z_model.Z
+                pre_tanh_Z.requires_grad = True
                 model.feed_data(self.data, need_HR=False)
-                with torch.no_grad():
-                    model.fake_H = model.netG(model.var_L)
                 d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
-                    input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,automatic_temperature=True)
-                temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=1)
+                    input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,automatic_temperature=True,image_Z=pre_tanh_Z)
+                temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=0.5)
                 temperature_optimizer.zero_grad()
-                initial_image = model.fake_H.to(self.device).detach()
-                initial_image.requires_grad = True
+                initial_image = model.netG(model.var_L).to(self.device)
                 temperatures,gradient_sizes = [],[]
-                for tempertaure_seeking_iter in range(100):
+                NUM_ITERS = 50
+                for tempertaure_seeking_iter in range(NUM_ITERS):
                     temperature_gradients_size = d_KLdiv_2_d_temperature(initial_image)
-                    # temperature_gradients_size.backward(retain_graph=True)
-                    temperature_gradients_size.backward()
+                    temperature_gradients_size.backward(retain_graph=(tempertaure_seeking_iter<(NUM_ITERS-1)))
                     temperature_optimizer.step()
                     temperatures.append(d_KLdiv_2_d_temperature.temperature.item())
                     gradient_sizes.append(temperature_gradients_size.item())
-                # self.Manage_Model_Grad_Requirements(disable=False)
-
+                    optimal_temperature = temperatures[np.argmin(gradient_sizes)]
+            else:
+                optimal_temperature = 0.05
             self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
-                input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,
-                  automatic_temperature=model.fake_H.to(self.device) if self.automatic_temperature else None)
+                input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,temperature=optimal_temperature)
         elif 'Adversarial' in objective:
             self.netD = model.netD
             self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)

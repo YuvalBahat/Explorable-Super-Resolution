@@ -724,6 +724,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
+        available_GPUs = util.Assign_GPU()
         self.setupUi(self)
 
         # Editable SR:
@@ -1193,7 +1194,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Save active canvas and cur_Z map to image file.
         :return:
         """
-        path = os.path.join('/media/ybahat/data/projects/SRGAN/GUI_outputs','%s_%d%s.png'%(self.image_name,self.saved_outputs_counter,'%s'))
+        # path = os.path.join('/media/ybahat/data/projects/SRGAN/GUI_outputs','%s_%d%s.png'%(self.image_name,self.saved_outputs_counter,'%s'))
+        path = os.path.join('/'.join(self.canvas.DTE_opt['path']['results_root'].split('/')[:-2]),'GUI_outputs','%s_%d%s.png'%(self.image_name,self.saved_outputs_counter,'%s'))
 
         if path:
             imageio.imsave(path%(''),np.clip(255*self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0),0,255).astype(np.uint8))

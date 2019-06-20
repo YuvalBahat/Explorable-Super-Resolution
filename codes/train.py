@@ -69,7 +69,6 @@ def main():
         else:
             raise NotImplementedError('Phase [{:s}] is not recognized.'.format(phase))
     assert train_loader is not None
-
     # Create model
     model = create_model(opt,max_accumulation_steps)
     # create logger
@@ -88,6 +87,7 @@ def main():
     save_GT_HR = True
     lr_too_low = False
     print('---------- Start training -------------')
+    last_saving_time = time.time()
     for epoch in range(int(math.floor(model.step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
             gradient_step_num = model.step // max_accumulation_steps
@@ -116,10 +116,12 @@ def main():
                 logger.print_format_results('train', print_rlt)
 
             # save models
-            if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
+            # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
+            if lr_too_low or (((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch):
                 print('Saving the model at the end of iter {:d}.'.format(gradient_step_num))
                 model.save(gradient_step_num)
                 model.save_log()
+                last_saving_time = time.time()
                 if lr_too_low:
                     break
 
