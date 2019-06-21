@@ -283,14 +283,13 @@ class SoftHistogramLoss(torch.nn.Module):
     def forward(self,cur_image):
         if self.gray_scale:
             cur_image = cur_image.mean(1, keepdim=True)
-        cur_image_hist = self.ComputeSoftHistogram(cur_image,self.image_mask,return_log_hist=True,reshape_image=True,compute_hist_normalizer=False)
         if self.temperature_optimizer:
             self.temperature = self.optimizable_temperature()
             self.desired_hist = self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
                                                           reshape_image=False, compute_hist_normalizer=True)
-            # return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=cur_image,create_graph=True)[0]).norm(p=2)
-            return -1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.image_Z,create_graph=True)[0]).norm(p=2)
-            # return self.KLdiv_loss(cur_image_hist,self.desired_hist)
+        cur_image_hist = self.ComputeSoftHistogram(cur_image, self.image_mask, return_log_hist=True,reshape_image=True, compute_hist_normalizer=False)
+        if self.temperature_optimizer:
+            return self.KLdiv_loss(cur_image_hist,self.desired_hist),-1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.image_Z,create_graph=True)[0]).norm(p=2)
         else:
             return self.KLdiv_loss(cur_image_hist,self.desired_hist)
 
@@ -373,15 +372,16 @@ class Z_optimizer():
                 temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=0.5)
                 temperature_optimizer.zero_grad()
                 initial_image = model.netG(model.var_L).to(self.device)
-                temperatures,gradient_sizes = [],[]
+                temperatures,gradient_sizes,KL_divs = [],[],[]
                 NUM_ITERS = 50
                 for tempertaure_seeking_iter in range(NUM_ITERS):
-                    temperature_gradients_size = d_KLdiv_2_d_temperature(initial_image)
+                    cur_KL_div,temperature_gradients_size = d_KLdiv_2_d_temperature(initial_image)
                     temperature_gradients_size.backward(retain_graph=(tempertaure_seeking_iter<(NUM_ITERS-1)))
                     temperature_optimizer.step()
+                    KL_divs.append(cur_KL_div.item())
                     temperatures.append(d_KLdiv_2_d_temperature.temperature.item())
                     gradient_sizes.append(temperature_gradients_size.item())
-                    optimal_temperature = temperatures[np.argmin(gradient_sizes)]
+                optimal_temperature = temperatures[np.argmin(gradient_sizes)]
             else:
                 optimal_temperature = 0.05
             self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
@@ -400,7 +400,6 @@ class Z_optimizer():
         self.max_iters = max_iters
         self.model_training = HR_unpadder is not None
         self.HR_unpadder = HR_unpadder
-        self.loss_values = []
 
     def feed_data(self,data):
         self.data = data
@@ -421,10 +420,7 @@ class Z_optimizer():
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the DTE code, to have the output fitD's input size
         self.Manage_Model_Grad_Requirements(disable=True)
-        # original_requires_grad_status = []
-        # for p in self.model.netG.parameters():
-        #     original_requires_grad_status.append(p.requires_grad)
-        #     p.requires_grad = False
+        self.loss_values = []
         if self.model_training:
             self.Z_model.Randomize_Z()
         for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
@@ -464,13 +460,10 @@ class Z_optimizer():
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
         self.Manage_Model_Grad_Requirements(disable=False)
-        # for i,p in enumerate(self.model.netG.parameters()):
-        #     p.requires_grad = original_requires_grad_status[i]
         if self.Z_mask is not None and self.ONLY_MODIFY_MASKED_AREA:
             Z_2_return = self.Z_mask * self.Z_model() + (1 - self.Z_mask) * self.initial_Z
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)
-            # self.model.test(prevent_grads_calc=True)
             with torch.no_grad():
                 self.model.fake_H = self.model.netG(self.model.var_L)
         elif self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)

@@ -92,6 +92,7 @@ class BaseModel():
         for key, param in model_state_dict.items():
             model_state_dict[key] = param.cpu()
         torch.save({'model_state_dict':model_state_dict,'optimizer_state_dict':optimizer_state_dict}, save_path)
+        return save_path
 
     # helper loading function that can be used by subclasses
     def load_network(self, load_path, network, strict=True,optimizer=None):

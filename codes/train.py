@@ -4,7 +4,7 @@ import math
 import argparse
 import time
 import random
-from collections import OrderedDict
+from collections import OrderedDict,deque
 import re
 import torch
 import numpy as np
@@ -88,10 +88,15 @@ def main():
     lr_too_low = False
     print('---------- Start training -------------')
     last_saving_time = time.time()
+    recently_saved_models = deque(maxlen=4)
     for epoch in range(int(math.floor(model.step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
             gradient_step_num = model.step // max_accumulation_steps
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
+            saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
+            if saving_step:
+                last_saving_time = time.time()
+
             if gradient_step_num > total_iters:
                 break
 
@@ -117,13 +122,16 @@ def main():
 
             # save models
             # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
-            if lr_too_low or (((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch):
+            if lr_too_low or saving_step:
                 print('Saving the model at the end of iter {:d}.'.format(gradient_step_num))
-                model.save(gradient_step_num)
+                recently_saved_models.append(model.save(gradient_step_num))
                 model.save_log()
-                last_saving_time = time.time()
                 if lr_too_low:
                     break
+                if len(recently_saved_models)>3:
+                    model_2_delete = recently_saved_models.popleft()
+                    os.remove(model_2_delete)
+                    os.remove(model_2_delete.replace('_G.','_D.'))
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:

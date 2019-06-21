@@ -144,12 +144,6 @@ class SRRaGANModel(BaseModel):
                 print('Remove range loss.')
                 self.cri_range = None
 
-            # # Loss on latent vector Z reconstruction by encoder E:
-            # if self.using_encoder:
-            #     self.cri_latent = nn.L1Loss().to(self.device)
-            #     self.l_latent_w = train_opt['latent_weight']
-            # else:
-            #     self.cri_latent = None
             # GD gan loss
             self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
             self.l_gan_w = train_opt['gan_weight']
@@ -586,13 +580,16 @@ class SRRaGANModel(BaseModel):
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
     def load_log(self,max_step=None):
+        PREPEND_OLD_LOG = False
         loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
+        if PREPEND_OLD_LOG:
+            old_log = np.load(os.path.join(self.log_path, 'old_logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
         for key in loaded_log.files:
             if key=='psnr_val':
-                self.log_dict[key] = [tuple(val) for val in loaded_log[key]]
+                self.log_dict[key] = ([tuple(val) for val in old_log[key]] if PREPEND_OLD_LOG else [])+[tuple(val) for val in loaded_log[key]]
             else:
-                self.log_dict[key] = list(loaded_log[key])
+                self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
                 if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
             if max_step is not None:
@@ -757,8 +754,9 @@ class SRRaGANModel(BaseModel):
                 self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
 
     def save(self, iter_label):
-        self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
+        saving_path = self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
         self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
         if self.using_encoder:
             self.save_network(self.save_dir, self.netE, 'E', iter_label, self.optimizer_E)
+        return saving_path
 
