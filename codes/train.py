@@ -14,6 +14,7 @@ from data import create_dataloader, create_dataset
 from models import create_model
 from utils.logger import Logger, PrintLogger
 import tqdm
+from datetime import datetime
 
 
 def main():
@@ -97,6 +98,19 @@ def main():
             if saving_step:
                 last_saving_time = time.time()
 
+            # save models
+            # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
+            if lr_too_low or saving_step:
+                print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
+                recently_saved_models.append(model.save(gradient_step_num))
+                model.save_log()
+                if lr_too_low:
+                    break
+                if len(recently_saved_models)>3:
+                    model_2_delete = recently_saved_models.popleft()
+                    os.remove(model_2_delete)
+                    os.remove(model_2_delete.replace('_G.','_D.'))
+
             if gradient_step_num > total_iters:
                 break
 
@@ -119,19 +133,6 @@ def main():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
                 logger.print_format_results('train', print_rlt)
-
-            # save models
-            # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
-            if lr_too_low or saving_step:
-                print('Saving the model at the end of iter {:d}.'.format(gradient_step_num))
-                recently_saved_models.append(model.save(gradient_step_num))
-                model.save_log()
-                if lr_too_low:
-                    break
-                if len(recently_saved_models)>3:
-                    model_2_delete = recently_saved_models.popleft()
-                    os.remove(model_2_delete)
-                    os.remove(model_2_delete.replace('_G.','_D.'))
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:

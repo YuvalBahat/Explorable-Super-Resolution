@@ -15,7 +15,7 @@ import DTE.DTEnet as DTEnet
 import numpy as np
 import h5py
 from collections import deque
-from utils.util import Z_optimizer
+from utils.util import Z_optimizer,SoftHistogramLoss,SVD_2_LatentZ
 
 
 def Unit_Circle_rejection_Sampling(batch_size):
@@ -107,15 +107,18 @@ class SRRaGANModel(BaseModel):
 
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
+                self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,LR_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
+                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
                 elif self.optimalZ_loss_type == 'l1':
                     self.cri_optimalZ = nn.L1Loss().to(self.device)
+                elif self.optimalZ_loss_type == 'hist':
+                    self.cri_optimalZ = self.Z_optimizer.loss
+                    # self.cri_optimalZ = SoftHistogramLoss(bins=256,min=0,max=1,gray_scale=True,patch_size=1)
                 else:
                     raise NotImplementedError('Loss type [{:s}] not recognized.'.format(self.optimalZ_loss_type))
-                self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,LR_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
-                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
             else:
                 print('Remove reference loss with optimal Z.')
                 self.cri_optimalZ = None
@@ -222,12 +225,13 @@ class SRRaGANModel(BaseModel):
                 else:
                     self.cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
-                    theta = 2*np.pi*self.cur_Z[:,-1,...]
-                    self.SVD = {'theta':theta,'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
-                    self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,
-                                  2*(self.cur_Z[:,0,...]*(torch.sin(theta)**2)+self.cur_Z[:,1,...]*(torch.cos(theta)**2))-1,#Normalizing range to have negative values as well,trying to match [-1,1]
-                                  2*(self.cur_Z[:,0,...]-self.cur_Z[:,1,...])*torch.sin(theta)*torch.cos(theta)]
-                    self.cur_Z = torch.stack(self.cur_Z,1).detach()
+                    self.cur_Z[:,-1,...] = 2*np.pi*self.cur_Z[:,-1,...]
+                    self.SVD = {'theta':self.cur_Z[:,-1,...],'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
+                    self.cur_Z = SVD_2_LatentZ(self.cur_Z).detach()
+                    # self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,
+                    #               2*(self.cur_Z[:,0,...]*(torch.sin(theta)**2)+self.cur_Z[:,1,...]*(torch.cos(theta)**2))-1,#Normalizing range to have negative values as well,trying to match [-1,1]
+                    #               2*(self.cur_Z[:,0,...]-self.cur_Z[:,1,...])*torch.sin(theta)*torch.cos(theta)]
+                    # self.cur_Z = torch.stack(self.cur_Z,1).detach()
                 else:
                     self.cur_Z = 2*self.cur_Z-1
 

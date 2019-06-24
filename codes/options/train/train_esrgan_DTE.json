@@ -92,7 +92,7 @@
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "gan_weight": 1 //5e-3
     , "latent_weight": 1 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_type": "l1"  //"None"
+    , "optimalZ_loss_type": "l1"  //"None","hist","l1"
     , "optimalZ_loss_weight": 10
     , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000

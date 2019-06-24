@@ -28,6 +28,8 @@ USE_SVD = True
 VERBOSITY = False
 MAX_SVD_LAMBDA = 1.
 Z_OPTIMIZER_INITIAL_LR = 1e-1
+DISPLAY_GT_HR = True
+DISPLAY_INDUCED_LR = True
 
 COLORS = [
     '#000000', '#82817f', '#820300', '#868417', '#007e03', '#037e7b', '#040079',
@@ -296,6 +298,7 @@ class Canvas(QLabel):
     def Z_optimizer_Reset(self):
         self.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR
         self.Z_optimizer = None
+        self.Z_optimizer_logger = None
 
     def Update_Z_Sliders(self):
         self.sliderZ0.setSliderPosition(100*np.sum(self.lambda0.data.cpu().numpy()*self.Z_mask)/np.sum(self.Z_mask))
@@ -744,11 +747,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.Z_optimizer_Reset()
         self.canvas.DTE_opt = opt
         self.canvas.initialize()
+
         # We need to enable mouse tracking to follow the mouse without the button pressed.
         self.canvas.setMouseTracking(True)
         # Enable focus to capture key inputs.
         self.canvas.setFocusPolicy(Qt.StrongFocus)
         self.horizontalLayout.addWidget(self.canvas)
+
+        if DISPLAY_GT_HR:
+            #Add a 2nd canvas:
+            self.GT_canvas = Canvas()
+            self.GT_canvas.initialize()
+            self.horizontalLayout.addWidget(self.GT_canvas)
+        if DISPLAY_INDUCED_LR:
+            #Add a 3rd canvas:
+            self.LR_canvas = Canvas()
+            self.LR_canvas.initialize()
+            self.horizontalLayout.addWidget(self.LR_canvas)
 
         # Setup the mode buttons
         mode_group = QButtonGroup(self)
@@ -807,9 +822,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionProcessRandZ.triggered.connect(self.Process_Random_Z)
         self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('max_STD'))
         self.actionIDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('min_STD'))
-        self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('Hist'))
-        self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchHist'))
+        self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('hist'))
+        self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchhist'))
         self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
+        self.actionMatchSliders.triggered.connect(lambda x:self.Optimize_Z('desired_SVD'))
 
         self.UnselectButton.clicked.connect(self.Clear_Z_Mask)
         self.invertSelectionButton.clicked.connect(self.Invert_Z_Mask)
@@ -855,13 +871,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sizeselect.setOrientation(Qt.Horizontal)
         self.sizeselect.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
         # self.drawingToolbar.addWidget(self.sizeselect)
-        if USE_SVD:
-            self.canvas.lambda0 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
-            self.canvas.lambda1 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
-            self.canvas.theta = torch.tensor(0)#*np.ones(self.canvas.LR_size)
-            if VERBOSITY:
-                self.latent_mins = 100*torch.ones([1,3,1,1])
-                self.latent_maxs = -100*torch.ones([1,3,1,1])
+        # if USE_SVD:
+        #     # self.canvas.lambda0 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+        #     # self.canvas.lambda1 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+        #     # self.canvas.theta = torch.tensor(0)#*np.ones(self.canvas.LR_size)
+        #     self.SetZ(0.5,0)#*np.ones(self.canvas.LR_size)
+        #     self.SetZ(0.5,1)#*np.ones(self.canvas.LR_size)
+        #     self.SetZ(0,2)#*np.ones(self.canvas.LR_size)
+        #     if VERBOSITY:
+        #         self.latent_mins = 100*torch.ones([1,3,1,1])
+        #         self.latent_maxs = -100*torch.ones([1,3,1,1])
         self.sliderZ0 = QSlider()
         self.sliderZ0.setObjectName('sliderZ0')
         if USE_SVD:
@@ -871,7 +890,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ0.setRange(-100,100)
         self.sliderZ0.setSingleStep(1)
         self.sliderZ0.setOrientation(Qt.Vertical)
-        self.sliderZ0.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=0))
+        self.sliderZ0.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=0))
         self.sliderZ0.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ0)
         self.sliderZ1 = QSlider()
@@ -883,7 +902,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sliderZ1.setRange(-100,100)
         self.sliderZ1.setSingleStep(1)
         self.sliderZ1.setOrientation(Qt.Vertical)
-        self.sliderZ1.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=1))
+        self.sliderZ1.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=1))
         self.sliderZ1.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.sliderZ1)
         if USE_SVD:
@@ -899,7 +918,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.third_latent_channel.setRange(-100,100)
         self.third_latent_channel.setSingleStep(1)
         self.third_latent_channel.setOrientation(Qt.Vertical)
-        self.third_latent_channel.sliderMoved.connect(lambda s: self.SetZ(value=s / 100, index=2))
+        self.third_latent_channel.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=2))
         # self.third_latent_channel.sliderReleased.connect(lambda s=self.third_latent_channel.sliderPosition():self.SetZ(value=self.third_latent_channel.sliderPosition()/100,index=2))
         self.third_latent_channel.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.third_latent_channel)
@@ -910,6 +929,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ZToolbar.addAction(self.actionImitateHist)
         self.ZToolbar.addAction(self.actionImitatePatchHist)
         self.ZToolbar.addAction(self.actionFoolAdversary)
+        self.ZToolbar.addAction(self.actionMatchSliders)
 
         self.canvas.sliderZ0 = self.sliderZ0
         self.canvas.sliderZ1 = self.sliderZ1
@@ -955,9 +975,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def DesiredHistMode(self,checked,another_image):
         if checked:
             self.MasksStorage(True)
-            # self.stored_Z_mask = 1*self.canvas.Z_mask
-            # self.stored_HR_selected_mask = 1*self.canvas.HR_selected_mask
-            # self.stored_mask_vertices = 1*self.canvas.LR_mask_vertices
             self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
             if another_image:
                 path, _ = QFileDialog.getOpenFileName(self, "Desired image for histogram imitation", "",
@@ -976,12 +993,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.desired_hist_image_HR_mask = 1*self.canvas.HR_selected_mask
             self.MasksStorage(False)
-            # self.canvas.Z_mask = 1*self.stored_Z_mask
-            # self.canvas.HR_selected_mask = 1*self.stored_HR_selected_mask
-            # self.canvas.LR_mask_vertices = 1*self.stored_mask_vertices
-            self.Update_HR_Display()
-        # print(checked)
-        # print('Enterring desired hist mode')
+            self.Update_Image_Display()
 
     def copy_to_clipboard(self):
         clipboard = QApplication.clipboard()
@@ -1003,6 +1015,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SR_model.netG.eval()
         with torch.no_grad():
             self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
+            if DISPLAY_INDUCED_LR:
+                self.induced_LR_image = self.SR_model.netG.module.DownscaleOP(self.SR_model.fake_H)
+
 
     def DrawRandChannel(self,min_val,max_val,uniform=False):
         return (max_val-min_val)*torch.rand([1,1]+([1,1] if uniform else self.canvas.LR_size))+min_val
@@ -1010,9 +1025,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def Process_Random_Z(self):
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
         if USE_SVD:
-            self.canvas.lambda0 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True)+(1-Z_mask)*self.canvas.lambda0
-            self.canvas.lambda1 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True)+(1-Z_mask)*self.canvas.lambda1
-            self.canvas.theta = Z_mask*self.DrawRandChannel(0,np.pi,True)+(1-Z_mask)*self.canvas.theta
+            self.canvas.lambda0 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.lambda0
+            self.canvas.lambda1 = Z_mask*self.DrawRandChannel(0,MAX_SVD_LAMBDA,True).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.lambda1
+            self.canvas.theta = Z_mask*self.DrawRandChannel(0,np.pi,True).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.theta
             self.Recompose_cur_Z()
             self.canvas.Update_Z_Sliders()
         else:
@@ -1021,7 +1036,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ReProcess()
     def Validate_Z_optimizer(self,objective):
         if self.canvas.Z_optimizer is not None:
-            if self.canvas.Z_optimizer.objective!=objective:# or objective=='Hist': # Resetting optimizer in the 'patchHist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
+            if self.canvas.Z_optimizer.objective!=objective:# or objective=='hist': # Resetting optimizer in the 'patchhist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
                 self.canvas.Z_optimizer_Reset()
 
     def MasksStorage(self,store):
@@ -1029,19 +1044,48 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.stored_Z_mask = 1*self.canvas.Z_mask
             self.stored_HR_selected_mask = 1*self.canvas.HR_selected_mask
             self.stored_mask_vertices = 1*self.canvas.LR_mask_vertices
+            self.stored_cur_Z = 1*self.cur_Z
+            self.stored_var_L = 1*self.var_L
         else:
             self.canvas.Z_mask = 1*self.stored_Z_mask
             self.canvas.HR_selected_mask = 1*self.stored_HR_selected_mask
             self.canvas.LR_mask_vertices = 1*self.stored_mask_vertices
+            self.cur_Z = 1*self.stored_cur_Z
+            self.var_L = 1*self.stored_var_L
 
-    def Crop2BoundingRect(self,array,bounding_rect,HR=False):
-        bounding_rect = 1 * bounding_rect
+    def SVD_ValuesStorage(self,store):
+        if store:
+            self.stored_lambda0 = 1*self.canvas.lambda0
+            self.stored_lambda1 = 1*self.canvas.lambda1
+            self.stored_theta = 1*self.canvas.theta
+        else:
+            self.canvas.lambda0 = 1*self.stored_lambda0
+            self.canvas.lambda1 = 1*self.stored_lambda1
+            self.canvas.theta = 1*self.stored_theta
+
+    def Crop2BoundingRect(self,arrays,bounding_rect,HR=False):
+        operating_on_list = isinstance(arrays,list)
+        if not operating_on_list:
+            arrays = [arrays]
         if HR:
-            bounding_rect = self.canvas.DTE_opt['scale']*bounding_rect
-        if isinstance(array,np.ndarray):
-            return array[bounding_rect[1]:bounding_rect[1]+bounding_rect[3],bounding_rect[0]:bounding_rect[0]+bounding_rect[2]]
-        elif torch.is_tensor(array):
-            return array[:,:,bounding_rect[1]:bounding_rect[1] + bounding_rect[3],bounding_rect[0]:bounding_rect[0] + bounding_rect[2]]
+            bounding_rect = self.canvas.DTE_opt['scale'] * bounding_rect
+        bounding_rect = 1 * bounding_rect
+        arrays_2_return = []
+        for array in arrays:
+            if isinstance(array,np.ndarray):
+                arrays_2_return.append(array[bounding_rect[1]:bounding_rect[1]+bounding_rect[3],bounding_rect[0]:bounding_rect[0]+bounding_rect[2]])
+            elif torch.is_tensor(array):
+                if array.dim()==4:
+                    arrays_2_return.append(array[:,:,bounding_rect[1]:bounding_rect[1] + bounding_rect[3],bounding_rect[0]:bounding_rect[0] + bounding_rect[2]])
+                elif array.dim()==2:
+                    arrays_2_return.append(array[bounding_rect[1]:bounding_rect[1] + bounding_rect[3],bounding_rect[0]:bounding_rect[0] + bounding_rect[2]])
+                else:
+                    raise Exception('Unsupported')
+        return arrays_2_return if operating_on_list else arrays_2_return[0]
+
+    def Set_Extreme_SVD_Values(self,min_not_max):
+        self.SetZ(0 if min_not_max else 1,0,reset_optimizer=False) # I'm using 1 as maximal value and not MAX_LAMBDA_VAL because I want these images to correspond to Z=[-1,1] like in the model training. Different maximal Lambda values will be manifested in the Z optimization itself when cur_Z is normalized.
+        self.SetZ(0 if min_not_max else 1, 1,reset_optimizer=False)
 
     def Optimize_Z(self,objective):
         ITERS_PER_ROUND = 5
@@ -1064,20 +1108,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.MasksStorage(True)
                 self.canvas.HR_selected_mask = self.Crop2BoundingRect(self.canvas.HR_selected_mask,self.bounding_rect,HR=True)
                 self.canvas.Z_mask = self.Crop2BoundingRect(self.canvas.Z_mask,self.bounding_rect)
-                data['LR'] = self.Crop2BoundingRect(self.var_L, self.bounding_rect)
+                self.var_L = self.Crop2BoundingRect(self.var_L, self.bounding_rect)
+                data['LR'] = self.var_L
                 self.SR_model.cur_Z = self.Crop2BoundingRect(self.SR_model.cur_Z,self.bounding_rect)#Because I'm saving initial Z when initializing optimizer
+                self.cur_Z = self.Crop2BoundingRect(self.cur_Z,self.bounding_rect)
             else:
                 self.optimizing_region = False
                 self.bounding_rect = np.array([0,0]+self.canvas.LR_size)
 
-            if 'Hist' in objective:
+            if 'hist' in objective:
                 if self.desired_hist_image is None:
                     return
                 data['HR'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.desired_hist_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
                 data['Desired_Im_Mask'] = self.desired_hist_image_HR_mask
-
+            elif 'desired_SVD' in objective:
+                data['desired_Z'] = util.SVD_2_LatentZ(torch.stack([self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta],0).unsqueeze(0),max_lambda=MAX_SVD_LAMBDA)
+                self.SVD_ValuesStorage(True)
+                if self.optimizing_region:
+                    data['desired_Z'] = self.Crop2BoundingRect(data['desired_Z'],self.bounding_rect)
+                    self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta = self.Crop2BoundingRect([self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta],self.bounding_rect)
+                self.Set_Extreme_SVD_Values(min_not_max=True)
+                data['reference_image_min'] = 1*self.SR_model.fake_H
+                self.Set_Extreme_SVD_Values(min_not_max=False)
+                data['reference_image_max'] = 1*self.SR_model.fake_H
+                self.SVD_ValuesStorage(False)
+                # self.Recompose_cur_Z()
+                #     data['reference_image_min'] = self.Crop2BoundingRect(data['reference_image_min'],self.bounding_rect,HR=True)
+                #     data['reference_image_max'] = self.Crop2BoundingRect(data['reference_image_max'],self.bounding_rect,HR=True)
+            if self.canvas.Z_optimizer_logger is None:
+                self.canvas.Z_optimizer_logger = Logger(self.canvas.DTE_opt)
             self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,LR_size=list(data['LR'].size()[2:]),model=self.SR_model,Z_range=MAX_SVD_LAMBDA,data=data,
-                initial_LR=self.canvas.Z_optimizer_initial_LR,logger=Logger(self.canvas.DTE_opt),max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,
+                initial_LR=self.canvas.Z_optimizer_initial_LR,logger=self.canvas.Z_optimizer_logger,max_iters=ITERS_PER_ROUND,image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,
                                                        auto_set_hist_temperature=self.auto_set_hist_temperature)
             if self.optimizing_region:
                 self.MasksStorage(False)
@@ -1097,8 +1158,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 temp_Z = 1*self.cur_Z
                 self.cur_Z = 1*self.stored_Z
                 self.cur_Z[:,:,self.bounding_rect[1]:self.bounding_rect[1]+self.bounding_rect[3],self.bounding_rect[0]:self.bounding_rect[0]+self.bounding_rect[2]] = temp_Z
-                self.Compute_SR_Image()
-            self.Update_HR_Display()
+            self.Compute_SR_Image()
+            self.Update_Image_Display()
 
     def Clear_Z_Mask(self):
         self.canvas.Z_mask = np.ones(self.canvas.LR_size)
@@ -1113,15 +1174,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def Recompose_cur_Z(self):
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
-        self.cur_Z[0, 0, ...] = (self.canvas.lambda0 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda1 * np.cos(
-            self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 0, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
-        self.cur_Z[0, 1, ...] = (self.canvas.lambda1 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda0 * np.cos(
-            self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 1, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
-        self.cur_Z[0, 2, ...] = 2 * ((self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
-            self.canvas.theta)).to(self.cur_Z.device)*Z_mask+(1-Z_mask)*self.cur_Z[0, 2, ...]  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
+        new_Z = util.SVD_2_LatentZ(torch.stack([self.canvas.lambda0, self.canvas.lambda1, self.canvas.theta], 0).unsqueeze(0)).to(self.cur_Z.device)
+        self.cur_Z = Z_mask * new_Z + (1 - Z_mask) * self.cur_Z
+        # self.cur_Z[0, 0, ...] = (self.canvas.lambda1 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda0 * np.cos(
+        #     self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 0, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_x**2 has this same range, so I normalize to [-1,1]
+        # self.cur_Z[0, 1, ...] = (self.canvas.lambda0 * np.sin(self.canvas.theta) ** 2 + self.canvas.lambda1 * np.cos(
+        #     self.canvas.theta) ** 2 - 0.5).to(self.cur_Z.device) * 2*Z_mask+(1-Z_mask)*self.cur_Z[0, 1, ...]  # Since lambda is assumed in [0,1], the resulting value here for I_y**2 has this same range, so I normalize to [-1,1]
+        # self.cur_Z[0, 2, ...] = 2 * ((self.canvas.lambda0 - self.canvas.lambda1) * np.sin(self.canvas.theta) * np.cos(
+        #     self.canvas.theta)).to(self.cur_Z.device)*Z_mask+(1-Z_mask)*self.cur_Z[0, 2, ...]  # Theta is in [0,pi], so the resulting value here for I_xy is in [-0.5,0.5], so I normalize to [-1,1]
+    def SetZ_And_Display(self,value,index):
+        self.SetZ(value,index)
+        self.Update_Image_Display()
 
-    def SetZ(self,value,index):
-        self.canvas.Z_optimizer_Reset()
+    def SetZ(self,value,index,reset_optimizer=True,recompose_Z=True):
+        if reset_optimizer:
+            self.canvas.Z_optimizer_Reset()
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
         if USE_SVD:
             if index==0:
@@ -1130,7 +1197,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.canvas.lambda1 = Z_mask*value+(1-Z_mask)*self.canvas.lambda1
             elif index == 2:
                 self.canvas.theta = Z_mask*value+(1-Z_mask)*self.canvas.theta
-            self.Recompose_cur_Z()
+            if recompose_Z:
+                self.Recompose_cur_Z()
             if VERBOSITY:
                 self.latent_mins = torch.min(torch.cat([self.cur_Z,self.latent_mins],0),dim=0,keepdim=True)[0]
                 self.latent_maxs = torch.max(torch.cat([self.cur_Z,self.latent_maxs],0),dim=0,keepdim=True)[0]
@@ -1140,42 +1208,82 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             raise Exception('Should recode to support Z-mask')
             self.cur_Z[0,index] = value
-        self.ReProcess()
-    def Update_HR_Display(self):
+        self.Compute_SR_Image()
+    def Update_Image_Display(self):
         pixmap = QPixmap()
-        HR_image = 255 * self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1, 2, 0).copy()
-        pixmap.convertFromImage(qimage2ndarray.array2qimage(HR_image))
+        SR_image = 255 * self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1, 2, 0).copy()
+        pixmap.convertFromImage(qimage2ndarray.array2qimage(SR_image))
         self.canvas.setPixmap(pixmap)
+        if DISPLAY_INDUCED_LR:
+            self.Update_LR_Display()
+
+    def Update_LR_Display(self):
+        pixmap = QPixmap()
+        pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * self.induced_LR_image[0].data.cpu().numpy().transpose(1,2,0).copy()))
+        self.LR_canvas.setPixmap(pixmap)
 
     def ReProcess(self):
         self.Compute_SR_Image()
-        self.Update_HR_Display()
+        self.Update_Image_Display()
 
     def open_file(self):
         """
         Open image file for editing, scaling the smaller dimension and cropping the remainder.
         :return:
         """
-        path, _ = QFileDialog.getOpenFileName(self, "Open file", "", "PNG image files (*.png); JPEG image files (*jpg); All files (*.*)")
+        path, _ = QFileDialog.getOpenFileName(self,"Open GT HR file" if DISPLAY_GT_HR else "Open file", "", "PNG image files (*.png); JPEG image files (*jpg); All files (*.*)")
 
         if path:
-            LR_image = data_util.read_img(None, path)
-            if LR_image.shape[2] == 3:
-                LR_image = LR_image[:, :, [2, 1, 0]]
-            self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(LR_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
+            loaded_image = data_util.read_img(None, path)
+            if loaded_image.shape[2] == 3:
+                loaded_image = loaded_image[:, :, [2, 1, 0]]
+            if DISPLAY_GT_HR:
+                pixmap = QPixmap()
+                pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * loaded_image))
+                self.GT_canvas.setPixmap(pixmap)
+                self.var_L = self.SR_model.netG.module.DownscaleOP(torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0))
+            else:
+                self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
             self.canvas.LR_size = list(self.var_L.size()[2:])
             self.canvas.Z_mask = np.ones(self.canvas.LR_size)
             self.cur_Z = torch.zeros(size=[1,self.SR_model.num_latent_channels]+self.canvas.LR_size)
-            self.image_name = path.split('/')[-1].split('.')[0]
             if USE_SVD:
-                self.canvas.lambda0 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
-                self.canvas.lambda1 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
-                self.canvas.theta = torch.tensor(0)  # *np.ones(self.canvas.LR_size)
+                self.canvas.lambda0 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+                self.canvas.lambda1 = torch.tensor(0.5)#*np.ones(self.canvas.LR_size)
+                self.canvas.theta = torch.tensor(0)#*np.ones(self.canvas.LR_size)
+                self.SetZ(0.5*MAX_SVD_LAMBDA, 0,recompose_Z=False)  # *np.ones(self.canvas.LR_size)
+                self.SetZ(0.5*MAX_SVD_LAMBDA, 1,recompose_Z=False)  # *np.ones(self.canvas.LR_size)
+                self.SetZ(0, 2)  # *np.ones(self.canvas.LR_size)
+                if VERBOSITY:
+                    self.latent_mins = 100 * torch.ones([1, 3, 1, 1])
+                    self.latent_maxs = -100 * torch.ones([1, 3, 1, 1])
+
+            self.image_name = path.split('/')[-1].split('.')[0]
+            # if USE_SVD:
+            #     self.canvas.lambda0 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
+            #     self.canvas.lambda1 = torch.tensor(0.5)  # *np.ones(self.canvas.LR_size)
+            #     self.canvas.theta = torch.tensor(0)  # *np.ones(self.canvas.LR_size)
 
             self.ReProcess()
+            # self.reference_image_4_SVD_optimization = 1*self.SR_model.fake_H.detach()
             self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
             self.canvas.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
             self.Clear_Z_Mask()
+            # if DISPLAY_INDUCED_LR:
+            #     self.induced_LR_image = 1*self.var_L
+            #     self.Update_LR_Display()
+                # pixmap = QPixmap()
+                # pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * LR_image))
+                # self.LR_canvas.setPixmap(pixmap)
+
+            # if DISPLAY_GT_HR:
+            #     path, _ = QFileDialog.getOpenFileName(self, "Open GT HR file", "",
+            #                                           "PNG image files (*.png); JPEG image files (*jpg); All files (*.*)")
+            #     if path:
+            #         HR_image = data_util.read_img(None, path)
+            #         pixmap = QPixmap()
+            #         pixmap.convertFromImage(qimage2ndarray.array2qimage(255*HR_image[:,:,::-1]))
+            #         self.GT_canvas.setPixmap(pixmap)
 
     def save_file(self):
         """
@@ -1200,6 +1308,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if path:
             imageio.imsave(path%(''),np.clip(255*self.SR_model.fake_H[0].data.cpu().numpy().transpose(1,2,0),0,255).astype(np.uint8))
             imageio.imsave(path%('_Z'),np.clip(255/2/MAX_SVD_LAMBDA*(MAX_SVD_LAMBDA+self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)),0,255).astype(np.uint8))
+            if DISPLAY_INDUCED_LR:
+                imageio.imsave(path % ('_LR'), np.clip(255*self.induced_LR_image[0].data.cpu().numpy().transpose(1, 2, 0),0, 255).astype(np.uint8))
+
             # pixmap = self.canvas.pixmap()
             # pixmap.save(path%(''), "PNG" )
             # Z_pixmap = QPixmap()
