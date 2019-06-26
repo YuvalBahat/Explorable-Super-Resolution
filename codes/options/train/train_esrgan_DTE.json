@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W10_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W100_debug" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -94,7 +94,7 @@
     , "gan_weight": 1 //5e-3
     , "latent_weight": 1 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "optimalZ_loss_weight": 10
+    , "optimalZ_loss_weight": 100
     , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps

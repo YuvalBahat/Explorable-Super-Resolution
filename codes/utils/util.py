@@ -329,7 +329,7 @@ class Optimizable_Z(torch.nn.Module):
 
     def forward(self):
         if self.Z_range is not None:
-            self.Z.data = torch.min(torch.max(self.Z,torch.tensor(torch.finfo(self.Z.dtype).min).type(self.Z.dtype).to(self.Z.device)),torch.tensor(torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device))
+            self.Z.data = torch.min(torch.max(self.Z,torch.tensor(-torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device)),torch.tensor(torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device))
             return self.Z_range*self.tanh(self.Z)
         else:
             return self.Z
@@ -338,7 +338,7 @@ class Optimizable_Z(torch.nn.Module):
         return self.Z.data
 
     def Randomize_Z(self):
-        torch.nn.init.xavier_uniform_(self.Z.data)
+        torch.nn.init.xavier_uniform_(self.Z.data,gain=100)
 
     def Return_Detached_Z(self):
         return self.forward().detach()
