@@ -70,6 +70,7 @@ class DTEnet:
         invalidity_margins_4_test_LR = self.invalidity_margins_LR
         invalidity_margins_4_test_HR = self.ds_factor*invalidity_margins_4_test_LR
         self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
+        self.HR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_HR, invalidity_margins_4_test_HR,invalidity_margins_4_test_HR, invalidity_margins_4_test_HR))
         self.HR_unpadder = lambda x: x[:, :, invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR,invalidity_margins_4_test_HR:-invalidity_margins_4_test_HR]
         self.LR_unpadder = lambda x:x[:,:,invalidity_margins_4_test_LR:-invalidity_margins_4_test_LR,invalidity_margins_4_test_LR:-invalidity_margins_4_test_LR]#Debugging tool
         self.loss_mask = None
@@ -272,6 +273,7 @@ class DTE_PyTorch(nn.Module):
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
         self.DownscaleOP = Filter_Layer(downscale_antialiasing,pre_filter_func=antialiasing_Padder,post_filter_func=lambda x:Aliased_Downscale_OP(x))
         self.LR_padder = DTEnet.LR_padder
+        self.HR_padder = DTEnet.HR_padder
         self.HR_unpadder = DTEnet.HR_unpadder
         self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
         self.pre_pad = False #Using a variable as flag because I couldn't pass it as argument to forward function when using the DataParallel module with more than 1 GPU
@@ -281,6 +283,11 @@ class DTE_PyTorch(nn.Module):
         # assert not (self.pre_pad and self.return_2_components),'Unsupported'
         return_2_components = self.return_2_components and not self.pre_pad
         if self.pre_pad:
+            if 'Z' in self.generated_image_model.__dict__:
+                if self.generated_image_model.Z.size(3)==x.size(3):
+                    self.generated_image_model.Z = self.LR_padder(self.generated_image_model.Z)
+                else:
+                    self.generated_image_model.Z = self.HR_padder(self.generated_image_model.Z)
             x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels

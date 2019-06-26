@@ -35,6 +35,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 1
     , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input_domain": "HR_downscaled" //"HR","LR"
     , "latent_channels": 3
     , "norm_type": null
     , "mode": "CNA"

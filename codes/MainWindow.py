@@ -785,6 +785,12 @@ class Ui_MainWindow(object):
         icon_patch_hist_imitation.addPixmap(QtGui.QPixmap("images/hist_imitation_patch.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionImitatePatchHist.setIcon(icon_patch_hist_imitation)
 
+        self.actionMatchSliders = QtWidgets.QAction(MainWindow)
+        self.actionMatchSliders.setObjectName("actionMatchSliders")
+        icon_match_sliders = QtGui.QIcon()
+        icon_match_sliders.addPixmap(QtGui.QPixmap("images/sliders_icon.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionMatchSliders.setIcon(icon_match_sliders)
+
         self.actionFoolAdversary = QtWidgets.QAction(MainWindow)
         self.actionFoolAdversary.setObjectName("actionFoolAdversary")
         icon_pixmap = QtGui.QPixmap("images/adversary.png")

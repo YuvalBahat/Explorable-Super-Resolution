@@ -11,7 +11,7 @@ from scipy.signal import convolve2d
 from scipy.ndimage.morphology import binary_opening
 from sklearn.feature_extraction.image import extract_patches_2d
 import torch
-from models.modules.loss import GANLoss
+from models.modules.loss import GANLoss,FilterLoss
 
 ####################
 # miscellaneous
@@ -122,6 +122,14 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
+def SVD_2_LatentZ(SVD_values,max_lambda=1):
+    # Given SVD values, returns corresponding structural tensor values.
+    # SVD values: lambda0 in [0,max_lambda], lambda1 in [0,max_lambda], theta in [0,2*pi]
+    # Returned values: Signa I_x^2 in [-max_lambda,max_lambda], Signa I_y^2 in [-max_lambda,max_lambda], Sigma I_x*I_y in (not sure, should calculate, but a symmetric range).
+    return torch.stack([2*max_lambda*(SVD_values[:,1,...]*(torch.sin(SVD_values[:,-1,...])**2)+SVD_values[:,0,...]*(torch.cos(SVD_values[:,-1,...])**2))-max_lambda,
+                                  2*max_lambda*(SVD_values[:,0,...]*(torch.sin(SVD_values[:,-1,...])**2)+SVD_values[:,1,...]*(torch.cos(SVD_values[:,-1,...])**2))-max_lambda,#Normalizing range to have negative values as well,trying to match [-1,1]
+                                  2*(SVD_values[:,0,...]-SVD_values[:,1,...])*torch.sin(SVD_values[:,-1,...])*torch.cos(SVD_values[:,-1,...])],1)
+
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
         super(Optimizable_Temperature,self).__init__()
@@ -133,7 +141,7 @@ class Optimizable_Temperature(torch.nn.Module):
         return torch.exp(self.log_temperature)
 
 class SoftHistogramLoss(torch.nn.Module):
-    def __init__(self,bins,min,max,desired_hist_image_mask,desired_hist_image,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False,image_Z=None,temperature=0.05):
+    def __init__(self,bins,min,max,desired_hist_image_mask=None,desired_hist_image=None,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False,image_Z=None,temperature=0.05):
         self.temperature = temperature#0.05**2#0.006**6
         self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
@@ -151,7 +159,6 @@ class SoftHistogramLoss(torch.nn.Module):
         else:
             self.temperature = torch.tensor(self.temperature).type(torch.cuda.DoubleTensor)
             # self.temperature = self.temperature*self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
-        # self.bin_centers = torch.linspace(min+self.bin_width/2,max-self.bin_width/2,bins)
         self.bin_centers = torch.linspace(min,max,bins)
         self.gray_scale = gray_scale
         self.patch_size = patch_size
@@ -160,16 +167,18 @@ class SoftHistogramLoss(torch.nn.Module):
         if gray_scale:
             self.num_dims = self.num_dims//3
             self.bins = 1. * self.bin_centers.view([1] + list(self.bin_centers.size())).type(torch.cuda.DoubleTensor)
-            desired_hist_image = desired_hist_image.mean(1, keepdim=True).view([-1,1])
+            if desired_hist_image is not None:
+                desired_hist_image = desired_hist_image.mean(1, keepdim=True).view([-1,1])
         if patch_size>1:
-            assert gray_scale,'Not supporting color images for now'
+            assert gray_scale and (desired_hist_image is not None),'Not supporting color images or patch histograms for model training loss for now'
             self.num_dims = patch_size**2
             desired_im_patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(self.device)
             desired_hist_image = torch.sparse.mm(desired_im_patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
             self.desired_hist_image_mask = None
         else:
             self.desired_hist_image_mask = torch.from_numpy(desired_hist_image_mask).to(self.device).view([-1]).type(torch.ByteTensor) if desired_hist_image_mask is not None else None
-            desired_hist_image = 1 * desired_hist_image.view([self.num_dims, -1, 1])
+            if desired_hist_image is not None:
+                desired_hist_image = 1 * desired_hist_image.view([self.num_dims, -1, 1])
         if self.KDE:
             # The bins are now simply the multi-dimensional pixels/patches. So now I remove redundant bins, by checking if there is duplicacy:
             if self.desired_hist_image_mask is not None:
@@ -189,13 +198,21 @@ class SoftHistogramLoss(torch.nn.Module):
         #         if self.image_mask is not None:
         #             initial_image = initial_image[:,self.image_mask,:]
         #     self.TemperatureSearch(desired_hist_image,initial_image,1e-3)
-        if not automatic_temperature:
+        if not automatic_temperature and desired_hist_image is not None:
             with torch.no_grad():
-                self.desired_hist = self.ComputeSoftHistogram(desired_hist_image,image_mask=self.desired_hist_image_mask,return_log_hist=False,
-                                                              reshape_image=False,compute_hist_normalizer=True).detach()
+                self.desired_hists_list = [self.ComputeSoftHistogram(desired_hist_image,image_mask=self.desired_hist_image_mask,return_log_hist=False,
+                                                              reshape_image=False,compute_hist_normalizer=True).detach()]
         else:
-            self.desired_hist = None
             self.desired_hist_image = desired_hist_image
+
+    def Feed_Desired_Hist_Im(self,desired_hist_image):
+        self.desired_hists_list = []
+        for desired_im in desired_hist_image:
+            if self.gray_scale:
+                desired_im = desired_im.mean(0, keepdim=True).view([1,-1, 1])
+            with torch.no_grad():
+                self.desired_hists_list.append(self.ComputeSoftHistogram(desired_im,image_mask=self.desired_hist_image_mask,return_log_hist=False,
+                                                                  reshape_image=False,compute_hist_normalizer=True).detach())
 
     def Desired_Im_2_Bins(self,desired_im):
         bins = 1*desired_im
@@ -276,22 +293,26 @@ class SoftHistogramLoss(torch.nn.Module):
         if self.KDE: # Adding another "bin" to account for all other missing bins
             hist = torch.cat([hist,(1-torch.min(torch.tensor(1).type(hist.dtype).to(hist.device),hist.sum())).view([1])])
         if return_log_hist:
-            return torch.log(hist+torch.finfo(hist.dtype).eps)
+            return torch.log(hist+torch.finfo(hist.dtype).eps).view([1,-1])
         else:
-            return hist
+            return hist.view([1,-1])
 
-    def forward(self,cur_image):
-        if self.gray_scale:
-            cur_image = cur_image.mean(1, keepdim=True)
+    def forward(self,cur_images):
+        cur_images_hists,KLdiv_grad_sizes = [],[]
+        for cur_image in cur_images:
+            if self.gray_scale:
+                cur_image = cur_image.mean(0, keepdim=True)
+            if self.temperature_optimizer:
+                self.temperature = self.optimizable_temperature()
+                self.desired_hists_list.append(self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
+                                                              reshape_image=False, compute_hist_normalizer=True))
+            cur_images_hists.append(self.ComputeSoftHistogram(cur_image, self.image_mask, return_log_hist=True,reshape_image=True, compute_hist_normalizer=False))
+            if self.temperature_optimizer:
+                KLdiv_grad_sizes.append(-1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_images_hists[-1],self.desired_hists_list[-1]),inputs=self.image_Z,create_graph=True)[0]).norm(p=2))
         if self.temperature_optimizer:
-            self.temperature = self.optimizable_temperature()
-            self.desired_hist = self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
-                                                          reshape_image=False, compute_hist_normalizer=True)
-        cur_image_hist = self.ComputeSoftHistogram(cur_image, self.image_mask, return_log_hist=True,reshape_image=True, compute_hist_normalizer=False)
-        if self.temperature_optimizer:
-            return self.KLdiv_loss(cur_image_hist,self.desired_hist),-1*(torch.autograd.grad(outputs=self.KLdiv_loss(cur_image_hist,self.desired_hist),inputs=self.image_Z,create_graph=True)[0]).norm(p=2)
+            return self.KLdiv_loss(torch.cat(cur_images_hists,0),torch.cat(self.desired_hists_list,0)),torch.stack(KLdiv_grad_sizes).mean()
         else:
-            return self.KLdiv_loss(cur_image_hist,self.desired_hist)
+            return self.KLdiv_loss(torch.cat(cur_images_hists,0),torch.cat(self.desired_hists_list,0))
 
 class Optimizable_Z(torch.nn.Module):
     def __init__(self,Z_shape,Z_range=None,initial_Z=None):
@@ -308,6 +329,7 @@ class Optimizable_Z(torch.nn.Module):
 
     def forward(self):
         if self.Z_range is not None:
+            self.Z.data = torch.min(torch.max(self.Z,torch.tensor(torch.finfo(self.Z.dtype).min).type(self.Z.dtype).to(self.Z.device)),torch.tensor(torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device))
             return self.Z_range*self.tanh(self.Z)
         else:
             return self.Z
@@ -321,15 +343,19 @@ class Optimizable_Z(torch.nn.Module):
     def Return_Detached_Z(self):
         return self.forward().detach()
 
+def ArcTanH(input_tensor):
+    return 0.5*torch.log((1+input_tensor)/(1-input_tensor))
+
 class Z_optimizer():
     MIN_LR = 1e-5
     ONLY_MODIFY_MASKED_AREA = True
-    def __init__(self,objective,LR_size,model,Z_range,max_iters,data=None,logger=None,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None,
+    def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,logger=None,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None,
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False):
         if initial_pre_tanh_Z is None and 'cur_Z' in model.__dict__.keys():
             initial_pre_tanh_Z = 1.*model.cur_Z/Z_range
-            initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
-        self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
+            # initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
+            initial_pre_tanh_Z = ArcTanH(initial_pre_tanh_Z)
+        self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
         self.objective = objective
         self.data = data
@@ -340,7 +366,7 @@ class Z_optimizer():
                 self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)
             else:
                 self.image_mask = None
-            self.Z_mask = None#torch.ones(LR_size).type(model.fake_H.dtype).to(self.device)
+            self.Z_mask = None#torch.ones(Z_size).type(model.fake_H.dtype).to(self.device)
         else:
             assert Z_mask is not None,'Should either supply both masks or niether'
             self.image_mask = torch.from_numpy(image_mask).type(model.fake_H.dtype).to(self.device)
@@ -351,19 +377,19 @@ class Z_optimizer():
         if 'l1' in objective:
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
             # scheduler_threshold = 1e-2
+        elif 'desired_SVD' in objective:
+            self.loss = FilterLoss(latent_channels='SVDinNormedOut_structure_tensor',constant_Z=data['desired_Z'],
+                                   reference_images={'min':data['reference_image_min'],'max':data['reference_image_max']},masks={'LR':self.Z_mask,'HR':self.image_mask})
         elif 'STD' in objective:
             assert self.objective in ['max_STD', 'min_STD']
             # scheduler_threshold = 0.9999
         elif 'VGG' in objective:
             self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
-        elif 'Hist' in objective:
+        elif 'hist' in objective:
             self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
-                # self.Manage_Model_Grad_Requirements(disable=True)
                 self.data['Z'] = self.Z_model()
-                # self.data['Z'] = self.Z_model.Return_Detached_Z()
-                # self.data['Z'].requires_grad = True
                 pre_tanh_Z = self.Z_model.Z
                 pre_tanh_Z.requires_grad = True
                 model.feed_data(self.data, need_HR=False)
@@ -383,8 +409,9 @@ class Z_optimizer():
                     gradient_sizes.append(temperature_gradients_size.item())
                 optimal_temperature = temperatures[np.argmin(gradient_sizes)]
             else:
-                optimal_temperature = 0.05
-            self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'],desired_hist_image_mask=data['Desired_Im_Mask'],
+                optimal_temperature = 5e-4
+            self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'] if self.data is not None else None,
+                desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,
                 input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,temperature=optimal_temperature)
         elif 'Adversarial' in objective:
             self.netD = model.netD
@@ -404,7 +431,10 @@ class Z_optimizer():
     def feed_data(self,data):
         self.data = data
         self.cur_iter = 0
-        self.GT_HR = data['HR'].to(self.device)
+        if 'l1' in self.objective:
+            self.GT_HR = data['HR'].to(self.device)
+        elif 'hist' in self.objective:
+            self.loss.Feed_Desired_Hist_Im(data['HR'].to(self.device))
 
     def Manage_Model_Grad_Requirements(self,disable):
         if disable:
@@ -434,7 +464,9 @@ class Z_optimizer():
             # self.model.test(prevent_grads_calc=False)
             if 'l1' in self.objective:
                 Z_loss = self.loss(self.model.fake_H.to(self.device), self.GT_HR.to(self.device))
-            elif 'Hist' in self.objective:
+            elif 'desired_SVD' in self.objective:
+                Z_loss = self.loss({'SR':self.model.fake_H.to(self.device)}).mean()
+            elif 'hist' in self.objective:
                 Z_loss = self.loss(self.model.fake_H.to(self.device))
             elif 'Adversarial' in self.objective:
                 Z_loss = self.loss(self.netD(self.model.DTE_net.HR_unpadder(self.model.fake_H).to(self.device)),True)
@@ -464,8 +496,8 @@ class Z_optimizer():
             Z_2_return = self.Z_mask * self.Z_model() + (1 - self.Z_mask) * self.initial_Z
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)
-            with torch.no_grad():
-                self.model.fake_H = self.model.netG(self.model.var_L)
+            # with torch.no_grad():
+            #     self.model.fake_H = self.model.netG(self.model.var_L)
         elif self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)

@@ -51,18 +51,25 @@ class RRDBNet(nn.Module):
             act_type='leakyrelu', mode='CNA', upsample_mode='upconv',latent_input=None,num_latent_channels=None):
         super(RRDBNet, self).__init__()
         self.latent_input = latent_input
-        self.num_latent_channels = num_latent_channels
+        if num_latent_channels is not None and num_latent_channels>0:
+            num_latent_channels_HR = 1 * num_latent_channels
+            if 'HR_rearranged' in latent_input:
+                num_latent_channels *= upscale**2
+        self.num_latent_channels = 1*num_latent_channels
+        self.upscale = upscale
         n_upscale = int(math.log(upscale, 2))
         if upscale == 3:
             n_upscale = 1
         if latent_input is not None:
             in_nc += num_latent_channels
-            # if latent_input=='all_layers':
+        if latent_input is None or 'all_layers' not in latent_input:
+            num_latent_channels,num_latent_channels_HR = 0,0
+
         USE_NODULE_LISTS = True
         fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
         rb_blocks = [B.RRDB(nf, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
-            norm_type=norm_type, act_type=act_type, mode='CNA',latent_input_channels=(num_latent_channels if latent_input=='all_layers' else 0)) for _ in range(nb)]
-        LR_conv = B.conv_block(nf+(num_latent_channels if latent_input=='all_layers' else 0), nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode,return_module_list=USE_NODULE_LISTS)
+            norm_type=norm_type, act_type=act_type, mode='CNA',latent_input_channels=num_latent_channels) for _ in range(nb)]
+        LR_conv = B.conv_block(nf+num_latent_channels, nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode,return_module_list=USE_NODULE_LISTS)
 
         if upsample_mode == 'upconv':
             upsample_block = B.upconv_blcok
@@ -74,31 +81,46 @@ class RRDBNet(nn.Module):
             upsampler = upsample_block(nf, nf, 3, act_type=act_type)
         else:
             upsampler = [upsample_block(nf, nf, act_type=act_type) for _ in range(n_upscale)]
-        if latent_input=='all_layers':
-            self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
-        HR_conv0 = B.conv_block(nf+(num_latent_channels if latent_input=='all_layers' else 0), nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_NODULE_LISTS)
-        HR_conv1 = B.conv_block(nf+(num_latent_channels if latent_input=='all_layers' else 0), out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
+        if latent_input is not None and 'all_layers' in latent_input:
+            if 'LR' in latent_input:
+                self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
+        HR_conv0 = B.conv_block(nf+num_latent_channels_HR, nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_NODULE_LISTS)
+        HR_conv1 = B.conv_block(nf+num_latent_channels_HR, out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
 
         if USE_NODULE_LISTS:
             self.model = nn.ModuleList(fea_conv+\
-                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_NODULE_LISTS),latent_input_channels=num_latent_channels if latent_input=='all_layers' else 0,use_module_list=True)]+\
+                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_NODULE_LISTS),latent_input_channels=num_latent_channels,use_module_list=True)]+\
                                        upsampler+HR_conv0+HR_conv1)
         else:
             self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*rb_blocks, LR_conv)),\
                 *upsampler, HR_conv0, HR_conv1)
 
     def forward(self, x):
-        if self.latent_input=='all_layers':
-            latent_input = x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:]))
+        if self.latent_input is not None:
+            if 'HR_downscaled' in self.latent_input:
+                # latent_input = x[:,:self.num_latent_channels*self.upscale**2,...]
+                # latent_input_HR = latent_input.view([x.size()[0]]+[self.num_latent_channels]+[self.upscale*val for val in list(x.size()[2:])])
+                latent_input_HR = self.Z
+                latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False)
+                # x = torch.cat([latent_input,x[:,-3:,...]],dim=1)
+            else:
+                latent_input = self.Z
+                # latent_input = x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:]))
+            x = torch.cat([latent_input, x], dim=1)
         for i,module in enumerate(self.model):
             module_children = [str(type(m)) for m in module.children()]
-            if i>0 and self.latent_input=='all_layers':
+            if i>0 and self.latent_input is not None and 'all_layers' in self.latent_input:
                 if len(module_children)>0 and 'Upsample' in module_children[0]:
-                    latent_input = self.latent_upsampler(latent_input)
+                    if 'LR' in self.latent_input:
+                        latent_input = self.latent_upsampler(latent_input)
+                    elif 'HR_rearranged' in self.latent_input:
+                        raise Exception('Unsupported yet')
+                        latent_input = latent_input.view()
+                    elif 'HR_downscaled' in self.latent_input:
+                        latent_input = 1*latent_input_HR
                 elif 'ReLU' not in str(type(module)):
                     x = torch.cat([latent_input,x],1)
             x = module(x)
-        # x = self.model(x)
         return x
 
 

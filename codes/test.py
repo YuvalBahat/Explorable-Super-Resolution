@@ -20,9 +20,9 @@ import subprocess
 SAVE_IMAGE_COLLAGE = False
 TEST_LATENT_INPUT = 'GIF'#'GIF','video',None
 # Parameters for GIF:
-LATENT_DISTRIBUTION = 'Desired_Im_Hist'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_Hist
+LATENT_DISTRIBUTION = 'Desired_Im_hist'#'Uniform'#,'Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_hist
 NUM_Z_ITERS = 250
-DETERMINISTIC_Z_INPUTS = ['Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','Desired_Im_Hist']
+DETERMINISTIC_Z_INPUTS = ['Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','Desired_Im_hist']
 LATENT_RANGE = 1
 NUM_SAMPLES = 31#Must be odd for a collage to be saved
 INPUT_Z_IM_PATH = os.path.join('/home/ybahat/Dropbox/PhD/DataTermEnforcingArch/Results/SRGAN/NoiseInput',LATENT_DISTRIBUTION)
@@ -140,7 +140,7 @@ for test_loader in test_loaders:
                     cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
                 elif 'Desired_Im' in LATENT_DISTRIBUTION:
                     LR_Z = 1e-1
-                    objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('Hist' if 'Hist' in LATENT_DISTRIBUTION else 'L1'))
+                    objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('hist' if 'hist' in LATENT_DISTRIBUTION else 'L1'))
                     Z_optimizer = util.Z_optimizer(objective=objective,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,logger=logger,max_iters=NUM_Z_ITERS,data=data)
                     cur_Z = Z_optimizer.optimize()
                 elif 'STD' in LATENT_DISTRIBUTION:
