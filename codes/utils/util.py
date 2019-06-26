@@ -329,6 +329,7 @@ class Optimizable_Z(torch.nn.Module):
 
     def forward(self):
         if self.Z_range is not None:
+            self.Z.data = torch.min(torch.max(self.Z,torch.tensor(torch.finfo(self.Z.dtype).min).type(self.Z.dtype).to(self.Z.device)),torch.tensor(torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device))
             return self.Z_range*self.tanh(self.Z)
         else:
             return self.Z
@@ -342,15 +343,19 @@ class Optimizable_Z(torch.nn.Module):
     def Return_Detached_Z(self):
         return self.forward().detach()
 
+def ArcTanH(input_tensor):
+    return 0.5*torch.log((1+input_tensor)/(1-input_tensor))
+
 class Z_optimizer():
     MIN_LR = 1e-5
     ONLY_MODIFY_MASKED_AREA = True
-    def __init__(self,objective,LR_size,model,Z_range,max_iters,data=None,logger=None,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None,
+    def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,logger=None,image_mask=None,Z_mask=None,initial_pre_tanh_Z=None,initial_LR=None,existing_optimizer=None,
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False):
         if initial_pre_tanh_Z is None and 'cur_Z' in model.__dict__.keys():
             initial_pre_tanh_Z = 1.*model.cur_Z/Z_range
-            initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
-        self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(LR_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
+            # initial_pre_tanh_Z = 0.5*torch.log((1+initial_pre_tanh_Z)/(1-initial_pre_tanh_Z))
+            initial_pre_tanh_Z = ArcTanH(initial_pre_tanh_Z)
+        self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_Z=initial_pre_tanh_Z)
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
         self.objective = objective
         self.data = data
@@ -361,7 +366,7 @@ class Z_optimizer():
                 self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)
             else:
                 self.image_mask = None
-            self.Z_mask = None#torch.ones(LR_size).type(model.fake_H.dtype).to(self.device)
+            self.Z_mask = None#torch.ones(Z_size).type(model.fake_H.dtype).to(self.device)
         else:
             assert Z_mask is not None,'Should either supply both masks or niether'
             self.image_mask = torch.from_numpy(image_mask).type(model.fake_H.dtype).to(self.device)

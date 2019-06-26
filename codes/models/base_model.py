@@ -124,11 +124,12 @@ class BaseModel():
                 assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
                 modified_key_names_counter += 1
             if self.latent_input is not None and \
-                'weight' in key and loaded_state_dict[key].dim()>1 and loaded_state_dict[key].size()[1]+self.num_latent_channels==current_state_dict[current_key].size()[1]:
+                'weight' in key and loaded_state_dict[key].dim()>1 and current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
+                additional_channels = current_state_dict[current_key].size()[1]-loaded_state_dict[key].size()[1]
                 loaded_weights_STD = loaded_state_dict[key].std()
-                modified_state_dict[current_key] = torch.cat([LATENT_WEIGHTS_RELATIVE_STD*loaded_weights_STD/current_state_dict[current_key][:,:self.num_latent_channels,:,:].std()*\
-                    current_state_dict[current_key][:,:self.num_latent_channels,:,:].view([current_state_dict[current_key].size()[0],self.num_latent_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),loaded_state_dict[key].cuda()],1)
-                self.channels_idx_4_grad_amplification[i] = [c for c in range(self.num_latent_channels)]
+                modified_state_dict[current_key] = torch.cat([LATENT_WEIGHTS_RELATIVE_STD*loaded_weights_STD/current_state_dict[current_key][:,:additional_channels,:,:].std()*\
+                    current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),loaded_state_dict[key].cuda()],1)
+                self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]
         if modified_key_names_counter>0:

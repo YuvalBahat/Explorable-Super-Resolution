@@ -30,6 +30,7 @@ class SRRaGANModel(BaseModel):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
+        self.latent_input_domain = opt['network_G']['latent_input_domain']
         self.latent_input = opt['network_G']['latent_input'] if opt['network_G']['latent_input']!='None' else None
         self.num_latent_channels = 0
         if self.latent_input is not None:
@@ -108,7 +109,7 @@ class SRRaGANModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,LR_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
                     max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
@@ -212,6 +213,16 @@ class SRRaGANModel(BaseModel):
         print('---------- Model initialized ------------------')
         self.print_network()
         print('-----------------------------------------------')
+    def ConcatLatent(self,LR_image,latent_input):
+        if LR_image.size()[2:]!=latent_input.size()[2:]:
+            latent_input = latent_input.view([1]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
+        self.var_L = torch.cat([latent_input,LR_image],dim=1)
+    def Assing_LR_and_Latent(self,LR_image,latent_input):
+        self.AssignLatent(latent_input)
+        self.var_L = LR_image
+
+    def AssignLatent(self,latent_input):
+        self.netG.module.generated_image_model.Z = latent_input
 
     def feed_data(self, data, need_HR=True):
         # LR
@@ -241,7 +252,8 @@ class SRRaGANModel(BaseModel):
                 self.cur_Z = (self.cur_Z*torch.ones([1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type())
             if not torch.is_tensor(self.cur_Z):
                 self.cur_Z = torch.from_numpy(self.cur_Z).type(self.var_L.type())
-            self.var_L = torch.cat([self.cur_Z,self.var_L],dim=1)
+            self.AssignLatent(latent_input=self.cur_Z)
+            # self.var_L = torch.cat([self.cur_Z,self.var_L],dim=1)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
@@ -294,7 +306,8 @@ class SRRaGANModel(BaseModel):
 
                 self.cur_Z = static_Z
             else:
-                self.var_L[:,:self.cur_Z.size(1),...] = self.cur_Z
+                # self.var_L[:,:self.cur_Z.size(1),...] = self.cur_Z
+                self.AssignLatent(self.cur_Z)
                 self.fake_H = self.netG(self.var_L)
             if self.DTE_net is not None:
                 if self.decomposed_output:
