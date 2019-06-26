@@ -283,12 +283,12 @@ class DTE_PyTorch(nn.Module):
         # assert not (self.pre_pad and self.return_2_components),'Unsupported'
         return_2_components = self.return_2_components and not self.pre_pad
         if self.pre_pad:
-            x = self.LR_padder(x)
             if 'Z' in self.generated_image_model.__dict__:
                 if self.generated_image_model.Z.size(3)==x.size(3):
                     self.generated_image_model.Z = self.LR_padder(self.generated_image_model.Z)
                 else:
                     self.generated_image_model.Z = self.HR_padder(self.generated_image_model.Z)
+            x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)

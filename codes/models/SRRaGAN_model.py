@@ -32,6 +32,7 @@ class SRRaGANModel(BaseModel):
         self.log_path = opt['path']['log']
         self.latent_input_domain = opt['network_G']['latent_input_domain']
         self.latent_input = opt['network_G']['latent_input'] if opt['network_G']['latent_input']!='None' else None
+        self.Z_size_factor = opt['scale'] if 'HR' in opt['network_G']['latent_input_domain'] else 1
         self.num_latent_channels = 0
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
@@ -109,7 +110,7 @@ class SRRaGANModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[opt['datasets']['train']['HR_size']//opt['scale']],model=self,Z_range=1,
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['HR_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
                     max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
@@ -247,9 +248,9 @@ class SRRaGANModel(BaseModel):
                     self.cur_Z = 2*self.cur_Z-1
 
             if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
-                self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels,self.var_L.size()[2],self.var_L.size()[3]])
+                self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])
             elif torch.is_tensor(self.cur_Z) and self.cur_Z.size(dim=2)==1:
-                self.cur_Z = (self.cur_Z*torch.ones([1,1,self.var_L.size()[2],self.var_L.size()[3]])).type(self.var_L.type())
+                self.cur_Z = (self.cur_Z*torch.ones([1,1]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])).type(self.var_L.type())
             if not torch.is_tensor(self.cur_Z):
                 self.cur_Z = torch.from_numpy(self.cur_Z).type(self.var_L.type())
             self.AssignLatent(latent_input=self.cur_Z)
