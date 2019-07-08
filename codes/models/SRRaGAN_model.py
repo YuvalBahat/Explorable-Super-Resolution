@@ -206,6 +206,7 @@ class SRRaGANModel(BaseModel):
         elif init_Fnet or init_Dnet:
             if init_Fnet:
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
+                self.netF.eval()
             if init_Dnet:
                 self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)
                 self.netD.eval()
@@ -240,10 +241,6 @@ class SRRaGANModel(BaseModel):
                     self.cur_Z[:,-1,...] = 2*np.pi*self.cur_Z[:,-1,...]
                     self.SVD = {'theta':self.cur_Z[:,-1,...],'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
                     self.cur_Z = SVD_2_LatentZ(self.cur_Z).detach()
-                    # self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,
-                    #               2*(self.cur_Z[:,0,...]*(torch.sin(theta)**2)+self.cur_Z[:,1,...]*(torch.cos(theta)**2))-1,#Normalizing range to have negative values as well,trying to match [-1,1]
-                    #               2*(self.cur_Z[:,0,...]-self.cur_Z[:,1,...])*torch.sin(theta)*torch.cos(theta)]
-                    # self.cur_Z = torch.stack(self.cur_Z,1).detach()
                 else:
                     self.cur_Z = 2*self.cur_Z-1
 

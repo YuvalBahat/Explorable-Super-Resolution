@@ -18,7 +18,7 @@ class PrintLogger(object):
 
 
 class Logger(object):
-    def __init__(self, opt):
+    def __init__(self, opt,tb_logger_suffix=''):
         self.exp_name = opt['name']
         self.use_tb_logger = opt['use_tb_logger']
         self.opt = opt['logger']
@@ -41,10 +41,10 @@ class Logger(object):
             tb_logger_dir = self.log_dir.replace('results', 'logs')
             if not os.path.isdir(tb_logger_dir):
                 os.mkdir(tb_logger_dir)
-            existing_dirs = sorted([dir for dir in os.listdir(tb_logger_dir) if os.path.isdir(os.path.join(tb_logger_dir,dir))],key=lambda x:int(x))
+            existing_dirs = sorted([dir.split('_')[0] for dir in os.listdir(tb_logger_dir) if os.path.isdir(os.path.join(tb_logger_dir,dir))],key=lambda x:int(x.split('_')[0]))
             if len(existing_dirs)>0:
                 logger_dir_num = int(existing_dirs[-1])+1
-            self.tb_logger = TensorboardLogger(os.path.join(tb_logger_dir,str(logger_dir_num)))
+            self.tb_logger = TensorboardLogger(os.path.join(tb_logger_dir,str(logger_dir_num)+tb_logger_suffix))
 
     def print_format_results(self, mode, rlt,dont_print=False):
         epoch = rlt.pop('epoch')
