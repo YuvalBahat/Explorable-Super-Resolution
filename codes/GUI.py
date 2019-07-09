@@ -29,7 +29,8 @@ SPRAY_PAINT_N = 100
 USE_SVD = True
 VERBOSITY = False
 MAX_SVD_LAMBDA = 1.
-Z_OPTIMIZER_INITIAL_LR = 1
+Z_OPTIMIZER_INITIAL_LR = 1e-1
+Z_OPTIMIZER_INITIAL_LR_4_RANDOM = 1e-1
 NUM_RANDOM_ZS = 3
 VGG_RANDOM_DOMAIN = False
 DISPLAY_GT_HR = True
@@ -41,6 +42,7 @@ L1_REPLACES_HISTOGRAM = False
 ONLY_MODIFY_MASKED_AREA_WHEN_OPTIMIZING = False
 D_EXPECTED_LR_SIZE = 64
 ITERS_PER_OPT_ROUND = 5
+HIGH_OPT_ITERS_LIMIT = True
 MARGINS_AROUND_REGION_OF_INTEREST = 0
 RANDOM_OPT_INITS = False
 MULTIPLE_OPT_INITS = False
@@ -241,7 +243,8 @@ class Canvas(QLabel):
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
         self.LR_mask_vertices = [(int(np.round(p.x()/self.DTE_opt['scale'])),int(np.round(p.y()/self.DTE_opt['scale']))) for p in (self.history_pos + [self.current_pos])]
-        self.update_mask_bounding_rect()
+        if not self.in_picking_desired_hist_mode:
+            self.update_mask_bounding_rect()
         HR_mask_vertices = [(coord[0]*self.DTE_opt['scale'],coord[1]*self.DTE_opt['scale']) for coord in self.LR_mask_vertices]
         self.HR_selected_mask = cv2.fillPoly(self.HR_selected_mask,[np.array(HR_mask_vertices)],(1,1,1))
         self.Z_mask = np.zeros(self.Z_size)
@@ -299,13 +302,15 @@ class Canvas(QLabel):
     def update_mask_bounding_rect(self):
         self.mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.LR_mask_vertices], 1).transpose()))
         self.FoolAdversary_Button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.mask_bounding_rect[2:]]))
+        self.contained_Z_mask = True
 
     def selectrect_mouseReleaseEvent(self, e):
         self.current_pos = e.pos()
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
         self.LR_mask_vertices = [(int(np.round(p.x()/self.DTE_opt['scale'])),int(np.round(p.y()/self.DTE_opt['scale']))) for p in [self.origin_pos, self.current_pos]]
-        self.update_mask_bounding_rect()
+        if not self.in_picking_desired_hist_mode:
+            self.update_mask_bounding_rect()
         HR_mask_vertices = [(coord[0]*self.DTE_opt['scale'],coord[1]*self.DTE_opt['scale']) for coord in self.LR_mask_vertices]
         self.HR_selected_mask = cv2.rectangle(self.HR_selected_mask,HR_mask_vertices[0],HR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Z_mask = np.zeros(self.Z_size)
@@ -785,7 +790,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.DTE_opt = opt
         self.canvas.initialize()
         self.canvas.HR_Z = 'HR' in self.canvas.DTE_opt['network_G']['latent_input_domain']
-        self.canvas.current_random_Z_index = 0
 
         # We need to enable mouse tracking to follow the mouse without the button pressed.
         self.canvas.setMouseTracking(True)
@@ -846,6 +850,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.GT_HR_index = self.DisplayedImageSelectionButton.findText('GT')
         self.DisplayedImageSelectionButton.addItem('Z')
         self.cur_Z_im_index = self.DisplayedImageSelectionButton.findText('Z')
+        self.canvas.current_random_Z_index = 1*self.cur_Z_im_index
         self.DisplayedImageSelectionButton.addItems([str(i+1) for i in range(self.num_random_Zs)])
         self.actionCopyFromRandom.triggered.connect(self.CopyRandom2Default)
         self.actionCopy2Random.triggered.connect(self.CopyDefault2Random)
@@ -862,6 +867,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.desiredHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=False))
         self.ZdisplayButton.clicked.connect(self.ToggleDisplay_Z_Image)
         self.desiredImageHistModeButton.clicked.connect(lambda checked: self.DesiredHistMode(checked,another_image=True))
+        self.canvas.in_picking_desired_hist_mode = False
         self.auto_hist_temperature_mode_button.clicked.connect(lambda checked:self.AutoHistTemperatureMode(checked))
 
         # self.actionReProcess.triggered.connect(self.ReProcess)
@@ -955,6 +961,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.auto_set_hist_temperature = False
 
     def DesiredHistMode(self,checked,another_image):
+        self.canvas.in_picking_desired_hist_mode = 1*checked
         if checked:
             self.MasksStorage(True)
             if another_image:
@@ -993,10 +1000,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             clipboard.setPixmap(self.canvas.pixmap())
     def Compute_SR_Image(self):
         if self.cur_Z.size(2)==1:
-            self.SR_model.cur_Z = ((self.cur_Z * torch.ones([1, 1] + self.canvas.Z_size) - 0.5) * 2).type(self.var_L.type())
+            cur_Z = ((self.cur_Z * torch.ones([1, 1] + self.canvas.Z_size) - 0.5) * 2).type(self.var_L.type())
         else:
-            self.SR_model.cur_Z = self.cur_Z.type(self.var_L.type())
-        self.SR_model.Assing_LR_and_Latent(LR_image=self.var_L,latent_input=self.SR_model.cur_Z)
+            cur_Z = self.cur_Z.type(self.var_L.type())
+        self.SR_model.Assing_LR_and_Latent(LR_image=self.var_L,latent_input=cur_Z)
         self.SR_model.netG.eval()
         with torch.no_grad():
             self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
@@ -1013,9 +1020,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionCopyFromRandom.setEnabled(self.canvas.current_random_Z_index>self.cur_Z_im_index and self.canvas.current_random_Z_index<=(self.cur_Z_im_index+self.num_random_Zs))
         if self.canvas.current_random_Z_index>=self.cur_Z_im_index:
             self.SR_model.fake_H = 1*self.canvas.random_Z_images[self.canvas.current_random_Z_index-self.cur_Z_im_index].unsqueeze(0)
-            self.cur_Z = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index,...].unsqueeze(0)
+            # self.cur_Z = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index,...].unsqueeze(0)
+            if self.canvas.current_random_Z_index>self.cur_Z_im_index:
+                self.Z_2_display = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index-1,...].unsqueeze(0)
+            else:
+                self.Z_2_display = self.cur_Z
         else:
-            self.cur_Z = self.no_Z_image
+            self.Z_2_display = self.no_Z_image
             if self.canvas.current_random_Z_index==self.GT_HR_index:
                 self.SR_model.fake_H = 1*self.GT_HR
             elif self.canvas.current_random_Z_index==self.ESRGAN_index:
@@ -1025,8 +1036,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def CopyRandom2Default(self):
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
-        self.canvas.random_Zs[0,...] = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index,...]*Z_mask+self.canvas.random_Zs[0,...]*(1-Z_mask)
-        self.cur_Z = self.canvas.random_Zs[0,...].unsqueeze(0)
+        # self.canvas.random_Zs[0,...] = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index,...]*Z_mask+self.canvas.random_Zs[0,...]*(1-Z_mask)
+        # self.cur_Z = self.canvas.random_Zs[0,...].unsqueeze(0)
+        self.cur_Z = (self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index-1,...].to(self.cur_Z.device)*Z_mask+self.cur_Z[0]*(1-Z_mask)).unsqueeze(0)
         self.Compute_SR_Image()
         self.canvas.random_Z_images[0] = 1*self.SR_model.fake_H[0]
         self.canvas.Z_optimizer_Reset()
@@ -1034,15 +1046,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def CopyDefault2Random(self):
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
-        for random_Z_num in range(1,len(self.canvas.random_Zs)):
-            self.canvas.random_Zs[random_Z_num] = self.canvas.random_Zs[random_Z_num]*(1-Z_mask)+self.canvas.random_Zs[0,...]*Z_mask
+        for random_Z_num in range(len(self.canvas.random_Zs)):
+            self.canvas.random_Zs[random_Z_num] = self.canvas.random_Zs[random_Z_num]*(1-Z_mask)+self.cur_Z[0]*Z_mask
         self.Process_Z_Alternatives()
 
     def Process_Z_Alternatives(self):
-        for i, random_Z in enumerate(self.canvas.random_Zs[1:]):
+        stored_Z = 1*self.cur_Z
+        for i, random_Z in enumerate(self.canvas.random_Zs):
             self.cur_Z = random_Z.unsqueeze(0)
             self.Compute_SR_Image()
             self.canvas.random_Z_images[i + 1] = self.SR_model.fake_H[0]
+        self.cur_Z = 1*stored_Z
         self.DisplayedImageSelectionButton.setEnabled(True)
         self.SelectImage2Display()
 
@@ -1131,9 +1145,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         data = {'LR':self.var_L}
         if self.canvas.Z_optimizer is None:
             # For the random_l1_limited objective, I want to have L1 differences with respect to the current non-modified image, in case I currently display another image:
-            self.SR_model.fake_H = 1 * self.canvas.random_Z_images[self.cur_Z_im_index].unsqueeze(0)
-            self.cur_Z = 1* self.canvas.random_Zs[0].unsqueeze(0)
-            if not np.all(self.canvas.HR_selected_mask):#Cropping an image region to be optimized, to save on computations and allow adversarial loss
+            self.SR_model.fake_H = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
+            self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1])
+            # self.cur_Z = 1* self.canvas.random_Zs[0].unsqueeze(0)
+            if not np.all(self.canvas.HR_selected_mask) and self.canvas.contained_Z_mask:#Cropping an image region to be optimized, to save on computations and allow adversarial loss
                 self.optimizing_region = True
                 # if np.all(self.bounding_rect[2:]<=D_EXPECTED_LR_SIZE-2*MARGINS_AROUND_REGION_OF_INTEREST) or objective=='Adversarial':
                 if objective == 'Adversarial':
@@ -1151,7 +1166,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Z_mask_4_later_merging = torch.from_numpy(self.canvas.Z_mask).type(self.SR_model.fake_H.dtype).to(self.cur_Z.device)
                 self.var_L = self.Crop2BoundingRect(self.var_L, self.bounding_rect_4_opt)
                 data['LR'] = self.var_L
-                self.SR_model.cur_Z = self.Crop2BoundingRect(self.SR_model.cur_Z,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)#Because I'm saving initial Z when initializing optimizer
+                self.SR_model.AssignLatent(self.Crop2BoundingRect(self.SR_model.GetLatent(),self.bounding_rect_4_opt,HR=self.canvas.HR_Z))#Because I'm saving initial Z when initializing optimizer
                 self.cur_Z = self.Crop2BoundingRect(self.cur_Z,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
                 self.SR_model.fake_H = self.Crop2BoundingRect(self.SR_model.fake_H,self.bounding_rect_4_opt,HR=True) #For the limited random optimization, to have the image we want to stay close to.
                 if self.multiple_inits:
@@ -1159,7 +1174,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.optimizing_region = False
                 # self.bounding_rect_4_opt = copy.deepcopy(self.canvas.mask_bounding_rect)
-            iters_per_round = 1*ITERS_PER_OPT_ROUND
+            self.iters_per_round = 1*ITERS_PER_OPT_ROUND
             if any([phrase in objective for phrase in ['hist','dict','l12GT']]):
                 # if self.desired_hist_image is None:
                 #     return
@@ -1186,35 +1201,39 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # initial_Z = 1*self.canvas.random_Zs[1:]
                 initial_Z = initial_Z.repeat([self.num_random_Zs,1,1,1])
                 if 'random' in objective:
-                    self.canvas.Z_optimizer_initial_LR /= 10
-                    iters_per_round *= 3
+                    self.canvas.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR_4_RANDOM
+                    if not HIGH_OPT_ITERS_LIMIT:
+                        self.iters_per_round *= 3
                     if 'limited' in objective:
                         data['rmse_weight'] = 1*self.randomLimitingWeightBox.value()
+            if HIGH_OPT_ITERS_LIMIT:#Signaling the optimizer to keep iterating until loss stops decreasing, using iters_per_round as window size. Still have some fixed limit.
+                self.iters_per_round *= -1
             if self.canvas.Z_optimizer_logger is None:
                 self.canvas.Z_optimizer_logger = []
                 for i in range(self.num_random_Zs if self.multiple_inits else 1):
                     self.canvas.Z_optimizer_logger.append(Logger(self.canvas.DTE_opt,tb_logger_suffix='_%s%s'%(objective,'_%d'%(i) if self.multiple_inits else '')))
             self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,Z_size=[val*self.SR_model.Z_size_factor for val in data['LR'].size()[2:]],model=self.SR_model,
-                Z_range=MAX_SVD_LAMBDA,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=iters_per_round,
+                Z_range=MAX_SVD_LAMBDA,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=self.iters_per_round,
                 image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,auto_set_hist_temperature=self.auto_set_hist_temperature,
                 batch_size=self.num_random_Zs if self.multiple_inits else 1,random_Z_inits=self.random_inits,initial_Z=initial_Z)
             if self.optimizing_region:
                 self.MasksStorage(False)
         elif 'random' in objective:
             self.canvas.Z_optimizer.cur_iter = 0
+        self.stored_Z = 1 * self.cur_Z
         if self.multiple_inits:
-            self.stored_Z = 1*self.canvas.random_Zs[1:]
+            self.stored_masked_zs = 1*self.canvas.random_Zs
         else:
-            self.stored_Z = 1 * self.cur_Z # Storing previous Z for two reasons: To recover the big picture Z when optimizing_region, and to recover previous Z if loss did not decrease
+            self.stored_masked_zs = 1 * self.cur_Z # Storing previous Z for two reasons: To recover the big picture Z when optimizing_region, and to recover previous Z if loss did not decrease
         self.cur_Z = self.canvas.Z_optimizer.optimize()
         if self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1] < 0:
             self.cur_Z = 1 * self.stored_Z
-            self.SR_model.cur_Z = self.cur_Z.type(self.var_L.type())
+            self.SR_model.AssignLatent(self.cur_Z.type(self.var_L.type()))
             self.SelectImage2Display()
         else:
-            if not np.all(self.canvas.HR_selected_mask):#            if self.optimizing_region or :
-                temp_Z = (1 * self.cur_Z).to(self.stored_Z.device)
-                self.cur_Z = 1 * self.stored_Z
+            if self.optimizing_region:#            if self.optimizing_region or :
+                temp_Z = (1 * self.cur_Z).to(self.stored_masked_zs.device)
+                self.cur_Z = 1 * self.stored_masked_zs
                 cropping_rect = 1*self.bounding_rect_4_opt
                 if self.canvas.HR_Z:
                     cropping_rect = [self.canvas.DTE_opt['scale']*val for val in self.bounding_rect_4_opt]
@@ -1226,20 +1245,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     else:
                         self.cur_Z[Z_num, :, cropping_rect[1]:cropping_rect[1] + cropping_rect[3],cropping_rect[0]:cropping_rect[0] + cropping_rect[2]] = temp_Z[Z_num,...]
             if self.multiple_inits:
-                self.canvas.random_Zs[1:] = 1*self.cur_Z
+                self.canvas.random_Zs = 1*self.cur_Z
+                self.cur_Z = 1*self.stored_Z
                 self.Process_Z_Alternatives()
                 # self.cur_Z = self.canvas.random_Zs[self.canvas.current_random_Z_index,...].unsqueeze(0)
             else:
-                self.canvas.random_Zs[0] = 1*self.cur_Z.squeeze(0)
+                # self.canvas.random_Zs[0] = 1*self.cur_Z.squeeze(0)
                 self.DeriveControlValues()
                 self.Compute_SR_Image()
+                self.canvas.random_Z_images[0] = self.SR_model.fake_H[0]
                 self.SelectImage2Display()
-        if (self.canvas.Z_optimizer.loss_values[0]-self.canvas.Z_optimizer.loss_values[-1])/np.abs(self.canvas.Z_optimizer.loss_values[0])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
+        if (self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))]-self.canvas.Z_optimizer.loss_values[-1])/\
+                np.abs(self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
             self.canvas.Z_optimizer_initial_LR /= 5
+            print('%d iterations: Z optimizer loss did not decrease relative to beginning, decreasing learning rate to %.3e'%(len(self.canvas.Z_optimizer.loss_values),self.canvas.Z_optimizer_initial_LR))
             self.canvas.Z_optimizer = None
-            print('Z optimizer loss did not decrease relative to beginning, decreasing learning rate to %.3e'%(self.canvas.Z_optimizer_initial_LR))
         else: # This means I'm happy with this optimizer (and its learning rate), so I can cancel the auto-hist-temperature setting, in case it was set to True.
-            print('Z optimizer loss decreased from %.2e to %.2e'%(self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1]))
+            print('%d iterations: Z optimizer loss decreased from %.2e to %.2e'%(len(self.canvas.Z_optimizer.loss_values),self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1]))
             self.auto_set_hist_temperature = False
             self.auto_hist_temperature_mode_button.setChecked(False)
 
@@ -1265,23 +1287,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.Z_mask = 1-self.canvas.Z_mask
         self.canvas.HR_selected_mask = 1-self.canvas.HR_selected_mask
         self.canvas.Z_optimizer_Reset()
+        self.canvas.contained_Z_mask = not self.canvas.contained_Z_mask
+        if self.canvas.contained_Z_mask:
+            self.actionFoolAdversary.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.mask_bounding_rect[2:]]))
+        else:
+            self.actionFoolAdversary.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.HR_size]))
 
     def ApplyUniformZ(self):
         self.canvas.Update_Z_Sliders()
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
-        self.cur_Z = Z_mask * torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype) + (1 - Z_mask) * self.cur_Z
-        self.canvas.random_Zs[0] = 1 * self.cur_Z.squeeze(0)
-        self.ReProcess()
+        self.canvas.control_values = Z_mask * torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype) + (1 - Z_mask) * self.canvas.control_values
+        # self.cur_Z = Z_mask * torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype) + (1 - Z_mask) * self.cur_Z
+        self.Recompose_cur_Z()
+        self.Compute_SR_Image()
+        self.Update_Image_Display()
+        self.SelectImage2Display()
+        self.canvas.derived_controls_indicator = (self.canvas.Z_mask*0+(1-self.canvas.Z_mask)*self.canvas.derived_controls_indicator).astype(np.bool)
+
+        # self.canvas.random_Zs[0] = 1 * self.cur_Z.squeeze(0)
 
     def Recompose_cur_Z(self):
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         new_Z = util.SVD_2_LatentZ(self.canvas.control_values.unsqueeze(0),max_lambda=MAX_SVD_LAMBDA).to(self.cur_Z.device)
         self.cur_Z = Z_mask * new_Z + (1 - Z_mask) * self.cur_Z
-        self.canvas.random_Zs[0] = 1*self.cur_Z.squeeze(0)
+        # self.canvas.random_Zs[0] = 1*self.cur_Z.squeeze(0)
 
     def SetZ_And_Display(self,value,index):
         self.SetZ(value,index)
         self.Update_Image_Display()
+        self.SelectImage2Display()
 
     def SetZ(self,value,index,reset_optimizer=True,recompose_Z=True):
         if reset_optimizer:
@@ -1317,6 +1351,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.cur_Z[0,index] = value
         if recompose_Z:
             self.Compute_SR_Image()
+            if 'random_Z_images' in self.canvas.__dict__.keys():
+                self.canvas.random_Z_images[0] = 1 * self.SR_model.fake_H[0]
 
     def ToggleDisplay_Z_Image(self):
         self.Update_Image_Display(update_default_Z_image=False)
@@ -1324,7 +1360,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def Update_Image_Display(self,update_default_Z_image=True):
         pixmap = QPixmap()
         if self.ZdisplayButton.isChecked():
-            im_2_display = 255/2/MAX_SVD_LAMBDA*(MAX_SVD_LAMBDA+self.cur_Z[0].data.cpu().numpy().transpose(1,2,0)).copy()
+            im_2_display = 255/2/MAX_SVD_LAMBDA*(MAX_SVD_LAMBDA+self.Z_2_display[0].data.cpu().numpy().transpose(1,2,0)).copy()
         else:
             im_2_display = 255 * self.SR_model.fake_H.detach()[0].float().cpu().numpy().transpose(1, 2, 0).copy()
         pixmap.convertFromImage(qimage2ndarray.array2qimage(im_2_display))
@@ -1341,8 +1377,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def ReProcess(self):
         self.Compute_SR_Image()
-        self.Update_Image_Display()
-
+        self.SelectImage2Display()
+        # self.Update_Image_Display()
+    #
     def open_file(self):
         """
         Open image file for editing, scaling the smaller dimension and cropping the remainder.
@@ -1363,6 +1400,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     pixmap = QPixmap()
                     pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * loaded_image))
                     self.GT_canvas.setPixmap(pixmap)
+                self.canvas.HR_size = list(self.GT_HR.size()[2:])
                 self.var_L = self.SR_model.netG.module.DownscaleOP(torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0))
             else:
                 self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.SR_model.device).unsqueeze(0)
@@ -1375,17 +1413,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 ESRGAN_model.netG.eval()
                 with torch.no_grad():
                     self.ESRGAN_SR = ESRGAN_model.netG(self.var_L).detach().to(torch.device('cpu'))
+                self.canvas.HR_size = list(self.ESRGAN_SR.size()[2:])
                 if not ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS:
                     pixmap = QPixmap()
                     pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * self.ESRGAN_SR[0].data.cpu().numpy().transpose(1,2,0).copy()))
                     self.ESRGAN_canvas.setPixmap(pixmap)
 
+            if 'random_Z_images' in self.canvas.__dict__.keys():
+                del self.canvas.random_Z_images
             self.canvas.LR_size = list(self.var_L.size()[2:])
             self.canvas.Z_size = [val*self.canvas.DTE_opt['scale'] for val in self.canvas.LR_size] if self.canvas.HR_Z else self.canvas.LR_size
             self.canvas.Z_mask = np.ones(self.canvas.Z_size)
             self.canvas.derived_controls_indicator = np.zeros(self.canvas.Z_size)
             self.cur_Z = torch.zeros(size=[1,self.SR_model.num_latent_channels]+self.canvas.Z_size)
-            self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs+1,1,1,1])
+            self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1])
             self.canvas.previous_sliders_values = \
                 np.array([self.canvas.sliderZ0.value(),self.canvas.sliderZ1.value(),self.canvas.slider_third_channel.value()]).reshape([3,1,1])/100*np.ones([1]+self.canvas.Z_size)
             # self.canvas.previous_sliders_values = np.array([0,0,0]).reshape([3,1,1])/100*np.ones([1]+self.canvas.Z_size)
@@ -1403,13 +1444,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.image_name = path.split('/')[-1].split('.')[0]
 
-            self.canvas.random_Z_images = torch.zeros_like(self.SR_model.fake_H).repeat([self.num_random_Zs+1,1,1,1])
+            self.canvas.random_Z_images = torch.cat([self.SR_model.fake_H,torch.zeros_like(self.SR_model.fake_H).repeat([self.num_random_Zs,1,1,1])],0)
             self.DisplayedImageSelectionButton.setCurrentIndex(self.cur_Z_im_index)
-            self.ReProcess()
-            self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
-
             if ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS:
                 self.no_Z_image = torch.from_numpy(np.transpose(2*(resize(image=data_util.read_img(None,'./images/X.png')[:,:,::-1],output_shape=self.canvas.HR_size)-0.5), (2, 0, 1))).float().to(self.SR_model.device).unsqueeze(0)
+            else:
+                self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
+            self.ReProcess()
+
             self.canvas.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
             self.Clear_Z_Mask()
 

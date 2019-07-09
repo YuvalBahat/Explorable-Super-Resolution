@@ -399,7 +399,7 @@ class Z_optimizer():
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False):
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
             if initial_Z is None:
-                initial_Z = 1*model.cur_Z
+                initial_Z = 1*model.GetLatent()
             initial_pre_tanh_Z = initial_Z/Z_range
             initial_pre_tanh_Z = torch.clamp(initial_pre_tanh_Z,min=-1+torch.finfo(initial_pre_tanh_Z.dtype).eps,max=1.-torch.finfo(initial_pre_tanh_Z.dtype).eps)
             initial_pre_tanh_Z = ArcTanH(initial_pre_tanh_Z)
@@ -424,7 +424,7 @@ class Z_optimizer():
             assert Z_mask is not None,'Should either supply both masks or niether'
             self.image_mask = torch.from_numpy(image_mask).type(model.fake_H.dtype).to(self.device)
             self.Z_mask = torch.from_numpy(Z_mask).type(model.fake_H.dtype).to(self.device)
-            self.initial_Z = 1.*model.cur_Z
+            self.initial_Z = 1.*model.GetLatent()
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
         if 'l1' in objective and 'random' not in objective:
@@ -484,6 +484,7 @@ class Z_optimizer():
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
         else:
             self.optimizer = existing_optimizer
+        self.LR = initial_LR
         self.scheduler = None#torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer,verbose=True,threshold=1e-2,min_lr=self.MIN_LR,cooldown=10)
         self.loggers = loggers
         self.cur_iter = 0
@@ -517,7 +518,17 @@ class Z_optimizer():
         self.loss_values = []
         if self.random_Z_inits and self.cur_iter==0:
             self.Z_model.Randomize_Z()
-        for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
+        z_iter = self.cur_iter
+        while True:
+        # for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
+            if self.max_iters>0:
+                if z_iter==(self.cur_iter+self.max_iters):
+                    break
+            elif len(self.loss_values)>=-self.max_iters:
+                if z_iter==(self.cur_iter-2*self.max_iters):
+                    break
+                if (self.loss_values[self.max_iters] - self.loss_values[-1]) / np.abs(self.loss_values[self.max_iters]) < 1e-2 * self.LR:
+                    break
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
             # self.data['Z'] = self.Z_mask*self.Z_model()+(1-self.Z_mask)*self.model.cur_Z
@@ -535,7 +546,7 @@ class Z_optimizer():
                 if 'limited' in self.objective:
                     rmse = (data_in_loss_domain - self.initial_image).abs()
                     if z_iter==0:
-                        rmse_weight = 1*self.rmse_weight*Z_loss.mean().item()/rmse.mean().item()
+                        rmse_weight = 1*self.rmse_weight#*Z_loss.mean().item()/rmse.mean().item()
                     Z_loss = Z_loss-rmse_weight*rmse
                 if self.Z_mask is not None:
                     Z_loss = Z_loss*self.Z_mask
@@ -568,6 +579,7 @@ class Z_optimizer():
                 self.scheduler.step(Z_loss)
                 if cur_LR<=1.2*self.MIN_LR:
                     break
+            z_iter += 1
         if 'Adversarial' in self.objective:
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         if 'random' in self.objective and 'limited' in self.objective:
