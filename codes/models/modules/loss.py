@@ -11,24 +11,10 @@ def ValidStructTensorIndicator(a,d,b):
     # return 1-(a**2==d**2)*(b*(a+d)==0)
     return ((2 * b * (a + d))**2+(a ** 2 - d ** 2)**2)>EPSILON
 
-def SVD_Symmetric_2x2(a,d,b):
-    ATAN2_FACTOR = 10000
-    theta = 0.5 * torch.atan2(ATAN2_FACTOR*2 * b * (a + d),ATAN2_FACTOR*(a ** 2 - d ** 2))
-    FACTOR_4_NUMERIC_ISSUE = 10
-    a,d,b = FACTOR_4_NUMERIC_ISSUE*(a.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(d.type(torch.cuda.DoubleTensor)),FACTOR_4_NUMERIC_ISSUE*(b.type(torch.cuda.DoubleTensor))
-    S_1 = a ** 2 + d ** 2 + 2 * (b ** 2)
-    S_2 = (a+d)*torch.sqrt((a-d)**2 + (2 * b) ** 2+EPSILON)
-    S_1,S_2 = S_1/(FACTOR_4_NUMERIC_ISSUE**2),S_2/(FACTOR_4_NUMERIC_ISSUE**2)
-    # S_2 = torch.min(S_1,S_2) # A patchy solution to a super-odd problem. I analitically showed S_1>=S_2 for ALL a,d,b, but for some reason ~20% of cases do not satisfy this. I suspect numerical reasons, so I enforce this here.
-    lambda0 = torch.sqrt((S_1 + S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
-    lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
-    # lambda0,lambda1 = torch.ones_like(lambda0),0.5*torch.ones_like(lambda1)
-    return lambda0,lambda1,theta
-
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None):
         super(FilterLoss,self).__init__()
-        self.LOCAL_LOSS_4_TEST = True
+        self.LOCAL_LOSS_4_TEST = False
 
         self.latent_channels = latent_channels
         self.NOISE_STD = 1e-15#1/255

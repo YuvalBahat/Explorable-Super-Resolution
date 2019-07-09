@@ -206,6 +206,7 @@ class SRRaGANModel(BaseModel):
         elif init_Fnet or init_Dnet:
             if init_Fnet:
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
+                self.netF.eval()
             if init_Dnet:
                 self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)
                 self.netD.eval()
@@ -224,36 +225,34 @@ class SRRaGANModel(BaseModel):
 
     def AssignLatent(self,latent_input):
         self.netG.module.generated_image_model.Z = latent_input
+    def GetLatent(self):
+        return 1*self.netG.module.generated_image_model.Z
 
     def feed_data(self, data, need_HR=True):
         # LR
         self.var_L = data['LR'].to(self.device)
         if self.latent_input is not None:
             if 'Z' in data.keys():
-                self.cur_Z = data['Z']
+                cur_Z = data['Z']
             else:
                 if self.opt['network_G']['latent_channels']=='STD_directional':
-                    self.cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
+                    cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
                 else:
-                    self.cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
+                    cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
-                    self.cur_Z[:,-1,...] = 2*np.pi*self.cur_Z[:,-1,...]
-                    self.SVD = {'theta':self.cur_Z[:,-1,...],'lambda0_ratio':1*self.cur_Z[:,0,...],'lambda1_ratio':1*self.cur_Z[:,1,...]}
-                    self.cur_Z = SVD_2_LatentZ(self.cur_Z).detach()
-                    # self.cur_Z = [2*(self.cur_Z[:,1,...]*(torch.sin(theta)**2)+self.cur_Z[:,0,...]*(torch.cos(theta)**2))-1,
-                    #               2*(self.cur_Z[:,0,...]*(torch.sin(theta)**2)+self.cur_Z[:,1,...]*(torch.cos(theta)**2))-1,#Normalizing range to have negative values as well,trying to match [-1,1]
-                    #               2*(self.cur_Z[:,0,...]-self.cur_Z[:,1,...])*torch.sin(theta)*torch.cos(theta)]
-                    # self.cur_Z = torch.stack(self.cur_Z,1).detach()
+                    cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
+                    self.SVD = {'theta':cur_Z[:,-1,...],'lambda0_ratio':1*cur_Z[:,0,...],'lambda1_ratio':1*cur_Z[:,1,...]}
+                    cur_Z = SVD_2_LatentZ(cur_Z).detach()
                 else:
-                    self.cur_Z = 2*self.cur_Z-1
+                    cur_Z = 2*cur_Z-1
 
-            if isinstance(self.cur_Z,int) or len(self.cur_Z.shape)<4 or (self.cur_Z.shape[2]==1 and not torch.is_tensor(self.cur_Z)):
-                self.cur_Z = self.cur_Z*np.ones([1,self.num_latent_channels]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])
-            elif torch.is_tensor(self.cur_Z) and self.cur_Z.size(dim=2)==1:
-                self.cur_Z = (self.cur_Z*torch.ones([1,1]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])).type(self.var_L.type())
-            if not torch.is_tensor(self.cur_Z):
-                self.cur_Z = torch.from_numpy(self.cur_Z).type(self.var_L.type())
-            self.AssignLatent(latent_input=self.cur_Z)
+            if isinstance(cur_Z,int) or len(cur_Z.shape)<4 or (cur_Z.shape[2]==1 and not torch.is_tensor(cur_Z)):
+                cur_Z = cur_Z*np.ones([1,self.num_latent_channels]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])
+            elif torch.is_tensor(cur_Z) and cur_Z.size(dim=2)==1:
+                cur_Z = (cur_Z*torch.ones([1,1]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])).type(self.var_L.type())
+            if not torch.is_tensor(cur_Z):
+                cur_Z = torch.from_numpy(cur_Z).type(self.var_L.type())
+            self.AssignLatent(latent_input=cur_Z)
             # self.var_L = torch.cat([self.cur_Z,self.var_L],dim=1)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
@@ -298,17 +297,17 @@ class SRRaGANModel(BaseModel):
             last_dual_batch_step = possible_dual_step_num==(actual_dual_step_steps-1)
             if self.DTE_net is not None and first_dual_batch_step:
                 self.var_H, self.var_ref = self.DTE_net.HR_unpadder(self.var_H), self.DTE_net.HR_unpadder(self.var_ref)
-
+            if first_dual_batch_step:
+                static_Z = self.GetLatent()
             if optimized_Z_step:
-                static_Z = 1*self.cur_Z
                 self.Z_optimizer.feed_data({'LR':self.var_L[:,-3:,...],'HR':self.var_H})
 
                 self.Z_optimizer.optimize()
 
-                self.cur_Z = static_Z
+                # self.cur_Z = static_Z
             else:
                 # self.var_L[:,:self.cur_Z.size(1),...] = self.cur_Z
-                self.AssignLatent(self.cur_Z)
+                self.AssignLatent(static_Z)
                 self.fake_H = self.netG(self.var_L)
             if self.DTE_net is not None:
                 if self.decomposed_output:
@@ -459,7 +458,7 @@ class SRRaGANModel(BaseModel):
                     l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                     l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                 if self.cri_latent and last_dual_batch_step:
-                    latent_loss_dict = {'SR':self.fake_H,'HR':self.var_H,'Z':self.cur_Z}
+                    latent_loss_dict = {'SR':self.fake_H,'HR':self.var_H,'Z':static_Z}
                     if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
                         latent_loss_dict['SVD'] = self.SVD
                     l_g_latent = self.cri_latent(latent_loss_dict)

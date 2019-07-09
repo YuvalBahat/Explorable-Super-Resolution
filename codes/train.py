@@ -101,7 +101,6 @@ def main():
             # save models
             # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
             if lr_too_low or saving_step:
-                print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
                 recently_saved_models.append(model.save(gradient_step_num))
                 model.save_log()
                 if lr_too_low:
@@ -110,6 +109,7 @@ def main():
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
                     os.remove(model_2_delete.replace('_G.','_D.'))
+                print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
 
             if gradient_step_num > total_iters:
                 break
