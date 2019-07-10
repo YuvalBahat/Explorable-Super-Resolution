@@ -71,7 +71,6 @@ def SVD_Symmetric_2x2(a,d,b):
     # S_2 = torch.min(S_1,S_2) # A patchy solution to a super-odd problem. I analitically showed S_1>=S_2 for ALL a,d,b, but for some reason ~20% of cases do not satisfy this. I suspect numerical reasons, so I enforce this here.
     lambda0 = torch.sqrt((S_1 + S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
     lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
-    # lambda0,lambda1 = torch.ones_like(lambda0),0.5*torch.ones_like(lambda1)
     return lambda0,lambda1,theta
 
 ####################
@@ -154,18 +153,17 @@ class Optimizable_Temperature(torch.nn.Module):
 
 class SoftHistogramLoss(torch.nn.Module):
     def __init__(self,bins,min,max,desired_hist_image_mask=None,desired_hist_image=None,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False,
-            image_Z=None,temperature=0.05,dictionary_not_histogram=False):
+            image_Z=None,temperature=0.05,dictionary_not_histogram=False,no_patch_DC=False):
         OVERLAPPING_PATCHES = False
         self.temperature = temperature#0.05**2#0.006**6
         self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
-
         super(SoftHistogramLoss,self).__init__()
         # min correspond to the CENTER of the first bin, and max to the CENTER of the last bin
         self.device = torch.device('cuda')
         self.bin_width = (max-min)/(bins-1)
         self.max = max
-        # self.temperature = torch.tensor(self.temperature,requires_grad=True).type(torch.cuda.DoubleTensor)
+        self.no_patch_DC = no_patch_DC
         self.temperature_optimizer = automatic_temperature
         if automatic_temperature:
             self.optimizable_temperature = Optimizable_Temperature(self.temperature)
@@ -188,6 +186,8 @@ class SoftHistogramLoss(torch.nn.Module):
             self.num_dims = patch_size**2
             desired_im_patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(self.device)
             desired_hist_image = torch.sparse.mm(desired_im_patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
+            if self.no_patch_DC:
+                desired_hist_image = desired_hist_image-torch.mean(desired_hist_image,dim=0,keepdim=True)
             self.desired_hist_image_mask = None
         else:
             self.desired_hist_image_mask = torch.from_numpy(desired_hist_image_mask).to(self.device).view([-1]).type(torch.ByteTensor) if desired_hist_image_mask is not None else None
@@ -299,6 +299,8 @@ class SoftHistogramLoss(torch.nn.Module):
         else:
             if self.patch_size > 1:
                 image = torch.sparse.mm(self.patch_extraction_mat, image.view([-1, 1])).view([self.num_dims, -1])
+                if self.no_patch_DC:
+                    image = image-torch.mean(image,dim=0,keepdim=True)
             else:
                 image = image.contiguous().view([self.num_dims,-1])
                 if image_mask is not None:
@@ -393,6 +395,9 @@ class Optimizable_Z(torch.nn.Module):
 def ArcTanH(input_tensor):
     return 0.5*torch.log((1+input_tensor+torch.finfo(input_tensor.dtype).eps)/(1-input_tensor+torch.finfo(input_tensor.dtype).eps))
 
+def TV_Loss(image):
+    return torch.pow((image[:,:,:,:-1]-image[:,:,:,1:]).abs(),0.1).mean(dim=(1,2,3))+torch.pow((image[:,:,:-1,:]-image[:,:,1:,:]).abs(),0.1).mean(dim=(1,2,3))
+
 class Z_optimizer():
     MIN_LR = 1e-5
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
@@ -441,7 +446,12 @@ class Z_optimizer():
             self.loss = FilterLoss(latent_channels='SVDinNormedOut_structure_tensor',constant_Z=data['desired_Z'],
                                    reference_images={'min':data['reference_image_min'],'max':data['reference_image_max']},masks={'LR':self.Z_mask,'HR':self.image_mask})
         elif 'STD' in objective:
-            assert self.objective in ['max_STD', 'min_STD']
+            assert self.objective in ['max_STD', 'min_STD','STD_increase','STD_decrease']
+            if any([phrase in objective for phrase in ['increase','decrease']]):
+                STD_CHANGE_FACTOR = 1.05
+                self.desired_STD = torch.std(model.fake_H*self.image_mask,dim=(1,2,3)).item()
+                self.desired_STD *= STD_CHANGE_FACTOR if 'increase' in objective else 1/STD_CHANGE_FACTOR
+
             # scheduler_threshold = 0.9999
         elif 'VGG' in objective and 'random' not in objective:
             self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
@@ -473,7 +483,7 @@ class Z_optimizer():
                 optimal_temperature = 5e-4 if 'hist' in objective else 1e-3
             self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'] if self.data is not None else None,
                 desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,input_im_HR_mask=self.image_mask,
-                gray_scale=True,patch_size=7 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective)
+                gray_scale=True,patch_size=7 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective,no_patch_DC='noDC' in objective)
         elif 'Adversarial' in objective:
             self.netD = model.netD
             self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)
@@ -525,7 +535,7 @@ class Z_optimizer():
                 if z_iter==(self.cur_iter+self.max_iters):
                     break
             elif len(self.loss_values)>=-self.max_iters:
-                if z_iter==(self.cur_iter-2*self.max_iters):
+                if z_iter==(self.cur_iter-5*self.max_iters):
                     break
                 if (self.loss_values[self.max_iters] - self.loss_values[-1]) / np.abs(self.loss_values[self.max_iters]) < 1e-2 * self.LR:
                     break
@@ -560,7 +570,11 @@ class Z_optimizer():
             elif 'Adversarial' in self.objective:
                 Z_loss = self.loss(self.netD(self.model.DTE_net.HR_unpadder(self.model.fake_H).to(self.device)),True)
             elif 'STD' in self.objective:
-                Z_loss = torch.std(self.model.fake_H*self.image_mask,dim=(1,2,3)).to(self.device)
+                Z_loss = torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3)).to(self.device)
+                if any([phrase in self.objective for phrase in ['increase', 'decrease']]):
+                    Z_loss = (Z_loss-self.desired_STD)**2
+            elif 'TV' in self.objective:
+                Z_loss = TV_Loss(self.model.fake_H * self.image_mask).to(self.device)
             elif 'VGG' in self.objective:
                 Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:

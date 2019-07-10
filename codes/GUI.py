@@ -39,6 +39,8 @@ ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS = True
 DISPLAY_INDUCED_LR = False
 DICTIONARY_REPLACES_HISTOGRAM = True
 L1_REPLACES_HISTOGRAM = False
+NO_DC_IN_PATCH_HISTOGRAM = True
+RELATIVE_STD_OPT = True
 ONLY_MODIFY_MASKED_AREA_WHEN_OPTIMIZING = False
 D_EXPECTED_LR_SIZE = 64
 ITERS_PER_OPT_ROUND = 5
@@ -787,6 +789,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.horizontalLayout.removeWidget(self.canvas)
         self.canvas = Canvas()
         self.canvas.Z_optimizer_Reset()
+        self.latest_optimizer_objective = ''
         self.canvas.DTE_opt = opt
         self.canvas.initialize()
         self.canvas.HR_Z = 'HR' in self.canvas.DTE_opt['network_G']['latent_input_domain']
@@ -854,8 +857,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.DisplayedImageSelectionButton.addItems([str(i+1) for i in range(self.num_random_Zs)])
         self.actionCopyFromRandom.triggered.connect(self.CopyRandom2Default)
         self.actionCopy2Random.triggered.connect(self.CopyDefault2Random)
-        self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('max_STD'))
-        self.actionIDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('min_STD'))
+        self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('STD_increase' if RELATIVE_STD_OPT else 'max_STD'))
+        self.actionDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('STD_decrease' if RELATIVE_STD_OPT else 'min_STD'))
+        self.actionDecreaseTV.triggered.connect(lambda x:self.Optimize_Z('TV'))
         self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('hist'))
         self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchhist'))
         self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
@@ -936,7 +940,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ZToolbar.addAction(self.actionCopy2Random)
         self.ZToolbar.insertSeparator(self.actionProcessRandZ)
         self.ZToolbar2.addAction(self.actionIncreaseSTD)
-        self.ZToolbar2.addAction(self.actionIDecreaseSTD)
+        self.ZToolbar2.addAction(self.actionDecreaseSTD)
+        self.ZToolbar2.addAction(self.actionDecreaseTV)
         self.ZToolbar2.addAction(self.actionImitateHist)
         self.ZToolbar2.addAction(self.actionImitatePatchHist)
         self.ZToolbar2.addAction(self.actionFoolAdversary)
@@ -1003,10 +1008,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cur_Z = ((self.cur_Z * torch.ones([1, 1] + self.canvas.Z_size) - 0.5) * 2).type(self.var_L.type())
         else:
             cur_Z = self.cur_Z.type(self.var_L.type())
-        self.SR_model.Assing_LR_and_Latent(LR_image=self.var_L,latent_input=cur_Z)
+        self.SR_model.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
         self.SR_model.netG.eval()
         with torch.no_grad():
-            self.SR_model.fake_H = self.SR_model.netG(self.SR_model.var_L)
+            self.SR_model.fake_H = self.SR_model.netG(self.SR_model.model_input)
             if DISPLAY_INDUCED_LR:
                 self.induced_LR_image = self.SR_model.netG.module.DownscaleOP(self.SR_model.fake_H)
 
@@ -1035,7 +1040,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Update_Image_Display(update_default_Z_image=False)
 
     def CopyRandom2Default(self):
-        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         # self.canvas.random_Zs[0,...] = self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index,...]*Z_mask+self.canvas.random_Zs[0,...]*(1-Z_mask)
         # self.cur_Z = self.canvas.random_Zs[0,...].unsqueeze(0)
         self.cur_Z = (self.canvas.random_Zs[self.canvas.current_random_Z_index-self.cur_Z_im_index-1,...].to(self.cur_Z.device)*Z_mask+self.cur_Z[0]*(1-Z_mask)).unsqueeze(0)
@@ -1045,7 +1050,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.DeriveControlValues()
 
     def CopyDefault2Random(self):
-        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         for random_Z_num in range(len(self.canvas.random_Zs)):
             self.canvas.random_Zs[random_Z_num] = self.canvas.random_Zs[random_Z_num]*(1-Z_mask)+self.cur_Z[0]*Z_mask
         self.Process_Z_Alternatives()
@@ -1080,9 +1085,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.cur_Z = Z_mask*random_Z+(1-Z_mask)*self.cur_Z
             self.ReProcess()
     def Validate_Z_optimizer(self,objective):
-        if self.canvas.Z_optimizer is not None:
-            if self.canvas.Z_optimizer.objective!=objective:# or objective=='hist': # Resetting optimizer in the 'patchhist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
-                self.canvas.Z_optimizer_Reset()
+        # if self.canvas.Z_optimizer is not None:
+        if self.latest_optimizer_objective!=objective:# or objective=='hist': # Resetting optimizer in the 'patchhist' case because I use automatic tempersture search there, so I want to search each time for the best temperature.
+            self.canvas.Z_optimizer_Reset()
 
     def MasksStorage(self,store):
         canvas_keys = ['Z_mask','HR_selected_mask','LR_mask_vertices','HR_size','random_Zs']
@@ -1135,6 +1140,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SetZ(0 if min_not_max else 1, 1,reset_optimizer=False)
 
     def Optimize_Z(self,objective):
+        if NO_DC_IN_PATCH_HISTOGRAM:
+            objective = objective.replace('hist', 'hist_noDC')
         if DICTIONARY_REPLACES_HISTOGRAM:
             objective = objective.replace('hist', 'dict')
         elif L1_REPLACES_HISTOGRAM:
@@ -1142,6 +1149,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.random_inits = ('random' in objective and 'limited' not in objective) or RANDOM_OPT_INITS
         self.multiple_inits = 'random' in objective or MULTIPLE_OPT_INITS
         self.Validate_Z_optimizer(objective)
+        self.latest_optimizer_objective = objective
         data = {'LR':self.var_L}
         if self.canvas.Z_optimizer is None:
             # For the random_l1_limited objective, I want to have L1 differences with respect to the current non-modified image, in case I currently display another image:
@@ -1166,7 +1174,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Z_mask_4_later_merging = torch.from_numpy(self.canvas.Z_mask).type(self.SR_model.fake_H.dtype).to(self.cur_Z.device)
                 self.var_L = self.Crop2BoundingRect(self.var_L, self.bounding_rect_4_opt)
                 data['LR'] = self.var_L
-                self.SR_model.AssignLatent(self.Crop2BoundingRect(self.SR_model.GetLatent(),self.bounding_rect_4_opt,HR=self.canvas.HR_Z))#Because I'm saving initial Z when initializing optimizer
+                self.SR_model.ConcatLatent(LR_image=self.var_L,latent_input=self.Crop2BoundingRect(self.SR_model.GetLatent(),self.bounding_rect_4_opt,HR=self.canvas.HR_Z))#Because I'm saving initial Z when initializing optimizer
                 self.cur_Z = self.Crop2BoundingRect(self.cur_Z,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
                 self.SR_model.fake_H = self.Crop2BoundingRect(self.SR_model.fake_H,self.bounding_rect_4_opt,HR=True) #For the limited random optimization, to have the image we want to stay close to.
                 if self.multiple_inits:
@@ -1228,7 +1236,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cur_Z = self.canvas.Z_optimizer.optimize()
         if self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1] < 0:
             self.cur_Z = 1 * self.stored_Z
-            self.SR_model.AssignLatent(self.cur_Z.type(self.var_L.type()))
+            self.SR_model.ConcatLatent(LR_image=self.var_L,latent_input=self.cur_Z.type(self.var_L.type()))
             self.SelectImage2Display()
         else:
             if self.optimizing_region:#            if self.optimizing_region or :
@@ -1255,13 +1263,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Compute_SR_Image()
                 self.canvas.random_Z_images[0] = self.SR_model.fake_H[0]
                 self.SelectImage2Display()
+        print('%d iterations: %s loss decreased from %.2e to %.2e by %.2e' % (len(self.canvas.Z_optimizer.loss_values), self.canvas.Z_optimizer.objective,
+            self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1],self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1]))
         if (self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))]-self.canvas.Z_optimizer.loss_values[-1])/\
                 np.abs(self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
             self.canvas.Z_optimizer_initial_LR /= 5
-            print('%d iterations: Z optimizer loss did not decrease relative to beginning, decreasing learning rate to %.3e'%(len(self.canvas.Z_optimizer.loss_values),self.canvas.Z_optimizer_initial_LR))
+            print('Loss decreased too little relative to beginning, decreasing learning rate to %.3e'%(self.canvas.Z_optimizer_initial_LR))
             self.canvas.Z_optimizer = None
         else: # This means I'm happy with this optimizer (and its learning rate), so I can cancel the auto-hist-temperature setting, in case it was set to True.
-            print('%d iterations: Z optimizer loss decreased from %.2e to %.2e'%(len(self.canvas.Z_optimizer.loss_values),self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1]))
             self.auto_set_hist_temperature = False
             self.auto_hist_temperature_mode_button.setChecked(False)
 
@@ -1295,7 +1304,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def ApplyUniformZ(self):
         self.canvas.Update_Z_Sliders()
-        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
+        Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.canvas.control_values.dtype).to(self.canvas.control_values.device)
         self.canvas.control_values = Z_mask * torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype) + (1 - Z_mask) * self.canvas.control_values
         # self.cur_Z = Z_mask * torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype) + (1 - Z_mask) * self.cur_Z
         self.Recompose_cur_Z()

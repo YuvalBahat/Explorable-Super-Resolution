@@ -217,7 +217,7 @@ class SRRaGANModel(BaseModel):
         print('-----------------------------------------------')
     def ConcatLatent(self,LR_image,latent_input):
         if LR_image.size()[2:]!=latent_input.size()[2:]:
-            latent_input = latent_input.view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
+            latent_input = latent_input.contiguous().view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
         self.model_input = torch.cat([latent_input,LR_image],dim=1)
     def Assing_LR_and_Latent(self,LR_image,latent_input):
         self.AssignLatent(latent_input)

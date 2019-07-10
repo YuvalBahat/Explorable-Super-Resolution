@@ -283,19 +283,21 @@ class DTE_PyTorch(nn.Module):
         # assert not (self.pre_pad and self.return_2_components),'Unsupported'
         return_2_components = self.return_2_components and not self.pre_pad
         if self.pre_pad:
-            if 'Z' in self.generated_image_model.__dict__:
-                LR_Z = self.generated_image_model.Z.size(3)==x.size(3)
-                if LR_Z:
-                    self.generated_image_model.Z = self.LR_padder(self.generated_image_model.Z)
-                else:
-                    self.generated_image_model.Z = self.HR_padder(self.generated_image_model.Z)
-            x = self.LR_padder(x)
-        generated_image = self.generated_image_model(x)
-        if self.pre_pad and 'Z' in self.generated_image_model.__dict__:
-            if LR_Z:
-                self.generated_image_model.Z = self.LR_unpadder(self.generated_image_model.Z)
+            LR_Z = x.size(1) - 3 == self.generated_image_model.num_latent_channels
+            if x.size(1)!=3 and not LR_Z:
+                latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
+                latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.generated_image_model.upscale*val for val in list(latent_input_HR.size()[2:])])
+                x = self.LR_padder(x)
+                latent_input_HR = self.HR_padder(latent_input_HR).view([latent_input_HR.size(0)]+[latent_input_HR.size(1)*self.generated_image_model.upscale**2]+list(x.size()[2:]))
+                x = torch.cat([latent_input_HR,x],1)
             else:
-                self.generated_image_model.Z = self.HR_unpadder(self.generated_image_model.Z)
+                x = self.LR_padder(x)
+        generated_image = self.generated_image_model(x)
+        # if self.pre_pad and 'Z' in self.generated_image_model.__dict__:
+        #     if LR_Z:
+        #         self.generated_image_model.Z = self.LR_unpadder(self.generated_image_model.Z)
+        #     else:
+        #         self.generated_image_model.Z = self.HR_unpadder(self.generated_image_model.Z)
 
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)

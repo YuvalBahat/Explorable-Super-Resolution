@@ -288,12 +288,18 @@ class Ui_MainWindow(object):
         icon_sigmaUp.addPixmap(QtGui.QPixmap("images/sigma_up.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionIncreaseSTD.setIcon(icon_sigmaUp)
 
-        self.actionIDecreaseSTD = QtWidgets.QAction(MainWindow)
-        # self.actionIDecreaseSTD.setText("Decrease STD")
-        self.actionIDecreaseSTD.setObjectName("actionIDecreaseSTD")
+        self.actionDecreaseSTD = QtWidgets.QAction(MainWindow)
+        # self.actionDecreaseSTD.setText("Decrease STD")
+        self.actionDecreaseSTD.setObjectName("actionDecreaseSTD")
         icon_sigmadown = QtGui.QIcon()
         icon_sigmadown.addPixmap(QtGui.QPixmap("images/sigma_down.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionIDecreaseSTD.setIcon(icon_sigmadown)
+        self.actionDecreaseSTD.setIcon(icon_sigmadown)
+
+        self.actionDecreaseTV = QtWidgets.QAction(MainWindow)
+        self.actionDecreaseTV.setObjectName("actionDecreaseTV")
+        icon_TVdown = QtGui.QIcon()
+        icon_TVdown.addPixmap(QtGui.QPixmap("images/TV_down.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionDecreaseTV.setIcon(icon_TVdown)
 
         self.actionImitateHist = QtWidgets.QAction(MainWindow)
         self.actionImitateHist.setObjectName("actionImitateHist")
