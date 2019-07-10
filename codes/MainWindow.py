@@ -250,12 +250,12 @@ class Ui_MainWindow(object):
         self.actionProcessLimitedRandZ.setIcon(icon_limited_randomZ)
         self.actionProcessLimitedRandZ.setObjectName("actionProcessLimitedRandZ")
 
-        self.randomLimitingWeightBox = QtWidgets.QLineEdit(MainWindow)
-        # self.randomLimitingWeightBox = QtWidgets.QDoubleSpinBox(MainWindow)
+        # self.randomLimitingWeightBox = QtWidgets.QLineEdit(MainWindow)
+        self.randomLimitingWeightBox = QtWidgets.QDoubleSpinBox(MainWindow)
         self.randomLimitingWeightBox.setObjectName("randomLimitingWeightBox")
-        # self.randomLimitingWeightBox.setValue(1.)
-        self.randomLimitingWeightBox.setText('1')
-        # self.randomLimitingWeightBox.setMaximum(200)
+        self.randomLimitingWeightBox.setValue(1.)
+        # self.randomLimitingWeightBox.setText('1')
+        self.randomLimitingWeightBox.setMaximum(200)
         # self.randomLimitingWeightBox.setSingleStep(0.1)
 
         icon_copyRandZ = QtGui.QIcon()
