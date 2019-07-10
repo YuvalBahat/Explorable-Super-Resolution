@@ -217,16 +217,20 @@ class SRRaGANModel(BaseModel):
         print('-----------------------------------------------')
     def ConcatLatent(self,LR_image,latent_input):
         if LR_image.size()[2:]!=latent_input.size()[2:]:
-            latent_input = latent_input.view([1]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
-        self.var_L = torch.cat([latent_input,LR_image],dim=1)
+            latent_input = latent_input.view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
+        self.model_input = torch.cat([latent_input,LR_image],dim=1)
     def Assing_LR_and_Latent(self,LR_image,latent_input):
         self.AssignLatent(latent_input)
-        self.var_L = LR_image
+        self.model_input = LR_image
 
     def AssignLatent(self,latent_input):
         self.netG.module.generated_image_model.Z = latent_input
     def GetLatent(self):
-        return 1*self.netG.module.generated_image_model.Z
+        # return 1*self.netG.module.generated_image_model.Z
+        latent = 1*self.model_input[:,:-3,...]
+        if latent.size(1)!=self.num_latent_channels:
+            latent = latent.view([latent.size(0)]+[self.num_latent_channels]+[self.opt['scale']*val for val in list(latent.size()[2:])])
+        return latent
 
     def feed_data(self, data, need_HR=True):
         # LR
@@ -252,8 +256,8 @@ class SRRaGANModel(BaseModel):
                 cur_Z = (cur_Z*torch.ones([1,1]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])])).type(self.var_L.type())
             if not torch.is_tensor(cur_Z):
                 cur_Z = torch.from_numpy(cur_Z).type(self.var_L.type())
-            self.AssignLatent(latent_input=cur_Z)
-            # self.var_L = torch.cat([self.cur_Z,self.var_L],dim=1)
+            # self.AssignLatent(latent_input=cur_Z)
+            self.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
@@ -300,15 +304,12 @@ class SRRaGANModel(BaseModel):
             if first_dual_batch_step:
                 static_Z = self.GetLatent()
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'LR':self.var_L[:,-3:,...],'HR':self.var_H})
-
+                self.Z_optimizer.feed_data({'LR':self.var_L,'HR':self.var_H})
                 self.Z_optimizer.optimize()
-
-                # self.cur_Z = static_Z
             else:
-                # self.var_L[:,:self.cur_Z.size(1),...] = self.cur_Z
-                self.AssignLatent(static_Z)
-                self.fake_H = self.netG(self.var_L)
+                # self.AssignLatent(static_Z)
+                self.ConcatLatent(LR_image=self.var_L, latent_input=static_Z)
+                self.fake_H = self.netG(self.model_input)
             if self.DTE_net is not None:
                 if self.decomposed_output:
                     self.fake_H = [self.DTE_net.HR_unpadder(self.fake_H[0]),self.DTE_net.HR_unpadder(self.fake_H[1])]
@@ -515,9 +516,9 @@ class SRRaGANModel(BaseModel):
         self.netG.eval()
         if prevent_grads_calc:
             with torch.no_grad():
-                self.fake_H = self.netG(self.var_L)
+                self.fake_H = self.netG(self.model_input)
         else:
-            self.fake_H = self.netG(self.var_L)
+            self.fake_H = self.netG(self.model_input)
         self.netG.train()
 
     def update_learning_rate(self,cur_step=None):

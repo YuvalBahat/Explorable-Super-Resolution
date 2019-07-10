@@ -98,14 +98,12 @@ class RRDBNet(nn.Module):
     def forward(self, x):
         if self.latent_input is not None:
             if 'HR_downscaled' in self.latent_input:
-                # latent_input = x[:,:self.num_latent_channels*self.upscale**2,...]
-                # latent_input_HR = latent_input.view([x.size()[0]]+[self.num_latent_channels]+[self.upscale*val for val in list(x.size()[2:])])
-                latent_input_HR = 1*self.Z
+                # latent_input_HR = 1*self.Z
+                latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
+                latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.upscale*val for val in list(latent_input_HR.size()[2:])])
                 latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False)
-                # x = torch.cat([latent_input,x[:,-3:,...]],dim=1)
             else:
                 latent_input = 1*self.Z
-                # latent_input = x[:,:self.num_latent_channels,...].view([x.size()[0]]+[self.num_latent_channels]+list(x.size()[2:]))
             x = torch.cat([latent_input, x], dim=1)
         for i,module in enumerate(self.model):
             module_children = [str(type(m)) for m in module.children()]

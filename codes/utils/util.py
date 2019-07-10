@@ -533,7 +533,7 @@ class Z_optimizer():
             self.data['Z'] = self.Z_model()
             # self.data['Z'] = self.Z_mask*self.Z_model()+(1-self.Z_mask)*self.model.cur_Z
             self.model.feed_data(self.data, need_HR=False)
-            self.model.fake_H = self.model.netG(self.model.var_L)
+            self.model.fake_H = self.model.netG(self.model.model_input)
             if self.model_training:
                 self.model.fake_H = self.HR_unpadder(self.model.fake_H)
             if 'random' in self.objective:
@@ -594,7 +594,7 @@ class Z_optimizer():
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)
-            self.model.fake_H = self.model.netG(self.model.var_L)
+            self.model.fake_H = self.model.netG(self.model.model_input)
         return Z_2_return
 
     def ReturnStatus(self):
