@@ -184,7 +184,7 @@ class SoftHistogramLoss(torch.nn.Module):
         if patch_size>1:
             assert gray_scale and (desired_hist_image is not None),'Not supporting color images or patch histograms for model training loss for now'
             self.num_dims = patch_size**2
-            desired_im_patch_extraction_mat = self.ReturnPatchExtractionMat(desired_hist_image_mask).to(self.device)
+            desired_im_patch_extraction_mat = ReturnPatchExtractionMat(desired_hist_image_mask,patch_size=patch_size).to(self.device)
             desired_hist_image = torch.sparse.mm(desired_im_patch_extraction_mat,desired_hist_image).view([self.num_dims,-1,1])
             if self.no_patch_DC:
                 desired_hist_image = desired_hist_image-torch.mean(desired_hist_image,dim=0,keepdim=True)
@@ -201,7 +201,7 @@ class SoftHistogramLoss(torch.nn.Module):
         if not dictionary_not_histogram:
             self.loss = torch.nn.KLDivLoss()
         if patch_size>1:
-            self.patch_extraction_mat = self.ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patches_overlap=OVERLAPPING_PATCHES).to(self.device)
+            self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,patches_overlap=int(OVERLAPPING_PATCHES)).to(self.device)
             self.image_mask = None
         else:
             self.image_mask = input_im_HR_mask.view([-1]).type(torch.ByteTensor) if input_im_HR_mask is not None else None
@@ -270,26 +270,6 @@ class SoftHistogramLoss(torch.nn.Module):
                     else:
                         log_temperature_range[1] = 1*np.log(self.temperature)
 
-    def ReturnPatchExtractionMat(self,mask,patches_overlap=True):
-        mask = binary_opening(mask,np.ones([self.patch_size, self.patch_size]).astype(np.bool))
-        patches_indexes = extract_patches_2d(np.multiply(mask,1 + np.arange(mask.size).reshape(mask.shape)),(self.patch_size, self.patch_size)).reshape([-1, self.num_dims])
-        patches_indexes = patches_indexes[np.all(patches_indexes > 0, 1), :] - 1
-        if not patches_overlap:
-            unique_indexes = list(set(list(patches_indexes.reshape([-1]))))
-            min_index = min(unique_indexes)
-            index_taken_indicator = np.zeros([max(unique_indexes)-min(unique_indexes)]).astype(np.bool)
-            valid_patches = np.ones([patches_indexes.shape[0]]).astype(np.bool)
-            for patch_num,patch in enumerate(patches_indexes):
-                if np.any(index_taken_indicator[patch-min_index-1]):
-                    valid_patches[patch_num] = False
-                    continue
-                index_taken_indicator[patch - min_index-1] = True
-            patches_indexes = patches_indexes[valid_patches]
-        corresponding_mat_rows = np.arange(patches_indexes.size).reshape([-1])
-        patch_extraction_mat = torch.sparse.FloatTensor(torch.LongTensor([corresponding_mat_rows, patches_indexes.transpose().reshape([-1])]),
-            torch.FloatTensor(np.ones([corresponding_mat_rows.size])),torch.Size([patches_indexes.size, mask.size]))
-        return patch_extraction_mat
-
     def ComputeSoftHistogram(self,image,image_mask,return_log_hist,reshape_image,compute_hist_normalizer,temperature=None):
         CANONICAL_KDE_4_DICTIONARY = True
         if temperature is None:
@@ -350,6 +330,45 @@ class SoftHistogramLoss(torch.nn.Module):
         else:
             return self.loss(torch.cat(cur_images_hists,0),torch.cat(self.desired_hists_list,0))
 
+
+def ReturnPatchExtractionMat(mask,patch_size,patches_overlap=1,return_non_covered=False):
+    mask = binary_opening(mask, np.ones([patch_size, patch_size]).astype(np.bool))
+    patches_indexes = extract_patches_2d(np.multiply(mask, 1 + np.arange(mask.size).reshape(mask.shape)),
+                                         (patch_size, patch_size)).reshape([-1, patch_size**2])
+    patches_indexes = patches_indexes[np.all(patches_indexes > 0, 1), :] - 1
+    if patches_overlap<1:
+        unique_indexes = list(set(list(patches_indexes.reshape([-1]))))
+        min_index = min(unique_indexes)
+        index_taken_indicator = np.zeros([max(unique_indexes) - min(unique_indexes)]).astype(np.bool)
+        valid_patches = np.ones([patches_indexes.shape[0]]).astype(np.bool)
+        for patch_num, patch in enumerate(patches_indexes):
+            if (patches_overlap==0 and np.any(index_taken_indicator[patch - min_index - 1])) or np.mean(index_taken_indicator[patch - min_index - 1])>patches_overlap:
+                valid_patches[patch_num] = False
+                continue
+            index_taken_indicator[patch - min_index - 1] = True
+        patches_indexes = patches_indexes[valid_patches]
+        print('%.3f of desired pixels are covered by assigned patches'%(index_taken_indicator[unique_indexes-min_index-1].mean()))
+        if return_non_covered:
+            non_covered_indexes = np.array(unique_indexes)
+            non_covered_indexes = non_covered_indexes[np.logical_not(index_taken_indicator[non_covered_indexes - min_index - 1])]
+            non_covered_pixels_extraction_mat = Patch_Indexes_2_Sparse_Mat(non_covered_indexes,mask.size)
+    # corresponding_mat_rows = np.arange(patches_indexes.size).reshape([-1])
+    # patch_extraction_mat = torch.sparse.FloatTensor(
+    #     torch.LongTensor([corresponding_mat_rows, patches_indexes.transpose().reshape([-1])]),
+    #     torch.FloatTensor(np.ones([corresponding_mat_rows.size])), torch.Size([patches_indexes.size, mask.size]))
+    patch_extraction_mat = Patch_Indexes_2_Sparse_Mat(patches_indexes,mask.size)
+    if return_non_covered:
+        return patch_extraction_mat,non_covered_pixels_extraction_mat
+    else:
+        return patch_extraction_mat
+
+def Patch_Indexes_2_Sparse_Mat(patches_indexes,mask_size):
+    corresponding_mat_rows = np.arange(patches_indexes.size).reshape([-1])
+    return torch.sparse.FloatTensor(
+        torch.LongTensor([corresponding_mat_rows, patches_indexes.transpose().reshape([-1])]),
+        torch.FloatTensor(np.ones([corresponding_mat_rows.size])), torch.Size([patches_indexes.size, mask_size]))
+
+
 class Optimizable_Z(torch.nn.Module):
     def __init__(self,Z_shape,Z_range=None,initial_pre_tanh_Z=None,Z_mask=None,random_perturbations=False):
         super(Optimizable_Z, self).__init__()
@@ -396,10 +415,12 @@ def ArcTanH(input_tensor):
     return 0.5*torch.log((1+input_tensor+torch.finfo(input_tensor.dtype).eps)/(1-input_tensor+torch.finfo(input_tensor.dtype).eps))
 
 def TV_Loss(image):
-    return torch.pow((image[:,:,:,:-1]-image[:,:,:,1:]).abs(),0.1).mean(dim=(1,2,3))+torch.pow((image[:,:,:-1,:]-image[:,:,1:,:]).abs(),0.1).mean(dim=(1,2,3))
+    # return torch.pow((image[:,:,:,:-1]-image[:,:,:,1:]).abs(),0.1).mean(dim=(1,2,3))+torch.pow((image[:,:,:-1,:]-image[:,:,1:,:]).abs(),0.1).mean(dim=(1,2,3))
+    return (image[:,:,:,:-1]-image[:,:,:,1:]).abs().mean(dim=(1,2,3))+(image[:,:,:-1,:]-image[:,:,1:,:]).abs().mean(dim=(1,2,3))
 
 class Z_optimizer():
     MIN_LR = 1e-5
+    PATCH_SIZE_4_STD = 7
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False):
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
@@ -408,8 +429,7 @@ class Z_optimizer():
             initial_pre_tanh_Z = initial_Z/Z_range
             initial_pre_tanh_Z = torch.clamp(initial_pre_tanh_Z,min=-1+torch.finfo(initial_pre_tanh_Z.dtype).eps,max=1.-torch.finfo(initial_pre_tanh_Z.dtype).eps)
             initial_pre_tanh_Z = ArcTanH(initial_pre_tanh_Z)
-            # if random_Z_inits and 'random' not in objective or ('random' in objective and 'limited' in objective):
-            #     initial_pre_tanh_Z += torch.normal(mean=torch.zeros_like(initial_pre_tanh_Z),std=0.01*torch.ones_like(initial_pre_tanh_Z))
+
         else:
             initial_pre_tanh_Z = None
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_pre_tanh_Z=initial_pre_tanh_Z,Z_mask=Z_mask,
@@ -419,6 +439,7 @@ class Z_optimizer():
         self.data = data
         self.device = torch.device('cuda')
         self.model = model
+        self.model_training = HR_unpadder is not None
         if image_mask is None:
             if 'fake_H' in model.__dict__.keys():
                 self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)
@@ -432,6 +453,14 @@ class Z_optimizer():
             self.initial_Z = 1.*model.GetLatent()
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
+        if 'local' in objective:#Used in relative STD change and periodicity objective cases:
+            self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
+                patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0,return_non_covered=True)
+            self.patch_extraction_map, self.non_covered_indexes_extraction_mat =\
+                self.patch_extraction_map.to(model.fake_H.device),self.non_covered_indexes_extraction_mat.to(model.fake_H.device)
+        if not self.model_training:
+            self.initial_STD = self.Masked_STD()
+            print('Initial STD: %.3e' % (self.initial_STD.mean().item()))
         if 'l1' in objective and 'random' not in objective:
             if data is not None and 'HR' in data.keys():
                 self.GT_HR = data['HR']
@@ -445,17 +474,48 @@ class Z_optimizer():
         elif 'desired_SVD' in objective:
             self.loss = FilterLoss(latent_channels='SVDinNormedOut_structure_tensor',constant_Z=data['desired_Z'],
                                    reference_images={'min':data['reference_image_min'],'max':data['reference_image_max']},masks={'LR':self.Z_mask,'HR':self.image_mask})
-        elif 'STD' in objective:
-            assert self.objective in ['max_STD', 'min_STD','STD_increase','STD_decrease']
+        elif 'STD' in objective and not any([phrase in objective for phrase in ['periodicity','TV']]):
+            assert self.objective.replace('local_','') in ['max_STD', 'min_STD','STD_increase','STD_decrease']
             if any([phrase in objective for phrase in ['increase','decrease']]):
                 STD_CHANGE_FACTOR = 1.05
-                self.desired_STD = torch.std(model.fake_H*self.image_mask,dim=(1,2,3)).item()
-                self.desired_STD *= STD_CHANGE_FACTOR if 'increase' in objective else 1/STD_CHANGE_FACTOR
-
-            # scheduler_threshold = 0.9999
+                STD_CHANGE_INCREMENT = data['STD_increment']
+                # self.desired_STD = self.Masked_STD()
+                self.desired_STD = self.initial_STD
+                # print('Initial STD: %.3e'%(self.desired_STD.mean().item()))
+                if STD_CHANGE_INCREMENT is None:#Using multiplicative desired STD factor:
+                    self.desired_STD *= STD_CHANGE_FACTOR if 'increase' in objective else 1/STD_CHANGE_FACTOR
+                else:#Using an additive increment:
+                    self.desired_STD += STD_CHANGE_INCREMENT if 'increase' in objective else -STD_CHANGE_INCREMENT
+        elif 'periodicity' in objective:
+            self.STD_PRESERVING_WEIGHT = 20
+            # self.initial_STD = self.Masked_STD()
+            # self.initial_STD = initial_STD
+            # print('Initial STD: %.3e' % (self.initial_STD.mean().item()))
+            if 'nonInt' in objective:
+                image_size = list(self.model.fake_H.size()[2:])
+                self.periodicity_points = []
+                for point in data['periodicity_points']:
+                    point = np.array(point)
+                    self.periodicity_points.append([])
+                    for minus_point in range(2):
+                        if minus_point:
+                            point *= -1
+                        y_range, x_range = [IndexingHelper(point[0]),IndexingHelper(point[0], negative=True)], [IndexingHelper(point[1]),IndexingHelper(point[1],negative=True)]
+                        ranges = []
+                        for axis,cur_range in enumerate([x_range,y_range]):
+                            cur_range = [cur_range[0] if cur_range[0] is not None else 0,image_size[axis]+cur_range[1] if cur_range[1] is not None else image_size[axis]]
+                            cur_range = np.linspace(start=cur_range[0],stop=cur_range[1],
+                                num=image_size[axis]-np.ceil(np.abs(np.array([0,image_size[axis]])-cur_range)).astype(np.int16).max())/image_size[axis]*2-1
+                            ranges.append(cur_range)
+                        grid = np.meshgrid(*ranges)
+                        self.periodicity_points[-1].append(torch.from_numpy(np.stack(grid,-1)).view([1]+list(grid[0].shape)+[2]).type(self.model.fake_H.dtype).to(self.model.fake_H.device))
+            else:
+                self.periodicity_points = [np.array(point) for point in data['periodicity_points']]
         elif 'VGG' in objective and 'random' not in objective:
             self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
             self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
+        elif 'TV' in objective:
+            self.STD_PRESERVING_WEIGHT = 100
         elif any([phrase in objective for phrase in ['hist','dict']]):
             self.automatic_temperature = auto_set_hist_temperature
             if self.automatic_temperature:
@@ -499,9 +559,15 @@ class Z_optimizer():
         self.loggers = loggers
         self.cur_iter = 0
         self.max_iters = max_iters
-        self.model_training = HR_unpadder is not None
         self.random_Z_inits = random_Z_inits or self.model_training
         self.HR_unpadder = HR_unpadder
+
+    def Masked_STD(self):
+        if 'local' in self.objective:
+            return torch.cat([torch.sparse.mm(self.patch_extraction_map, self.model.fake_H.mean(dim=1).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1]).std(dim=0),
+                torch.sparse.mm(self.non_covered_indexes_extraction_mat,self.model.fake_H.mean(dim=1).view([-1, 1])).std(dim=0)],0)
+        else:
+            return torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3))
 
     def feed_data(self,data):
         self.data = data
@@ -569,12 +635,18 @@ class Z_optimizer():
                 Z_loss = self.loss(self.model.fake_H.to(self.device))
             elif 'Adversarial' in self.objective:
                 Z_loss = self.loss(self.netD(self.model.DTE_net.HR_unpadder(self.model.fake_H).to(self.device)),True)
-            elif 'STD' in self.objective:
-                Z_loss = torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3)).to(self.device)
+            elif 'STD' in self.objective and not any([phrase in self.objective for phrase in ['periodicity','TV']]):
+                # if 'local' in self.objective:
+                #     Z_loss = torch.sparse.mm(self.patch_extraction_map,self.model.fake_H.mean(dim=1).view([-1,1])).view([self.PATCH_SIZE_4_STD**2,-1]).std(dim=0)
+                # else:
+                #     Z_loss = torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3)).to(self.device)
+                Z_loss = self.Masked_STD()
                 if any([phrase in self.objective for phrase in ['increase', 'decrease']]):
                     Z_loss = (Z_loss-self.desired_STD)**2
+            elif 'periodicity' in self.objective:
+                Z_loss = self.PeriodicityLoss().to(self.device)
             elif 'TV' in self.objective:
-                Z_loss = TV_Loss(self.model.fake_H * self.image_mask).to(self.device)
+                Z_loss = (self.STD_PRESERVING_WEIGHT*(self.Masked_STD()-self.initial_STD)**2).mean()+TV_Loss(self.model.fake_H * self.image_mask).to(self.device)
             elif 'VGG' in self.objective:
                 Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:
@@ -598,22 +670,48 @@ class Z_optimizer():
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         if 'random' in self.objective and 'limited' in self.objective:
             self.loss_values = self.loss_values[1:] #Removing the first loss values which is close to 0 in this case, to prevent discarfing optimization because loss increased compared to it.
+        # if 'STD' in self.objective or 'periodicity' in self.objective:
+        if not self.model_training:
+            print('Final STD: %.3e'%(self.Masked_STD().mean().item()))
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
         self.Manage_Model_Grad_Requirements(disable=False)
-        # if self.Z_mask is not None and self.ONLY_MODIFY_MASKED_AREA:
-        #     Z_2_return = self.Z_mask * self.Z_model() + (1 - self.Z_mask) * self.initial_Z
-        #     self.data['Z'] = Z_2_return
-        #     self.model.feed_data(self.data, need_HR=False)
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             self.model.feed_data(self.data, need_HR=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
         return Z_2_return
 
+    def PeriodicityLoss(self):
+        # if 'local_STD' in self.objective:
+        #     cur_STD = torch.sparse.mm(self.patch_extraction_map,self.model.fake_H.mean(dim=1).view([-1,1])).view([self.PATCH_SIZE_4_STD**2,-1]).std(dim=0)
+        # else:
+        #     cur_STD = torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3))
+        loss = (self.STD_PRESERVING_WEIGHT*(self.Masked_STD()-self.initial_STD)**2).mean()
+        image = self.model.fake_H
+        mask = self.image_mask.unsqueeze(0).unsqueeze(0)
+        def Return_Translated_SubImage(image,translation):
+            y_range,x_range = [IndexingHelper(translation[0]),IndexingHelper(translation[0],negative=True)],[IndexingHelper(translation[1]),IndexingHelper(translation[1],negative=True)]
+            return image[:,:,y_range[0]:y_range[1],x_range[0]:x_range[1]]
+        def Return_Interpolated_SubImage(image,grid):
+            return torch.nn.functional.grid_sample(image, grid)
+        for point in self.periodicity_points:
+            if 'nonInt' in self.objective:
+                cur_mask = Return_Interpolated_SubImage(mask,point[0])*Return_Interpolated_SubImage(mask,point[1])
+                loss = loss + (cur_mask * (Return_Interpolated_SubImage(image, point[0]) - Return_Interpolated_SubImage(image,point[1])).abs()).mean(dim=(1, 2, 3))
+            else:
+                cur_mask = Return_Translated_SubImage(mask,point)*Return_Translated_SubImage(mask,-point)
+                loss = loss+(cur_mask*(Return_Translated_SubImage(image,point)-Return_Translated_SubImage(image,-point)).abs()).mean(dim=(1, 2, 3))
+        return loss
+
     def ReturnStatus(self):
         return self.Z_model.PreTanhZ(),self.optimizer
 
+def IndexingHelper(index,negative=False):
+    if negative:
+        return index if index < 0 else None
+    else:
+        return index if index > 0 else None
 
 ####################
 # metric

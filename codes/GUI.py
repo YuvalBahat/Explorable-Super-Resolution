@@ -21,6 +21,7 @@ import cv2
 import imageio
 import matplotlib
 from skimage.transform import resize
+from scipy.signal import find_peaks
 import copy
 
 BRUSH_MULT = 3
@@ -41,13 +42,15 @@ DICTIONARY_REPLACES_HISTOGRAM = True
 L1_REPLACES_HISTOGRAM = False
 NO_DC_IN_PATCH_HISTOGRAM = True
 RELATIVE_STD_OPT = True
+LOCAL_STD_4_OPT = True
 ONLY_MODIFY_MASKED_AREA_WHEN_OPTIMIZING = False
 D_EXPECTED_LR_SIZE = 64
 ITERS_PER_OPT_ROUND = 5
 HIGH_OPT_ITERS_LIMIT = True
-MARGINS_AROUND_REGION_OF_INTEREST = 0
+MARGINS_AROUND_REGION_OF_INTEREST = 30
 RANDOM_OPT_INITS = False
 MULTIPLE_OPT_INITS = False
+AUTO_CYCLE_LENGTH_4_PERIODICITY = True
 
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
@@ -62,7 +65,7 @@ COLORS = [
 FONT_SIZES = [7, 8, 9, 10, 11, 12, 13, 14, 18, 24, 36, 48, 64, 72, 96, 144, 288]
 
 MODES = [
-    'selectpoly', 'selectrect',
+    'selectpoly', 'selectrect','indicatePeriodicity',
     #'eraser', 'fill',
     #'dropper', 'stamp',
     'pen',
@@ -256,7 +259,84 @@ class Canvas(QLabel):
             self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
+        self.selectpolyButton.setChecked(False)
         # self.selectpoly_copy()#I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
+
+    def indicatePeriodicity_mousePressEvent(self, e):
+        if not self.locked or e.button == Qt.RightButton:
+            # self.periodicity_painter = None
+            # self.periodicity_points_pen = None
+            self.active_shape_fn = 'drawPolygon'
+            self.preview_pen = SELECTION_PEN
+            self.generic_poly_mousePressEvent(e)
+        if len(self.history_pos)==3:
+            self.locked = True
+            # self.generic_poly_mousePressEvent(e)
+            self.actionIncreasePeriodicity.setEnabled(True)
+            self.actionIncreasePeriodicity_1D.setEnabled(True)
+            self.Z_optimizer_Reset()
+            if AUTO_CYCLE_LENGTH_4_PERIODICITY:
+                def im_coordinates_2_grid(points):
+                    points = [(p.y(),p.x()) for p in points]
+                    grid = []
+                    num_steps = int(max([np.abs(points[1][axis]-points[0][axis]) for axis in range(2)])/0.1)
+                    for axis in range(2):
+                        grid.append(np.linspace(start=points[0][axis]/self.HR_size[axis]*2-1,stop=points[1][axis]/self.HR_size[axis]*2-1,num=num_steps))
+                    return np.reshape(grid[::-1],[2,-1]).transpose((1,0)) #Reversing the order of axis (the grid list) because grid_sample expects (x,y) coordinates
+                def autocorr(x):
+                    x -= x.mean()
+                    result = np.correlate(x, x, mode='full')
+                    normalizer = [val+1 for val in range(len(x))]
+                    normalizer = np.array(normalizer+normalizer[-2::-1])
+                    result /= normalizer
+                    return result[x.size:]
+                def line_length(points):
+                    points = [np.array([p.y(),p.x()]) for p in points]
+                    return np.linalg.norm(points[1]-points[0])
+                    # return np.sqrt(sum([(points[0][axis]-points[1][axis])**2 for axis in range(2)]))
+
+                self.periodicity_points = []
+                for p in self.history_pos[1:]:
+                    image_along_line = torch.nn.functional.grid_sample(torch.mean(self.random_Z_images[0],dim=0,keepdim=True).unsqueeze(0),
+                        torch.from_numpy(im_coordinates_2_grid([self.history_pos[0],p])).view([1,1,-1,2]).to(self.random_Z_images.device).type(self.random_Z_images.dtype)).squeeze().data.cpu().numpy()
+                    autocorr_peaks = find_peaks(autocorr(image_along_line))[0]
+                    cur_point = np.array([p.y()-self.history_pos[0].y(),p.x()-self.history_pos[0].x()])
+                    if len(autocorr_peaks)>0:
+                        autocorr_peaks = [peak for peak in autocorr_peaks if autocorr(image_along_line)[peak]>1e-3]
+                        if len(autocorr_peaks) > 0:
+                            cur_length = line_length([self.history_pos[0], p])
+                            step_size = cur_length / image_along_line.size
+                            cycle_length = step_size*autocorr_peaks[0]
+                            cur_point = cur_point / cur_length * cycle_length
+                    print('Adding periodicity point (y,x) = (%.3f,%.3f)'%(cur_point[0],cur_point[1]))
+                    self.periodicity_points.append(cur_point)
+                self.periodicity_mag_1.setValue(np.linalg.norm(self.periodicity_points[0]))
+                self.periodicity_mag_2.setValue(np.linalg.norm(self.periodicity_points[1]))
+            else:
+                self.periodicity_points = [(p.y()-self.history_pos[0].y(),p.x()-self.history_pos[0].x()) for p in self.history_pos[1:]]
+            # self.timer_event(final=True)
+            # self.reset_mode()
+            SHOW_CHOSEN_POINTS = True
+            # self.indicatePeriodicityButton.setDown(False)
+            if SHOW_CHOSEN_POINTS:
+                self.timer_cleanup()
+                # self.active_shape_fn = None
+                # self.periodicity_points_pen = QPen(QColor(0xff, 0x00, 0x00), 5, Qt.SolidLine)
+                p = QPainter(self.pixmap())
+                p.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+                p.setPen(QPen(QColor(0xff, 0x00, 0x00), 5, Qt.SolidLine))
+                # getattr(p, self.active_shape_fn)(*self.history_pos[:1] + [QPoint(np.round(point[1])+self.history_pos[0].x(),
+                #                                                                  np.round(point[0])+self.history_pos[0].y()) for point in self.periodicity_points])
+                getattr(p, 'drawPoint')(self.history_pos[0].x(),self.history_pos[0].y())
+                for point in self.periodicity_points:
+                    getattr(p, 'drawPoint')(np.round(point[1])+self.history_pos[0].x(), np.round(point[0])+self.history_pos[0].y())
+
+    def indicatePeriodicity_timerEvent(self, final=False):
+        self.generic_poly_timerEvent(final)
+
+    def indicatePeriodicity_mouseMoveEvent(self, e):
+        if not self.locked:
+            self.generic_poly_mouseMoveEvent(e)
 
     def selectpoly_copy(self):
         """
@@ -322,6 +402,7 @@ class Canvas(QLabel):
             self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
+        self.selectrectButton.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
         # self.selectrect_copy()  # I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
 
     def Z_optimizer_Reset(self):
@@ -392,7 +473,10 @@ class Canvas(QLabel):
             p = QPainter(self.pixmap())
             p.setPen(QPen(self.active_color, self.config['size'], Qt.SolidLine, Qt.SquareCap, Qt.RoundJoin))
             p.drawLine(self.last_pos, e.pos())
-
+            scribble_mask = QPainter(self.scribble_mask.pixmap())
+            scribble_mask.setPen(QPen(QColor(1,1,1), self.config['size'], Qt.SolidLine, Qt.SquareCap, Qt.RoundJoin))
+            scribble_mask.drawLine(self.last_pos, e.pos())
+            self.scribble_mask.update()
             self.last_pos = e.pos()
             self.update()
 
@@ -634,18 +718,38 @@ class Canvas(QLabel):
 
     # Generic poly events
     def generic_poly_mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
-            if self.history_pos:
-                self.history_pos.append(e.pos())
-            else:
-                self.history_pos = [e.pos()]
-                self.current_pos = e.pos()
-                self.timer_event = self.generic_poly_timerEvent
-
-        elif e.button() == Qt.RightButton and self.history_pos:
-            # Clean up, we're not drawing
+        SHOW_CHOSEN_POINTS = False
+        if SHOW_CHOSEN_POINTS and self.mode=='indicatePeriodicity' and self.locked:
             self.timer_cleanup()
-            self.reset_mode()
+            self.timer_event = self.indicatePeriodicity_timerEvent
+        else:
+            if e.button() == Qt.LeftButton:
+                if self.history_pos:
+                    self.history_pos.append(e.pos())
+                else:
+                    self.history_pos = [e.pos()]
+                    self.current_pos = e.pos()
+                    self.timer_event = self.generic_poly_timerEvent
+
+            elif e.button() == Qt.RightButton and self.history_pos:
+                # Clean up, we're not drawing
+                self.timer_cleanup()
+                self.reset_mode()
+
+    def indicatePeriodicity_timerEvent(self, final=False):
+        # self.timer_cleanup()
+        # self.active_shape_fn = None
+        periodicity_points_pen = QPen(QColor(0xff, 0x00, 0x00), 5, Qt.SolidLine)
+        p = QPainter(self.pixmap())
+        p.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+        p.setPen(periodicity_points_pen)
+        # getattr(p, self.active_shape_fn)(*self.history_pos[:1] + [QPoint(np.round(point[1])+self.history_pos[0].x(),
+        #                                                                  np.round(point[0])+self.history_pos[0].y()) for point in self.periodicity_points])
+        getattr(p, 'drawPoint')(self.history_pos[0].x(), self.history_pos[0].y())
+        for point in self.periodicity_points:
+            getattr(p, 'drawPoint')(np.round(point[1]) + self.history_pos[0].x(),
+                                    np.round(point[0]) + self.history_pos[0].y())
+        self.update()
 
     def generic_poly_timerEvent(self, final=False):
         p = QPainter(self.pixmap())
@@ -794,6 +898,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.initialize()
         self.canvas.HR_Z = 'HR' in self.canvas.DTE_opt['network_G']['latent_input_domain']
 
+        # Scribble mask:
+        self.canvas.scribble_mask = Canvas()
+        self.canvas.scribble_mask.initialize()
+
         # We need to enable mouse tracking to follow the mouse without the button pressed.
         self.canvas.setMouseTracking(True)
         # Enable focus to capture key inputs.
@@ -837,6 +945,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Menu options
         self.actionNewImage.triggered.connect(self.canvas.initialize)
         self.actionOpenImage.triggered.connect(self.open_file)
+        self.actionLoad_Z.triggered.connect(self.Load_Z)
+
 
         self.actionProcessRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=False))
         self.actionProcessLimitedRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=True))
@@ -863,6 +973,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('hist'))
         self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchhist'))
         self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
+        self.actionIncreasePeriodicity.triggered.connect(lambda x:self.Optimize_Z('periodicity'))
+        self.actionIncreasePeriodicity_1D.triggered.connect(lambda x:self.Optimize_Z('periodicity_1D'))
         self.actionMatchSliders.triggered.connect(lambda x:self.Optimize_Z('desired_SVD'))
 
         self.UnselectButton.clicked.connect(self.Clear_Z_Mask)
@@ -931,26 +1043,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # self.canvas.slider_third_channel.sliderReleased.connect(lambda s=self.canvas.slider_third_channel.sliderPosition():self.SetZ(value=self.canvas.slider_third_channel.sliderPosition()/100,index=2))
         self.canvas.slider_third_channel.sliderReleased.connect(self.Remember_Zmap)
         self.ZToolbar.addWidget(self.canvas.slider_third_channel)
-        self.ZToolbar.addAction(self.actionProcessRandZ)
-        self.ZToolbar.addAction(self.actionProcessLimitedRandZ)
-        self.ZToolbar.addWidget(self.randomLimitingWeightBox)
+        # self.ZToolbar.addAction(self.actionProcessRandZ)
+        # self.ZToolbar.addAction(self.actionProcessLimitedRandZ)
+        if self.randomLimitingWeightBox_Enabled:
+            self.ZToolbar.addWidget(self.randomLimitingWeightBox)
         self.ZToolbar.addWidget(self.DisplayedImageSelectionButton)
         self.ZToolbar.addAction(self.actionCopyFromRandom)
         # self.ZToolbar.setIconSize(QSize(30,30))
         self.ZToolbar.addAction(self.actionCopy2Random)
+        self.ZToolbar.addWidget(self.indicatePeriodicityButton)
         self.ZToolbar.insertSeparator(self.actionProcessRandZ)
+        self.ZToolbar.addWidget(self.periodicity_mag_1)
+        self.ZToolbar.addWidget(self.periodicity_mag_2)
         self.ZToolbar2.addAction(self.actionIncreaseSTD)
         self.ZToolbar2.addAction(self.actionDecreaseSTD)
+        self.ZToolbar2.addWidget(self.STD_increment)
         self.ZToolbar2.addAction(self.actionDecreaseTV)
         self.ZToolbar2.addAction(self.actionImitateHist)
         self.ZToolbar2.addAction(self.actionImitatePatchHist)
         self.ZToolbar2.addAction(self.actionFoolAdversary)
+        self.ZToolbar2.addAction(self.actionIncreasePeriodicity_1D)
+        self.ZToolbar2.addAction(self.actionIncreasePeriodicity)
         self.canvas.FoolAdversary_Button = self.actionFoolAdversary
+        self.canvas.selectrectButton = self.selectrectButton
+        self.canvas.selectpolyButton = self.selectpolyButton
+        self.canvas.actionIncreasePeriodicity_1D = self.actionIncreasePeriodicity_1D
+        self.canvas.actionIncreasePeriodicity = self.actionIncreasePeriodicity
+        self.canvas.indicatePeriodicityButton = self.indicatePeriodicityButton
+        self.canvas.periodicity_mag_1 = self.periodicity_mag_1
+        self.canvas.periodicity_mag_1.valueChanged.connect(self.canvas.Z_optimizer_Reset)
+        self.canvas.periodicity_mag_2 = self.periodicity_mag_2
+        self.canvas.periodicity_mag_2.valueChanged.connect(self.canvas.Z_optimizer_Reset)
+        self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         self.ZToolbar2.addAction(self.actionMatchSliders)
+        self.ZToolbar2.addAction(self.actionProcessRandZ)
+        self.ZToolbar2.addAction(self.actionProcessLimitedRandZ)
+        self.Scribble_Toolbar.addWidget(self.penButton)
 
-        # self.canvas.sliderZ0 = self.sliderZ0
-        # self.canvas.sliderZ1 = self.sliderZ1
-        # self.canvas.slider_third_channel = self.slider_third_channel
         self.actionFillShapes.triggered.connect(lambda s: self.canvas.set_config('fill', s))
         self.actionFillShapes.setChecked(True)
         self.open_file()
@@ -1058,7 +1187,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def Process_Z_Alternatives(self):
         stored_Z = 1*self.cur_Z
         for i, random_Z in enumerate(self.canvas.random_Zs):
-            self.cur_Z = random_Z.unsqueeze(0)
+            self.cur_Z = 1*random_Z.unsqueeze(0)
             self.Compute_SR_Image()
             self.canvas.random_Z_images[i + 1] = self.SR_model.fake_H[0]
         self.cur_Z = 1*stored_Z
@@ -1144,8 +1273,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             objective = objective.replace('hist', 'hist_noDC')
         if DICTIONARY_REPLACES_HISTOGRAM:
             objective = objective.replace('hist', 'dict')
+        if LOCAL_STD_4_OPT:
+            objective = objective.replace('STD','local_STD').replace('periodicity','local_STD_periodicity').replace('TV','local_STD_TV')
         elif L1_REPLACES_HISTOGRAM:
             objective = objective.replace('hist', 'l12GT')
+        if AUTO_CYCLE_LENGTH_4_PERIODICITY:
+            objective = objective.replace('periodicity', 'nonInt_periodicity')
         self.random_inits = ('random' in objective and 'limited' not in objective) or RANDOM_OPT_INITS
         self.multiple_inits = 'random' in objective or MULTIPLE_OPT_INITS
         self.Validate_Z_optimizer(objective)
@@ -1154,7 +1287,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.canvas.Z_optimizer is None:
             # For the random_l1_limited objective, I want to have L1 differences with respect to the current non-modified image, in case I currently display another image:
             self.SR_model.fake_H = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
-            self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1])
+            # self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1])
             # self.cur_Z = 1* self.canvas.random_Zs[0].unsqueeze(0)
             if not np.all(self.canvas.HR_selected_mask) and self.canvas.contained_Z_mask:#Cropping an image region to be optimized, to save on computations and allow adversarial loss
                 self.optimizing_region = True
@@ -1177,8 +1310,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.SR_model.ConcatLatent(LR_image=self.var_L,latent_input=self.Crop2BoundingRect(self.SR_model.GetLatent(),self.bounding_rect_4_opt,HR=self.canvas.HR_Z))#Because I'm saving initial Z when initializing optimizer
                 self.cur_Z = self.Crop2BoundingRect(self.cur_Z,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
                 self.SR_model.fake_H = self.Crop2BoundingRect(self.SR_model.fake_H,self.bounding_rect_4_opt,HR=True) #For the limited random optimization, to have the image we want to stay close to.
-                if self.multiple_inits:
-                    self.canvas.random_Zs = self.Crop2BoundingRect(self.canvas.random_Zs,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
+                # if self.multiple_inits:
+                #     self.canvas.random_Zs = self.Crop2BoundingRect(self.canvas.random_Zs,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
             else:
                 self.optimizing_region = False
                 # self.bounding_rect_4_opt = copy.deepcopy(self.canvas.mask_bounding_rect)
@@ -1191,18 +1324,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     data['HR'] = self.Crop2BoundingRect(data['HR'],self.bounding_rect_4_opt,HR=True)
                 data['Desired_Im_Mask'] = self.desired_hist_image_HR_mask
             elif 'desired_SVD' in objective:
-                # data['desired_Z'] = util.SVD_2_LatentZ(torch.stack([self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta],0).unsqueeze(0),max_lambda=MAX_SVD_LAMBDA)
                 data['desired_Z'] = util.SVD_2_LatentZ(self.canvas.control_values.unsqueeze(0),max_lambda=MAX_SVD_LAMBDA)
                 self.SVD_ValuesStorage(True)
                 if self.optimizing_region:
                     data['desired_Z'] = self.Crop2BoundingRect(data['desired_Z'],self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
-                    # self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta = self.Crop2BoundingRect([self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta],self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
-                    self.canvas.control_values = self.Crop2BoundingRect(self.canvas.control_values,self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
+                    self.canvas.control_values = self.Crop2BoundingRect(self.canvas.control_values.unsqueeze(0),self.bounding_rect_4_opt,HR=self.canvas.HR_Z).squeeze(0)
                 self.Set_Extreme_SVD_Values(min_not_max=True)
                 data['reference_image_min'] = 1*self.SR_model.fake_H
                 self.Set_Extreme_SVD_Values(min_not_max=False)
                 data['reference_image_max'] = 1*self.SR_model.fake_H
                 self.SVD_ValuesStorage(False)
+            elif 'periodicity' in objective:
+                for p_num in range(len(self.canvas.periodicity_points)):
+                    self.canvas.periodicity_points[p_num] = self.canvas.periodicity_points[p_num]*getattr(self,'periodicity_mag_%d'%(p_num+1)).value()/np.linalg.norm(self.canvas.periodicity_points[p_num])
+                data['periodicity_points'] = self.canvas.periodicity_points[:2-('1D' in objective)]
+            elif 'STD' in objective and not any([phrase in objective for phrase in ['periodicity','TV']]):
+                data['STD_increment'] = self.STD_increment.value()
             initial_Z = 1 * self.cur_Z
             if self.multiple_inits:
                 data['LR'] = data['LR'].repeat([self.num_random_Zs,1,1,1])
@@ -1263,8 +1400,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Compute_SR_Image()
                 self.canvas.random_Z_images[0] = self.SR_model.fake_H[0]
                 self.SelectImage2Display()
-        print('%d iterations: %s loss decreased from %.2e to %.2e by %.2e' % (len(self.canvas.Z_optimizer.loss_values), self.canvas.Z_optimizer.objective,
-            self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1],self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1]))
+        print('%d iterations: %s loss decreased from %.2e to %.2e by %.2e (factor of %.2e)' % (len(self.canvas.Z_optimizer.loss_values), self.canvas.Z_optimizer.objective,
+            self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1],self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1],
+            self.canvas.Z_optimizer.loss_values[-1]/self.canvas.Z_optimizer.loss_values[0]))
         if (self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))]-self.canvas.Z_optimizer.loss_values[-1])/\
                 np.abs(self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
             self.canvas.Z_optimizer_initial_LR /= 5
@@ -1339,14 +1477,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             masked_new_values = Z_mask *(value * (1 - derived_controls_indicator) + derived_controls_indicator * additive_values)
             self.canvas.control_values[index] =  masked_new_values + (1 - Z_mask) * self.canvas.control_values[index]
             self.canvas.previous_sliders_values[index] = (1-self.canvas.Z_mask)*self.canvas.previous_sliders_values[index]+self.canvas.ReturnMaskedMapAverage(self.canvas.control_values[index].data.cpu().numpy())
-            # self.canvas.previous_sliders_values[index] = 1*value - 1*self.canvas.previous_sliders_values[index]+ self.canvas.control_values[index].data.cpu().numpy()
-
-            # if index==0:
-            #     # self.canvas.lambda0 = Z_mask*value+(1-Z_mask)*self.canvas.lambda0
-            # elif index == 1:
-            #     # self.canvas.lambda1 = Z_mask*value+(1-Z_mask)*self.canvas.lambda1
-            # elif index == 2:
-            #     # self.canvas.theta = Z_mask*value+(1-Z_mask)*self.canvas.theta
             if recompose_Z:
                 self.Recompose_cur_Z()
             if VERBOSITY:
@@ -1389,6 +1519,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SelectImage2Display()
         # self.Update_Image_Display()
     #
+    def Load_Z(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open Z file", "",
+                                              "PNG image files (*.png); JPEG image files (*jpg); All files (*.*)")
+        if path:
+            loaded_Z = data_util.read_img(None, path)
+            loaded_Z = loaded_Z[:, :, [2, 1, 0]]
+            assert list(loaded_Z.shape[:2])==self.canvas.Z_size,'Size of Z does not match image size'
+            self.cur_Z = torch.from_numpy(np.transpose(2*MAX_SVD_LAMBDA*loaded_Z-MAX_SVD_LAMBDA, (2, 0, 1))).float().to(self.cur_Z.device).type(self.cur_Z.dtype).unsqueeze(0)
+            self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1])
+            self.Compute_SR_Image()
+            self.canvas.random_Z_images[0] = self.SR_model.fake_H[0]
+            self.SelectImage2Display()
+            stored_mask = 1*self.canvas.Z_mask
+            self.canvas.Z_mask = np.ones_like(self.canvas.Z_mask)
+            self.DeriveControlValues()
+            self.canvas.derived_controls_indicator = self.Estimate_DerivedControlIndicator()
+            self.canvas.Z_mask = 1*stored_mask
+            self.canvas.Z_optimizer_Reset()
+
+    def Estimate_DerivedControlIndicator(self):
+        PATCH_SIZE_4_ESTIMATION = 3
+        patch_extraction_map = util.ReturnPatchExtractionMat(self.canvas.Z_mask,PATCH_SIZE_4_ESTIMATION,patches_overlap=1)
+        STD_map = torch.sparse.mm(patch_extraction_map, self.cur_Z.mean(dim=1).view([-1, 1])).view([PATCH_SIZE_4_ESTIMATION ** 2, -1]).std(dim=0).view(
+            [val-PATCH_SIZE_4_ESTIMATION+1 for val in list(self.cur_Z.size()[2:])])
+        return np.pad((STD_map>0).data.cpu().numpy().astype(np.bool),pad_width=int(PATCH_SIZE_4_ESTIMATION//2),mode='edge')
+
     def open_file(self):
         """
         Open image file for editing, scaling the smaller dimension and cropping the remainder.
@@ -1460,6 +1616,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.canvas.HR_size = list(self.SR_model.fake_H.size()[2:])
             self.ReProcess()
+            #Scribble mask:
+            pixmap = QPixmap()
+            pixmap.convertFromImage(qimage2ndarray.array2qimage(np.zeros(self.canvas.HR_size)))
+            self.canvas.scribble_mask.setPixmap(pixmap)
 
             self.canvas.setGeometry(QRect(0,0,self.canvas.HR_size[0],self.canvas.HR_size[1]))
             self.Clear_Z_Mask()

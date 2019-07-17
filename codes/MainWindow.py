@@ -22,6 +22,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(10,10)
+
         self.centralWidget = QtWidgets.QWidget(MainWindow)
         self.centralWidget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.centralWidget.sizePolicy().hasHeightForWidth()))
         self.centralWidget.setObjectName("centralWidget")
@@ -54,6 +55,18 @@ class Ui_MainWindow(object):
         self.selectrectButton.setCheckable(True)
         self.selectrectButton.setObjectName("selectrectButton")
         self.gridLayout.addWidget(self.selectrectButton, 0, 1, 1, 1)
+
+        self.indicatePeriodicityButton = QtWidgets.QPushButton(self.widget)
+        self.indicatePeriodicityButton.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Fixed,self.indicatePeriodicityButton.sizePolicy().hasHeightForWidth()))
+        self.indicatePeriodicityButton.setMinimumSize(QtCore.QSize(30, 30))
+        self.indicatePeriodicityButton.setMaximumSize(QtCore.QSize(30, 30))
+        self.indicatePeriodicityButton.setText("")
+        icon_indicate_periodicity = QtGui.QIcon()
+        icon_indicate_periodicity.addPixmap(QtGui.QPixmap("images/indicate_periodicity.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.indicatePeriodicityButton.setIcon(icon_indicate_periodicity)
+        self.indicatePeriodicityButton.setCheckable(True)
+        self.indicatePeriodicityButton.setObjectName("indicatePeriodicityButton")
+        # self.gridLayout.addWidget(self.indicatePeriodicityButton, 7, 1, 1, 1)
 
         self.selectpolyButton = QtWidgets.QPushButton(self.widget)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
@@ -169,7 +182,7 @@ class Ui_MainWindow(object):
         self.penButton.setIcon(icon8)
         self.penButton.setCheckable(True)
         self.penButton.setObjectName("penButton")
-        self.gridLayout.addWidget(self.penButton, 3, 0, 1, 1)
+        # self.gridLayout.addWidget(self.penButton, 3, 0, 1, 1)
 
         self.verticalLayout_2.addWidget(self.widget)
         spacerItem = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
@@ -227,15 +240,28 @@ class Ui_MainWindow(object):
         self.ZToolbar2.setOrientation(QtCore.Qt.Horizontal)
         MainWindow.addToolBar(QtCore.Qt.BottomToolBarArea, self.ZToolbar2)
 
+        self.Scribble_Toolbar = QtWidgets.QToolBar(MainWindow)
+        self.Scribble_Toolbar.setIconSize(QtCore.QSize(25,25))
+        self.Scribble_Toolbar.setObjectName("Scribble_Toolbar")
+        self.Scribble_Toolbar.setOrientation(QtCore.Qt.Horizontal)
+        MainWindow.addToolBar(QtCore.Qt.LeftToolBarArea, self.Scribble_Toolbar)
+
         self.actionCopy = QtWidgets.QAction(MainWindow)
         self.actionCopy.setObjectName("actionCopy")
         self.actionClearImage = QtWidgets.QAction(MainWindow)
         self.actionClearImage.setObjectName("actionClearImage")
+
         self.actionOpenImage = QtWidgets.QAction(MainWindow)
         icon16 = QtGui.QIcon()
         icon16.addPixmap(QtGui.QPixmap("images/blue-folder-open-image.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionOpenImage.setIcon(icon16)
         self.actionOpenImage.setObjectName("actionOpenImage")
+
+        self.actionLoad_Z = QtWidgets.QAction(MainWindow)
+        icon_load_Z = QtGui.QIcon()
+        icon_load_Z.addPixmap(QtGui.QPixmap("images/blue-folder-open-image.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionLoad_Z.setIcon(icon_load_Z)
+        self.actionLoad_Z.setObjectName("actionLoad_Z")
 
         self.actionProcessRandZ = QtWidgets.QAction(MainWindow)
         # self.actionProcessRandZ.setText("Random Z")
@@ -251,12 +277,27 @@ class Ui_MainWindow(object):
         self.actionProcessLimitedRandZ.setObjectName("actionProcessLimitedRandZ")
 
         # self.randomLimitingWeightBox = QtWidgets.QLineEdit(MainWindow)
-        self.randomLimitingWeightBox = QtWidgets.QDoubleSpinBox(MainWindow)
-        self.randomLimitingWeightBox.setObjectName("randomLimitingWeightBox")
-        self.randomLimitingWeightBox.setValue(1.)
-        # self.randomLimitingWeightBox.setText('1')
-        self.randomLimitingWeightBox.setMaximum(200)
-        # self.randomLimitingWeightBox.setSingleStep(0.1)
+        self.randomLimitingWeightBox_Enabled = False
+        if self.randomLimitingWeightBox_Enabled:
+            self.randomLimitingWeightBox = QtWidgets.QDoubleSpinBox(MainWindow)
+            self.randomLimitingWeightBox.setObjectName("randomLimitingWeightBox")
+            self.randomLimitingWeightBox.setValue(1.)
+            # self.randomLimitingWeightBox.setText('1')
+            self.randomLimitingWeightBox.setMaximum(200)
+            # self.randomLimitingWeightBox.setSingleStep(0.1)
+
+        self.periodicity_mag_1 = QtWidgets.QDoubleSpinBox(MainWindow)
+        self.periodicity_mag_1.setObjectName("periodicity_mag_1")
+        self.periodicity_mag_1.setValue(1.)
+        self.periodicity_mag_1.setMaximum(200)
+        self.periodicity_mag_1.setSingleStep(0.1)
+        self.periodicity_mag_1.setDecimals(1)
+        self.periodicity_mag_2 = QtWidgets.QDoubleSpinBox(MainWindow)
+        self.periodicity_mag_2.setObjectName("periodicity_mag_2")
+        self.periodicity_mag_2.setValue(1.)
+        self.periodicity_mag_2.setMaximum(200)
+        self.periodicity_mag_2.setSingleStep(0.1)
+        self.periodicity_mag_2.setDecimals(1)
 
         icon_copyRandZ = QtGui.QIcon()
         # icon_copyRandZ = QtGui.QIcon(QtGui.QPixmap("images/randoms2default.png"))
@@ -295,6 +336,13 @@ class Ui_MainWindow(object):
         icon_sigmadown.addPixmap(QtGui.QPixmap("images/sigma_down.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionDecreaseSTD.setIcon(icon_sigmadown)
 
+        self.STD_increment = QtWidgets.QDoubleSpinBox(MainWindow)
+        self.STD_increment.setObjectName("STD_increment")
+        self.STD_increment.setValue(0.03)
+        self.STD_increment.setRange(0,0.3)
+        self.STD_increment.setSingleStep(0.01)
+        self.STD_increment.setDecimals(2)
+
         self.actionDecreaseTV = QtWidgets.QAction(MainWindow)
         self.actionDecreaseTV.setObjectName("actionDecreaseTV")
         icon_TVdown = QtGui.QIcon()
@@ -329,6 +377,22 @@ class Ui_MainWindow(object):
         icon_adversary.addPixmap(icon_pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
         # icon_adversary.actualSize(QtCore.QSize(60, 60))
         self.actionFoolAdversary.setIcon(icon_adversary)
+
+        self.actionIncreasePeriodicity = QtWidgets.QAction(MainWindow)
+        self.actionIncreasePeriodicity.setObjectName("actionIncreasePeriodicity")
+        icon_pixmap = QtGui.QPixmap("images/indicate_periodicity_2D.png")
+        icon_periodicity = QtGui.QIcon()
+        icon_periodicity.addPixmap(icon_pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionIncreasePeriodicity.setIcon(icon_periodicity)
+        self.actionIncreasePeriodicity.setEnabled(False)
+
+        self.actionIncreasePeriodicity_1D = QtWidgets.QAction(MainWindow)
+        self.actionIncreasePeriodicity_1D.setObjectName("actionIncreasePeriodicity_1D")
+        icon_pixmap = QtGui.QPixmap("images/indicate_periodicity_1D.png")
+        icon_periodicity = QtGui.QIcon()
+        icon_periodicity.addPixmap(icon_pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionIncreasePeriodicity_1D.setIcon(icon_periodicity)
+        self.actionIncreasePeriodicity_1D.setEnabled(False)
 
         self.actionAutoSaveImage = QtWidgets.QAction(MainWindow)
         icon17_0 = QtGui.QIcon()
@@ -393,6 +457,7 @@ class Ui_MainWindow(object):
         self.menuBar.addAction(self.menuHelp.menuAction())
         self.fileToolbar.addAction(self.actionNewImage)
         self.fileToolbar.addAction(self.actionOpenImage)
+        self.fileToolbar.addAction(self.actionLoad_Z)
         self.fileToolbar.addAction(self.actionSaveImage)
         self.fileToolbar.addAction(self.actionAutoSaveImage)
 
