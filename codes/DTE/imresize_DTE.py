@@ -5,9 +5,11 @@ from scipy.signal import convolve2d as conv2
 def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=False, return_upscale_kernel=False,use_zero_padding=False,antialiasing=True, kernel_shift_flag=False):
     assert kernel is None or kernel=='cubic' or isinstance(kernel,np.ndarray)
     imresize.kernels = getattr(imresize,'kernels',{})
-    # imresize.sf = getattr(imresize,'sf',0)
     if scale_factor is None:
         scale_factor = [output_shape[0]/im.shape[0]]
+    elif not isinstance(scale_factor,list):
+        scale_factor = [scale_factor]
+    assert np.round(scale_factor[0])==scale_factor[0] or np.round(1/scale_factor[0])==1/scale_factor[0],'Only supporting integer downsampling or upsampling rates'
     sf_4_kernel = np.maximum(scale_factor[0], 1 / scale_factor[0]).astype(np.int32)
     if isinstance(kernel,np.ndarray):
         assert str(sf_4_kernel) not in imresize.kernels.keys() or np.all(np.equal(kernel,imresize.kernels[str(sf_4_kernel)])),'If using non-default kernel, make sure I always use it.'

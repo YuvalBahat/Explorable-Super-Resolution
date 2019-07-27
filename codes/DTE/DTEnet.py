@@ -127,13 +127,6 @@ class DTEnet:
                     return self.generated_im
                 self.generated_im = tf.cond(self.pre_pad_input,true_fn=Return_Padded_Generated_Im,false_fn=Return_Unpadded_Generated_Im)
 
-            # return tf.slice(self.generated_im, begin=[0,0,0,0],
-            #          size=tf.stack([-1, self.ds_factor * tf.shape(unpadded_input_t)[1],
-            #                         self.ds_factor * tf.shape(unpadded_input_t)[2], -1]))
-            # return tf.slice(self.projected_upscaled_input+self.generated_im/1000, begin=[0,0,0,0],
-            #          size=tf.stack([-1, self.ds_factor * tf.shape(unpadded_input_t)[1],
-            #                         self.ds_factor * tf.shape(unpadded_input_t)[2], -1]))
-
             self.projected_generated_im = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(self.generated_im)))
             self.projected_2_ortho_generated_im = self.generated_im-self.projected_generated_im
             if PAD_GENRATED_TOO:
@@ -293,12 +286,6 @@ class DTE_PyTorch(nn.Module):
             else:
                 x = self.LR_padder(x)
         generated_image = self.generated_image_model(x)
-        # if self.pre_pad and 'Z' in self.generated_image_model.__dict__:
-        #     if LR_Z:
-        #         self.generated_image_model.Z = self.LR_unpadder(self.generated_image_model.Z)
-        #     else:
-        #         self.generated_image_model.Z = self.HR_unpadder(self.generated_image_model.Z)
-
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
         projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
