@@ -484,8 +484,10 @@ class Z_optimizer():
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
         if 'local' in objective:#Used in relative STD change and periodicity objective cases:
+            # self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
+            #     patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0.5 if 'Mag' in objective else 0,return_non_covered=True)
             self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
-                patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0.5 if 'Mag' in objective else 0,return_non_covered=True)
+                patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0.5,return_non_covered=True)
             self.patch_extraction_map, self.non_covered_indexes_extraction_mat =\
                 self.patch_extraction_map.to(model.fake_H.device),self.non_covered_indexes_extraction_mat.to(model.fake_H.device)
         if not self.model_training:
@@ -747,7 +749,7 @@ class Z_optimizer():
         if 'Adversarial' in self.objective:
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         if 'random' in self.objective and 'limited' in self.objective:
-            self.loss_values = self.loss_values[1:] #Removing the first loss values which is close to 0 in this case, to prevent discarfing optimization because loss increased compared to it.
+            self.loss_values[0] = self.loss_values[1] #Replacing the first loss values which is close to 0 in this case, to prevent discarding optimization because loss increased compared to it.
         # if 'STD' in self.objective or 'periodicity' in self.objective:
         if not self.model_training:
             print('Final STD: %.3e'%(self.Masked_STD().mean().item()))
@@ -802,6 +804,8 @@ def ResizeCategorialImage(image,dsize):
         output_image = np.logical_not(cur_category_image)*output_image+cur_category_image*category
     return output_image
 
+def ResizeScribbleImage(image,dsize):
+    return cv2.resize(image, dsize=dsize, interpolation=cv2.INTER_AREA)
 ####################
 # metric
 ####################
