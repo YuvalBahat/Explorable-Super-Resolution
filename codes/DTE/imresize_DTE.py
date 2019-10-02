@@ -23,8 +23,6 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
         kernel_support = np.nonzero(upscale_kernel[sf_4_kernel * np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, :])[0]
         kernel_support = np.array([kernel_support[0],kernel_support[-1]])
         imresize.kernels[str(sf_4_kernel)] = upscale_kernel[kernel_support[0]:kernel_support[1] + 1, kernel_support[0]:kernel_support[1] + 1]
-    # else:
-    #     assert np.all(scale_factor==imresize.sf) or np.all(scale_factor==1/imresize.sf)
     assert len(scale_factor)==1 or scale_factor[0]==scale_factor[1]
     scale_factor = scale_factor[0]
     pre_stride,post_stride = calc_strides(im,scale_factor,align_center)
@@ -60,7 +58,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
                                     antialiasing_kernel,mode='valid'))
             output[-1] = output[-1][pre_stride[0]::int(1 / scale_factor),pre_stride[1]::int(1 / scale_factor)]
     return np.squeeze(np.stack(output,-1))
-    # return cv2.resize(im,dsize=tuple(desired_size.astype(np.int32)[::-1]),interpolation=cv2.INTER_CUBIC)
+
 def calc_strides(array,factor,align_center = False):
     if align_center:
         half_image_size = np.ceil(np.array(array.shape[:2])/2*(factor if factor>1 else 1))

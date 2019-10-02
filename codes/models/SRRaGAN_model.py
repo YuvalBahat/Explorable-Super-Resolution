@@ -1,7 +1,7 @@
 import os
 from collections import OrderedDict
-import matplotlib
-matplotlib.use('Agg')
+# import matplotlib
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -216,9 +216,12 @@ class SRRaGANModel(BaseModel):
         self.print_network()
         print('-----------------------------------------------')
     def ConcatLatent(self,LR_image,latent_input):
-        if LR_image.size()[2:]!=latent_input.size()[2:]:
-            latent_input = latent_input.contiguous().view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
-        self.model_input = torch.cat([latent_input,LR_image],dim=1)
+        if latent_input is not None:
+            if LR_image.size()[2:]!=latent_input.size()[2:]:
+                latent_input = latent_input.contiguous().view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
+            self.model_input = torch.cat([latent_input,LR_image],dim=1)
+        else:
+            self.model_input = 1*LR_image
     def Assing_LR_and_Latent(self,LR_image,latent_input):
         self.AssignLatent(latent_input)
         self.model_input = LR_image
@@ -257,7 +260,9 @@ class SRRaGANModel(BaseModel):
             if not torch.is_tensor(cur_Z):
                 cur_Z = torch.from_numpy(cur_Z).type(self.var_L.type())
             # self.AssignLatent(latent_input=cur_Z)
-            self.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
+        else:
+            cur_Z = None
+        self.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
         if need_HR:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake

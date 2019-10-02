@@ -798,6 +798,8 @@ def IndexingHelper(index,negative=False):
 def ResizeCategorialImage(image,dsize):
     # dsize = [size_X,size_Y]
     assert 'int' in str(image.dtype),'I suspect input image is not categorial, since pixel values are not integers'
+    if np.all(image.shape[:2]==dsize):
+        return image
     output_image = np.zeros(shape=dsize).astype(image.dtype)
     for category in set(list(image.reshape([-1]))):
         cur_category_image = cv2.resize((image==category).astype(image.dtype),dsize=dsize[::-1],interpolation=cv2.INTER_LINEAR)>0.5
@@ -805,7 +807,9 @@ def ResizeCategorialImage(image,dsize):
     return output_image
 
 def ResizeScribbleImage(image,dsize):
-    return cv2.resize(image, dsize=dsize, interpolation=cv2.INTER_AREA)
+    if np.all(image.shape[:2]==dsize):
+        return image
+    return cv2.resize(image, dsize=dsize[::-1], interpolation=cv2.INTER_AREA)
 ####################
 # metric
 ####################

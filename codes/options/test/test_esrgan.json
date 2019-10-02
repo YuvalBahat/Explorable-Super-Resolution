@@ -1,23 +1,31 @@
 {
+//  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W100_debug" //,"RRDB_ESRGAN_x4" //"0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_percentileRatio_debug" //,
   "name": "RRDB_ESRGAN_x4" //"0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_allLayersU_StructTensor_percentileRatio_debug" //,
+//  "name": "no_Z_loss"
   , "suffix": "_ESRGAN"
   , "model": "srragan"
   , "scale": 4
   , "gpu_ids": [0]
   , "use_tb_logger": 1
   , "datasets": {
-    //"test_2": { // the 2nd test dataset
+    "test_1": { // the 2nd test dataset
+      "name": "BSD100"
+      , "mode": "LRHR"
+      , "dataroot_HR": "BSD100_test/BSD100_test_HRx4"
+      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
+    } //,
+//    "test_3": { // the 2nd test dataset
 //      "name": "DIV2K"
 //      , "mode": "LRHR"
-//      , "dataroot_HR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_HRx4"
-//      , "dataroot_LR": "/home/ybahat/Datasets/DIV2K_valid/DIV2K_valid_bicLRx4"
+//      , "dataroot_HR": "DIV2K_valid/DIV2K_valid_HRx4"
+//      , "dataroot_LR": "DIV2K_valid/DIV2K_valid_bicLRx4"
 //    },
-     "test_1": { // the 1st test dataset
-      "name": "set14"
-      , "mode": "LRHR"
-      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
-      , "dataroot_LR": "Set14/Set14_bicLRx4"
-    }
+//     "test_2": { // the 1st test dataset
+//      "name": "set14"
+//      , "mode": "LRHR"
+//      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
+//      , "dataroot_LR": "Set14/Set14_bicLRx4"
+//    }
   }
 
   , "path": {
@@ -29,6 +37,7 @@
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 0
     , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
     , "latent_channels": 0
     , "norm_type": null
     , "mode": "CNA"

@@ -147,11 +147,19 @@ class DTEnet:
             else:
                 return tf.add(self.output_t,self.projected_2_ortho_generated_im,name='DTE_add_subspaces')
 
-    def Enforce_DT_on_Image_Pair(self,LR_input,HR_input):
-        margin_size = 2*self.ds_kernel_invalidity_half_size_LR*self.ds_factor
+    def Enforce_DT_on_Image_Pair(self,LR_source,HR_input):
+        # margin_size = 2*self.ds_kernel_invalidity_half_size_LR*self.ds_factor
         # HR_projected_2_h_subspace = Unpad_Image(self.DT_Satisfying_Upscale(imresize(Pad_Image(HR_input,margin_size),scale_factor=[1/self.ds_factor])),margin_size)
-        HR_projected_2_h_subspace = self.DT_Satisfying_Upscale(imresize(HR_input,scale_factor=[1/self.ds_factor]))
-        return  HR_input-HR_projected_2_h_subspace+self.DT_Satisfying_Upscale(LR_input)
+        same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
+        LR_scale_dimensions = [self.ds_factor*LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
+        assert np.all(np.logical_or(same_scale_dimensions,LR_scale_dimensions))
+        LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else LR_source
+        HR_projected_2_h_subspace = self.Project_2_Subspace(HR_input)
+        return  HR_input-HR_projected_2_h_subspace+LR_source
+
+    def Project_2_Subspace(self,HR_input):
+        return self.DT_Satisfying_Upscale(imresize(HR_input,scale_factor=[1/self.ds_factor]))
+
     def Supplement_Pseudo_DTE(self,input_t):
         return self.Learnable_Upscale_OP(self.Conv_LR_with_Learnable_OP(self.Learnable_DownscaleOP(input_t)))
 
@@ -361,7 +369,10 @@ def Return_Filter_Energy_Distribution(filter):
     return sqrt_energy/sqrt_energy[0]
 
 def Pad_Image(image,margin_size):
-    return np.pad(image,pad_width=((margin_size,margin_size),(margin_size,margin_size),(0,0)),mode='edge')
+    try:
+        return np.pad(image,pad_width=((margin_size,margin_size),(margin_size,margin_size),(0,0)),mode='edge')
+    except:
+        print('Reproduced the BUG I''m looking for')
 
 def Unpad_Image(image,margin_size):
     return image[margin_size:-margin_size,margin_size:-margin_size,:]

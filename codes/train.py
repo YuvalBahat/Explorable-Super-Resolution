@@ -5,7 +5,8 @@ import argparse
 import time
 import random
 from collections import OrderedDict,deque
-import re
+import matplotlib
+matplotlib.use('Agg')
 import torch
 import numpy as np
 import options.options as option
