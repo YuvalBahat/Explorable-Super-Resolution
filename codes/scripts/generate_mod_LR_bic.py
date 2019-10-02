@@ -10,8 +10,8 @@ from scripts.create_gaussian_upscale_kernel import create_Gaussian_Upscale_kerne
 dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/data/Databases'
 # input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
 # save_LR_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4')
-scale_factor = 2
-dataset_name = 'Set14'#'DIV2K_train'#'Set14'
+scale_factor = 3
+dataset_name = 'DIV2K_train'#'DIV2K_train'#'Set14'
 data_category_string = ''#'_GaussianKernel'#'_sub'#'_train'
 upscale_kernel = None#create_Gaussian_Upscale_kernel(size=16,sf=scale_factor,std=0.6)
 

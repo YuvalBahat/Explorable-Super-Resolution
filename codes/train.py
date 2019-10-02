@@ -111,7 +111,7 @@ def main():
                     os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
 
-            if gradient_step_num > total_iters:
+            if model.step > total_iters:
                 break
 
             # training

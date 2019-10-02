@@ -34,9 +34,10 @@ class SRRaGANModel(BaseModel):
         self.latent_input = opt['network_G']['latent_input'] if opt['network_G']['latent_input']!='None' else None
         self.Z_size_factor = opt['scale'] if 'HR' in opt['network_G']['latent_input_domain'] else 1
         self.num_latent_channels = 0
+        self.debug = 'debug' in opt['path']['log']
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
-            if self.is_train and train_opt['latent_weight']>0:
+            if self.is_train and train_opt['latent_weight']>0 or self.debug:
                 self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
                 self.num_latent_channels = self.cri_latent.num_channels
                 self.l_latent_w = train_opt['latent_weight']
@@ -63,7 +64,6 @@ class SRRaGANModel(BaseModel):
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_optimalZ']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
-        self.debug = 'debug' in opt['path']['log']
         if self.is_train:
             if self.latent_input:
                 self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
