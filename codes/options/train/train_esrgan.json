@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_1Dupdate_noDTE_OrgWeights_batchD24G6_debug" //  please remove "debug_" during training
+  "name": "ESRGAN_additional12K" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,9 +15,9 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 8
-      , "batch_size": 3
-      , "batch_size_4_grads_G": 6
-      , "batch_size_4_grads_D": 24
+      , "batch_size": 8 //3
+      , "batch_size_4_grads_G": 48 //6
+      , "batch_size_4_grads_D": 48 //24
       , "HR_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -31,10 +31,11 @@
   }
 
   , "path": {
-    "root": "/home/ybahat/PycharmProjects/SRGAN"
+    "root": "/media/ybahat/data/projects/SRGAN" //,"/home/ybahat/PycharmProjects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth"
 }
 
   , "network_G": {
@@ -60,7 +61,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -68,6 +69,7 @@
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
+    , "steps_4_loss_std": 500
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
@@ -78,8 +80,10 @@
     , "feature_weight": 1
     , "gan_type": "vanilla"
     , "gan_weight": 5e-3
+//    , "D_verification": "past" //'current', 'convergence', 'past'
     , "range_weight": 0 //1
     , "D_update_ratio": 1
+//    , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     //for wgan-gp
@@ -88,12 +92,12 @@
     // , "gp_weigth": 10
 
     , "manual_seed": 0
-    , "niter": 500100 //5e5
-    , "val_freq": 50 //5e3
+    , "niter": 12300 //500100 //5e5
+    , "val_freq": 500 //5e3
   }
 
   , "logger": {
-    "print_freq": 10 //200
-    , "save_checkpoint_freq": 1e3 //5e3
+    "print_freq": 100 //200
+    , "save_checkpoint_freq": 20 //1e3 //5e3
   }
 }
