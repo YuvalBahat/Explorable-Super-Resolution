@@ -180,11 +180,15 @@ for test_loader in test_loaders:
 
             # calculate PSNR and SSIM
             if need_HR:
-                if z_sample_num==0 and opt['network_G']['DTE_arch']:
-                    gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
-                    img_projected_2_kernel_subspace = model.DTE_net.Project_2_Subspace(gt_img)
-                    gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
-                    gt_img *= 255.
+                if z_sample_num==0:
+                    if opt['network_G']['DTE_arch']:
+                        gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
+                        img_projected_2_kernel_subspace = model.DTE_net.Project_2_Subspace(gt_img)
+                        gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
+                        HR_STD = 255*np.std(gt_orthogonal_component,axis=(0,1)).mean()
+                        gt_img *= 255.
+                    else:
+                        HR_STD = 0
                 if TEST_LATENT_OUTPUT=='stats':
                     if opt['network_G']['DTE_arch']:
                         image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
@@ -197,7 +201,7 @@ for test_loader in test_loaders:
                             pixel_STD = 0
                         # Save GT image for reference:
                         util.save_img((255 * util.tensor2img(visuals['HR'], out_type=np.float32)).astype(np.uint8),
-                                      os.path.join(dataset_dir, img_name + '_HR_STD%.3f_SR_STD%.3f.png'%(255*np.std(gt_orthogonal_component,axis=(0,1)).mean(),pixel_STD)))
+                                      os.path.join(dataset_dir, img_name + '_HR_STD%.3f_SR_STD%.3f.png'%(HR_STD,pixel_STD)))
                 sr_img *= 255.
                 if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0:
                     psnr = util.calculate_psnr(sr_img, gt_img)

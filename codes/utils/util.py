@@ -796,12 +796,15 @@ def IndexingHelper(index,negative=False):
         return index if index > 0 else None
 
 def ResizeCategorialImage(image,dsize):
-    # dsize = [size_X,size_Y]
+    LOWER_CATEGORY_OVERRULE = True #I preefer actual scribbles to rule over brightness manipulation and TV minimization regions.
     assert 'int' in str(image.dtype),'I suspect input image is not categorial, since pixel values are not integers'
     if np.all(image.shape[:2]==dsize):
         return image
     output_image = np.zeros(shape=dsize).astype(image.dtype)
-    for category in set(list(image.reshape([-1]))):
+    categories_set = sorted(set(list(image.reshape([-1]))))
+    if LOWER_CATEGORY_OVERRULE:
+        categories_set = categories_set[::-1]
+    for category in categories_set:
         cur_category_image = cv2.resize((image==category).astype(image.dtype),dsize=dsize[::-1],interpolation=cv2.INTER_LINEAR)>0.5
         output_image = np.logical_not(cur_category_image)*output_image+cur_category_image*category
     return output_image

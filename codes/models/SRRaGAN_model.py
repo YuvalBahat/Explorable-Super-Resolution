@@ -37,7 +37,7 @@ class SRRaGANModel(BaseModel):
         self.debug = 'debug' in opt['path']['log']
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
-            if self.is_train and train_opt['latent_weight']>0 or self.debug:
+            if self.is_train and (train_opt['latent_weight']>0 or self.debug):
                 self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
                 self.num_latent_channels = self.cri_latent.num_channels
                 self.l_latent_w = train_opt['latent_weight']

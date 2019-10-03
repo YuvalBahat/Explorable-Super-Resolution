@@ -261,8 +261,8 @@ class Canvas(QLabel):
     def mousePressEvent(self, e):
         if (self.mode in self.scribble_modes) and not self.within_drawing and not self.in_picking_desired_hist_mode:
             self.Z_optimizer_Reset()
-            self.Add_scribble_2_Undo_list()
             self.SelectImage2Display(self.scribble_display_index)
+            self.Add_scribble_2_Undo_list()
             # self.actionApplyScrible.setEnabled(True)
         fn = getattr(self, "%s_mousePressEvent" % self.mode, None)
         if fn:
