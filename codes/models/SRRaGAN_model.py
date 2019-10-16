@@ -40,7 +40,11 @@ class SRRaGANModel(BaseModel):
         self.cri_latent = None
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
-            if self.is_train and (train_opt['latent_weight']>0 or self.debug):
+            if self.is_train and not opt['network_G']['DTE_arch']:#Training ESRGAN but with latent input:
+                self.cri_latent = None
+                self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
+                self.l_latent_w = 0
+            elif self.is_train and (train_opt['latent_weight']>0 or self.debug):
                 self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
                 self.num_latent_channels = self.cri_latent.num_channels
                 self.l_latent_w = train_opt['latent_weight']
@@ -58,7 +62,8 @@ class SRRaGANModel(BaseModel):
             if self.is_train:
                 assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
                 DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
-            self.DTE_net = DTEnet.DTEnet(DTE_conf)
+
+            self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=None if opt['test'] is None else opt['test']['kernel'])
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
                 self.optimalZ_loss_type = None
@@ -560,7 +565,7 @@ class SRRaGANModel(BaseModel):
             if len(self.log_dict['D_logits_diff'])>=self.opt['train']['steps_4_loss_std']:
                 relevant_loss_vals = [(val[1]+self.log_dict['l_d_fake'][i][1])/2 for i,val in enumerate(self.log_dict['l_d_real']) if val[0] >= cur_step - self.opt['train']['steps_4_loss_std']]
                 self.log_dict['D_loss_STD'].append([self.gradient_step_num,np.std(relevant_loss_vals)])
-                reduce_lr = self.log_dict['D_loss_STD'][-1][1]>self.opt['train']['std_4_lr_drop']
+                reduce_lr = (self.opt['train']['std_4_lr_drop'] is not None) and self.log_dict['D_loss_STD'][-1][1]>self.opt['train']['std_4_lr_drop']
             else:
                 reduce_lr = False
         else:

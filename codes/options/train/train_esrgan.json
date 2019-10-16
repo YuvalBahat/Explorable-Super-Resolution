@@ -1,5 +1,5 @@
 {
-  "name": "ESRGAN_additional12K" //  please remove "debug_" during training
+  "name": "ESRGAN_additional1230_correctD" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -35,7 +35,7 @@
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
     , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth"
+//    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth"
 }
 
   , "network_G": {
@@ -92,7 +92,7 @@
     // , "gp_weigth": 10
 
     , "manual_seed": 0
-    , "niter": 12300 //500100 //5e5
+    , "niter": 1230 //500100 //5e5
     , "val_freq": 500 //5e3
   }
 

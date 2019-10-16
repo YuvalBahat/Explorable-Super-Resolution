@@ -136,7 +136,7 @@ def main():
                 logger.print_format_results('train', print_rlt)
 
             # validation
-            if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0 and gradient_step_num>=opt['train']['D_init_iters']:
+            if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0: # and gradient_step_num>=opt['train']['D_init_iters']:
                 print_rlt = OrderedDict()
                 if model.generator_changed:
                     print('---------- validation -------------')
