@@ -5,6 +5,7 @@ import cv2
 import torch
 import torch.utils.data as data
 import data.util as util
+from DTE.imresize_DTE import imresize
 
 
 class LRHRDataset(data.Dataset):
@@ -14,13 +15,14 @@ class LRHRDataset(data.Dataset):
     The pair is ensured by 'sorted' function, so please check the name convention.
     '''
 
-    def __init__(self, opt,specific_image=None):
+    def __init__(self, opt,specific_image=None,kernel=None):
         super(LRHRDataset, self).__init__()
         self.opt = opt
         self.paths_LR = None
         self.paths_HR = None
         self.LR_env = None  # environment for lmdb
         self.HR_env = None
+        self.kernel = kernel
 
         # read image list from subset list txt
         if opt['subset_file'] is not None and opt['phase'] == 'train':
@@ -81,8 +83,10 @@ class LRHRDataset(data.Dataset):
                     img_HR = cv2.cvtColor(img_HR, cv2.COLOR_GRAY2BGR)
 
             H, W, _ = img_HR.shape
-            # using matlab imresize
-            img_LR = util.imresize_np(img_HR, 1 / scale, True)
+            # using DTE imresize:
+            img_LR = imresize(img_HR,scale_factor=[1/float(scale)],kernel=self.kernel)
+            # # using matlab imresize
+            # img_LR = util.imresize_np(img_HR, 1 / scale, True)
             if img_LR.ndim == 2:
                 img_LR = np.expand_dims(img_LR, axis=2)
 

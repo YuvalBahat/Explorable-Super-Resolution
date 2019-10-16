@@ -21,6 +21,7 @@ import imageio
 import torch
 import subprocess
 
+SPECIFIC_DEBUG = False
 # Parameters:
 SAVE_IMAGE_COLLAGE = False
 TEST_LATENT_OUTPUT = 'stats'#'GIF','video',None,'stats'
@@ -57,7 +58,8 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE)
+    assert dataset_opt['dataroot_LR'] is None,'Should not rely on saved LR versions here. Downscaling images myself using DTE_imresize in the get_item routine.'
+    test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE,kernel=None if opt['test'] is None else opt['test']['kernel'])
     test_loader = create_dataloader(test_set, dataset_opt)
     print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
     test_loaders.append(test_loader)
@@ -76,7 +78,7 @@ for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
     print('\nTesting [{:s}]...'.format(test_set_name))
     test_start_time = time.time()
-    dataset_dir = os.path.join(opt['path']['results_root'], test_set_name)
+    dataset_dir = os.path.join(opt['path']['results_root'], test_set_name+('' if (opt['test'] is None or opt['test']['kernel'] is None) else ('_'+opt['test']['kernel'])))
     util.mkdir(dataset_dir)
     num_val_images = len(test_loader.dataset)
     if SAVE_IMAGE_COLLAGE:
@@ -127,6 +129,12 @@ for test_loader in test_loaders:
         Z_latent = sorted(Z_latent)
     image_idx = -1
     for data in tqdm(test_loader):
+        # if opt['network_G']['DTE_arch']:
+        #     # LR version does not necessarily correspond to downsampling kernel in use. I discard it and create it myself:
+        #     data['LR'] = model.netG.module.DownscaleOP(data['HR'].type(torch.cuda.FloatTensor))
+
+        if SPECIFIC_DEBUG and '41033' not in data['LR_path'][0]:
+            continue
         image_idx += 1
         image_high_freq_versions = []
         for z_sample_num,cur_Z_raw in enumerate(Z_latent):
@@ -142,6 +150,8 @@ for test_loader in test_loaders:
                 cur_channel_cur_Z = np.mod(np.arctan2(cur_Z_raw[0,2],cur_Z_raw[0,1]),2*np.pi)/2/np.pi*360
             elif LATENT_DISTRIBUTION == 'rand_Uniform':
                 cur_Z = cur_Z_raw
+                if SPECIFIC_DEBUG:
+                    cur_Z = np.zeros(cur_Z.shape)
                 cur_channel_cur_Z = None # Not any more: 0 here causes PSNR calculations (and other stuff) to be performed.
             if SAVE_IMAGE_COLLAGE and image_idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([])
             need_HR = False if test_loader.dataset.opt['dataroot_HR'] is None else True

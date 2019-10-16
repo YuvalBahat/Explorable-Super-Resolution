@@ -117,16 +117,10 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
 
     # network
     opt['network_G']['scale'] = scale
+    # if not opt['network_G']['DTE_arch']:
+    #     opt['network_G']['latent_input'] = 'None'
+    #     opt['network_G']['latent_channels'] = 0
 
-    # export CUDA_VISIBLE_DEVICES
-    # gpu_list = ','.join(str(x) for x in opt['gpu_ids'])
-    # gpu_list = ','.join(str(x) for x in (GPUtil.getAvailable(order='memory',limit=2) if 'tiras' in os.getcwd() else opt['gpu_ids'] if running_on_Technion else Assign_GPU()))
-    # os.environ['CUDA_VISIBLE_DEVICES'] = gpu_list
-    # print('export CUDA_VISIBLE_DEVICES=' + gpu_list)
-    # if len(RELATIVE_PATH_FIELDS_DATABASE)>0:
-        # for rel_path in RELATIVE_PATH_FIELDS_DATABASE:
-        #     cur_field = Return_Field(opt,rel_path)
-        #     cur_field = os.path.join(dataset_root_path,cur_field)
     return opt
 
 def save(opt):

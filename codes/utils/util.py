@@ -186,11 +186,11 @@ class SoftHistogramLoss(torch.nn.Module):
         if patch_size>1:
             assert gray_scale and (desired_hist_image is not None),'Not supporting color images or patch histograms for model training loss for now'
             self.num_dims = patch_size**2
-            # desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size).to(self.device) for hist_im_mask in desired_hist_image_mask]
-            # patch_nums = [int(mat.size(0)/self.num_dims) for mat in desired_im_patch_extraction_mat]
-            # calculated_overlap = max([1,2000/sum(patch_nums)])
             DESIRED_HIST_PATCHES_OVERLAP = (self.num_dims-4)/self.num_dims
-            desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size,patches_overlap=DESIRED_HIST_PATCHES_OVERLAP).to(self.device) for hist_im_mask in desired_hist_image_mask]
+            # desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size,device=self.device,
+            #     patches_overlap=DESIRED_HIST_PATCHES_OVERLAP).to(self.device) for hist_im_mask in desired_hist_image_mask]
+            desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size,device=self.device,
+                patches_overlap=DESIRED_HIST_PATCHES_OVERLAP) for hist_im_mask in desired_hist_image_mask]
             desired_hist_image = [torch.sparse.mm(desired_im_patch_extraction_mat[i],desired_hist_image[i]).view([self.num_dims,-1,1]) for i in range(len(desired_hist_image))]
             # desired_hist_image = [self.Desired_Im_2_Bins(hist_im,prune_only=True) for hist_im in desired_hist_image]
             desired_hist_image = torch.cat(desired_hist_image,1)
@@ -218,7 +218,7 @@ class SoftHistogramLoss(torch.nn.Module):
             self.loss = torch.nn.KLDivLoss()
         if patch_size>1:
             # self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,patches_overlap=int(OVERLAPPING_PATCHES)).to(self.device)
-            self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,patches_overlap=0.5).to(self.device)
+            self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,device=self.device,patches_overlap=0.5)#.to(self.device)
             self.image_mask = None
         else:
             self.image_mask = input_im_HR_mask.view([-1]).type(torch.ByteTensor) if input_im_HR_mask is not None else None
@@ -365,7 +365,7 @@ class SoftHistogramLoss(torch.nn.Module):
             return self.loss(torch.cat(cur_images_hists,0),torch.cat(self.desired_hists_list,0)).type(torch.cuda.FloatTensor)
 
 
-def ReturnPatchExtractionMat(mask,patch_size,patches_overlap=1,return_non_covered=False):
+def ReturnPatchExtractionMat(mask,patch_size,device,patches_overlap=1,return_non_covered=False):
     mask = binary_opening(mask, np.ones([patch_size, patch_size]).astype(np.bool))
     patches_indexes = extract_patches_2d(np.multiply(mask, 1 + np.arange(mask.size).reshape(mask.shape)),
                                          (patch_size, patch_size)).reshape([-1, patch_size**2])
@@ -385,18 +385,20 @@ def ReturnPatchExtractionMat(mask,patch_size,patches_overlap=1,return_non_covere
         if return_non_covered:
             non_covered_indexes = np.array(unique_indexes)
             non_covered_indexes = non_covered_indexes[np.logical_not(index_taken_indicator[non_covered_indexes - min_index - 1])]
-            non_covered_pixels_extraction_mat = Patch_Indexes_2_Sparse_Mat(non_covered_indexes,mask.size)
-    patch_extraction_mat = Patch_Indexes_2_Sparse_Mat(patches_indexes,mask.size)
+            non_covered_pixels_extraction_mat = Patch_Indexes_2_Sparse_Mat(non_covered_indexes,mask.size,device)
+    patch_extraction_mat = Patch_Indexes_2_Sparse_Mat(patches_indexes,mask.size,device)
     if return_non_covered:
+        if not patches_overlap<1:
+            non_covered_pixels_extraction_mat = None#torch.sparse.FloatTensor(torch.Size([0, mask.size]))
         return patch_extraction_mat,non_covered_pixels_extraction_mat
     else:
         return patch_extraction_mat
 
-def Patch_Indexes_2_Sparse_Mat(patches_indexes,mask_size):
+def Patch_Indexes_2_Sparse_Mat(patches_indexes,mask_size,device):
     corresponding_mat_rows = np.arange(patches_indexes.size).reshape([-1])
     return torch.sparse.FloatTensor(
         torch.LongTensor([corresponding_mat_rows, patches_indexes.transpose().reshape([-1])]),
-        torch.FloatTensor(np.ones([corresponding_mat_rows.size])), torch.Size([patches_indexes.size, mask_size]))
+        torch.FloatTensor(np.ones([corresponding_mat_rows.size])), torch.Size([patches_indexes.size, mask_size])).to(device)
 
 
 class Optimizable_Z(torch.nn.Module):
@@ -410,10 +412,10 @@ class Optimizable_Z(torch.nn.Module):
         else:
             self.mask = None
         if initial_pre_tanh_Z is not None:
-            assert initial_pre_tanh_Z.size()==self.Z.data.size(),'Initilizer size does not match desired Z size'
+            assert initial_pre_tanh_Z.size()[1:]==self.Z.data.size()[1:] and (initial_pre_tanh_Z.size(0) in [1,self.Z.data.size(0)]),'Initilizer size does not match desired Z size'
             if random_perturbations:
                 initial_pre_tanh_Z += torch.normal(mean=torch.zeros_like(initial_pre_tanh_Z), std=0.001 * torch.ones_like(initial_pre_tanh_Z))
-            self.Z.data = initial_pre_tanh_Z.to(self.Z.data.device)
+            self.Z.data[:initial_pre_tanh_Z.size(0),...] = initial_pre_tanh_Z.to(self.Z.data.device)
         self.Z_range = Z_range
         if Z_range is not None:
             self.tanh = torch.nn.Tanh()
@@ -435,8 +437,12 @@ class Optimizable_Z(torch.nn.Module):
         else:
             return self.Z.data
 
-    def Randomize_Z(self):
-        torch.nn.init.xavier_uniform_(self.Z.data,gain=100)
+    def Randomize_Z(self,what_2_shuffle):
+        assert what_2_shuffle in ['all','allButFirst']
+        if what_2_shuffle=='all':
+            torch.nn.init.xavier_uniform_(self.Z.data,gain=100)
+        else:
+            torch.nn.init.xavier_uniform_(self.Z.data[1:], gain=100)
 
     def Return_Detached_Z(self):
         return self.forward().detach()
@@ -484,14 +490,13 @@ class Z_optimizer():
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
         if 'local' in objective:#Used in relative STD change and periodicity objective cases:
-            # self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
-            #     patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0.5 if 'Mag' in objective else 0,return_non_covered=True)
+            desired_overlap = 1 if 'STD' in objective else 0.5
             self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
-                patch_size=self.PATCH_SIZE_4_STD,patches_overlap=0.5,return_non_covered=True)
-            self.patch_extraction_map, self.non_covered_indexes_extraction_mat =\
-                self.patch_extraction_map.to(model.fake_H.device),self.non_covered_indexes_extraction_mat.to(model.fake_H.device)
+                patch_size=self.PATCH_SIZE_4_STD,device=model.fake_H.device,patches_overlap=desired_overlap,return_non_covered=True)
+            # self.patch_extraction_map, self.non_covered_indexes_extraction_mat =\
+            #     self.patch_extraction_map.to(model.fake_H.device),self.non_covered_indexes_extraction_mat.to(model.fake_H.device)
         if not self.model_training:
-            self.initial_STD = self.Masked_STD()
+            self.initial_STD = self.Masked_STD(first_image_only=True)
             print('Initial STD: %.3e' % (self.initial_STD.mean().item()))
         if existing_optimizer is None:
             if any([phrase in objective for phrase in ['l1','scribble']]) and 'random' not in objective:
@@ -510,7 +515,7 @@ class Z_optimizer():
                             scribble_multiplier = convolve2d(np.pad(scribble_multiplier,((SMOOTHING_MARGIN,SMOOTHING_MARGIN),(SMOOTHING_MARGIN,SMOOTHING_MARGIN)),mode='edge'),
                                                              np.ones([SMOOTHING_MARGIN*2+1,SMOOTHING_MARGIN*2+1])/((SMOOTHING_MARGIN*2+1)**2),mode='valid')
                         L1_loss_mask = loss_mask*((scribble_mask_tensor>0)*(scribble_mask_tensor<4)).float()
-                        TV_loss_mask = loss_mask*(scribble_mask_tensor==4).float().unsqueeze(0).unsqueeze(0)
+                        TV_loss_masks = [loss_mask*(scribble_mask_tensor==id).float().unsqueeze(0).unsqueeze(0) for id in torch.unique(scribble_mask_tensor*loss_mask) if id>3]
                         cur_HSV = rgb2hsv(np.clip(255*self.model.fake_H[0].data.cpu().numpy().transpose((1,2,0)).copy(),0,255))
                         cur_HSV[:,:,2] = cur_HSV[:,:,2]* scribble_multiplier
                         desired_RGB = hsv2rgb(cur_HSV)
@@ -518,20 +523,25 @@ class Z_optimizer():
                         desired_RGB_mask = (scribble_mask_tensor==2)+(scribble_mask_tensor==3)
                         self.GT_HR = self.GT_HR*(1-desired_RGB_mask).float()+desired_RGB_mask.float()*torch.from_numpy(desired_RGB).type(loss_mask.dtype).to(loss_mask.device)
                     def Scribble_Loss(produced_im,GT_im):
-                        loss = torch.nn.functional.l1_loss(input=produced_im*L1_loss_mask.to(self.device),target=GT_im*L1_loss_mask.to(self.device)).to(torch.device('cuda'))
-                        if torch.any(TV_loss_mask.type(torch.uint8)):
-                            loss = loss + Scribble_TV_Loss(produced_im)
-                        return loss
+                        loss_per_im = []
+                        for im_num in range(produced_im.size(0)):
+                            loss_per_im.append(torch.nn.functional.l1_loss(input=produced_im[im_num].unsqueeze(0) * L1_loss_mask.to(self.device),
+                                                            target=GT_im * L1_loss_mask.to(self.device)).to(torch.device('cuda')))
+                            # if torch.any(TV_loss_mask.type(torch.uint8)):
+                            if len(TV_loss_masks)>0:
+                                loss_per_im[-1] = loss_per_im[-1] + Scribble_TV_Loss(produced_im[im_num].unsqueeze(0))
+                        return torch.stack(loss_per_im,0)
 
                     def Scribble_TV_Loss(produced_im):
                         loss = 0
-                        for y_shift in [-1,0,1]:
-                            for x_shift in [-1,0,1]:
-                                if y_shift==0 and x_shift==0:
-                                    continue
-                                point = np.array([y_shift,x_shift])
-                                cur_mask = self.Return_Translated_SubImage(TV_loss_mask,point) * self.Return_Translated_SubImage(TV_loss_mask, -point)
-                                loss = loss + (cur_mask * (self.Return_Translated_SubImage(produced_im,point) - self.Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
+                        for TV_loss_mask in TV_loss_masks:
+                            for y_shift in [-1,0,1]: # Taking differences to 8 neighbors, but calculating only 4 differences for each point (3 y shifts * 2 x shifts minus 2 discarded), to avoid duplicate differences
+                                for x_shift in [-1,0]:
+                                    if y_shift in [0,1] and x_shift==0:
+                                        continue
+                                    point = np.array([y_shift,x_shift])
+                                    cur_mask = self.Return_Translated_SubImage(TV_loss_mask,point) * self.Return_Translated_SubImage(TV_loss_mask, -point)
+                                    loss = loss + (cur_mask * (self.Return_Translated_SubImage(produced_im,point) - self.Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
                         return loss
 
                     self.loss = Scribble_Loss
@@ -638,15 +648,22 @@ class Z_optimizer():
         self.loggers = loggers
         self.cur_iter = 0
         self.max_iters = max_iters
-        self.random_Z_inits = random_Z_inits or self.model_training
+        self.random_Z_inits = 'all' if (random_Z_inits or self.model_training)\
+            else 'allButFirst' if (initial_pre_tanh_Z is not None and initial_pre_tanh_Z.size(0)<batch_size)\
+            else False
         self.HR_unpadder = HR_unpadder
 
-    def Masked_STD(self):
+    def Masked_STD(self,first_image_only=False):
         if 'local' in self.objective:
-            return torch.cat([torch.sparse.mm(self.patch_extraction_map, self.model.fake_H.mean(dim=1).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1]).std(dim=0),
-                torch.sparse.mm(self.non_covered_indexes_extraction_mat,self.model.fake_H.mean(dim=1).view([-1, 1])).std(dim=0)],0)
+            values_2_return = []
+            for im_num in range(1 if first_image_only else self.model.fake_H.size(0)):
+                values_2_return.append(torch.sparse.mm(self.patch_extraction_map,self.model.fake_H[im_num].mean(dim=0).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1]).std(dim=0))
+                if self.non_covered_indexes_extraction_mat is not None:
+                    values_2_return[-1] = torch.cat([values_2_return[-1],torch.sparse.mm(self.non_covered_indexes_extraction_mat,self.model.fake_H[im_num].mean(dim=0).view(
+                    [-1, 1])).std(dim=0)], 0)
+            return torch.stack(values_2_return, 1)
         else:
-            return torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3))
+            return torch.std(self.model.fake_H * self.image_mask, dim=(1, 2, 3)).view(1,-1)
 
     def feed_data(self,data):
         self.data = data
@@ -672,14 +689,13 @@ class Z_optimizer():
         self.Manage_Model_Grad_Requirements(disable=True)
         self.loss_values = []
         if self.random_Z_inits and self.cur_iter==0:
-            self.Z_model.Randomize_Z()
+            self.Z_model.Randomize_Z(what_2_shuffle=self.random_Z_inits)
         z_iter = self.cur_iter
         while True:
-        # for z_iter in range(self.cur_iter,self.cur_iter+self.max_iters):
             if self.max_iters>0:
                 if z_iter==(self.cur_iter+self.max_iters):
                     break
-            elif len(self.loss_values)>=-self.max_iters:
+            elif len(self.loss_values)>=-self.max_iters:# Would stop when loss siezes to decrease, or after 5*(-)max_iters
                 if z_iter==(self.cur_iter-5*self.max_iters):
                     break
                 if (self.loss_values[self.max_iters] - self.loss_values[-1]) / np.abs(self.loss_values[self.max_iters]) < 1e-2 * self.LR:
@@ -712,21 +728,26 @@ class Z_optimizer():
             elif any([phrase in self.objective for phrase in ['hist','dict']]):
                 Z_loss = self.loss(self.model.fake_H.to(self.device))
                 if 'localSTD' in self.objective:
-                    Z_loss = Z_loss+(self.STD_PRESERVING_WEIGHT*(self.Masked_STD()-self.initial_STD)**2).mean().to(self.device)
+                    Z_loss = Z_loss+(self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean(0).to(self.device)
             elif 'Adversarial' in self.objective:
                 Z_loss = self.loss(self.netD(self.model.DTE_net.HR_unpadder(self.model.fake_H).to(self.device)),True)
             elif 'STD' in self.objective and not any([phrase in self.objective for phrase in ['periodicity','TV']]):
-                Z_loss = self.Masked_STD()
+                Z_loss = self.Masked_STD(first_image_only=False)
                 if any([phrase in self.objective for phrase in ['increase', 'decrease']]):
                     Z_loss = (Z_loss-self.desired_STD)**2
+                Z_loss = Z_loss.mean(0)
             elif 'Mag' in self.objective:
-                Z_loss = ((torch.sparse.mm(self.patch_extraction_map, self.model.fake_H.mean(dim=1).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1])-self.desired_patches)**2).mean()
+                values_2_return = []
+                for im_num in range(self.model.fake_H.size(0)):
+                    values_2_return.append(((torch.sparse.mm(self.patch_extraction_map,self.model.fake_H[im_num].mean(dim=0).view([-1, 1])).view(
+                        [self.PATCH_SIZE_4_STD ** 2, -1]) - self.desired_patches) ** 2).mean())
+                Z_loss = torch.stack(values_2_return,0)
             elif 'periodicity' in self.objective:
                 Z_loss = self.PeriodicityLoss().to(self.device)
                 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE:
-                    Z_loss = Z_loss+self.STD_PRESERVING_WEIGHT*((self.Masked_STD()-self.desired_STD)**2).mean()
+                    Z_loss = Z_loss+self.STD_PRESERVING_WEIGHT*((self.Masked_STD(first_image_only=False)-self.desired_STD)**2).mean()
             elif 'TV' in self.objective:
-                Z_loss = (self.STD_PRESERVING_WEIGHT*(self.Masked_STD()-self.initial_STD)**2).mean()+TV_Loss(self.model.fake_H * self.image_mask).to(self.device)
+                Z_loss = (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean(0)+TV_Loss(self.model.fake_H * self.image_mask).to(self.device)
             elif 'VGG' in self.objective:
                 Z_loss = self.loss(self.model.netF(self.model.fake_H).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:
@@ -737,6 +758,7 @@ class Z_optimizer():
                 for logger_num,logger in enumerate(self.loggers):
                     cur_value = Z_loss[logger_num].item() if Z_loss.dim()>0 else Z_loss.item()
                     logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': cur_value}, dont_print=True)
+            self.latest_Z_loss_values = [val.item() for val in Z_loss]
             Z_loss = Z_loss.mean()
             Z_loss.backward()
             self.loss_values.append(Z_loss.item())
@@ -752,7 +774,7 @@ class Z_optimizer():
             self.loss_values[0] = self.loss_values[1] #Replacing the first loss values which is close to 0 in this case, to prevent discarding optimization because loss increased compared to it.
         # if 'STD' in self.objective or 'periodicity' in self.objective:
         if not self.model_training:
-            print('Final STD: %.3e'%(self.Masked_STD().mean().item()))
+            print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
         self.Manage_Model_Grad_Requirements(disable=False)
@@ -770,7 +792,7 @@ class Z_optimizer():
         return torch.nn.functional.grid_sample(image, grid)
 
     def PeriodicityLoss(self):
-        loss = 0 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE else (self.STD_PRESERVING_WEIGHT*(self.Masked_STD()-self.initial_STD)**2).mean()
+        loss = 0 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE else (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean()
         image = self.model.fake_H
         mask = self.image_mask.unsqueeze(0).unsqueeze(0)
         for point_num,point in enumerate(self.periodicity_points):

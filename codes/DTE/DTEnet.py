@@ -23,11 +23,8 @@ class DTEnet:
         self.conf = conf
         self.ds_factor = np.array(conf.scale_factor,dtype=np.int32)
         assert np.round(self.ds_factor)==self.ds_factor,'Currently only supporting integer scale factors'
-        assert upscale_kernel is None,'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
-        # if ds_kernel is None:
-        #     # ds_kernel = np.rot90(imresize(None,[self.ds_factor,self.ds_factor],return_upscale_kernel=True),2).astype(np.float32)/(self.ds_factor**2)
+        assert upscale_kernel is None or isinstance(upscale_kernel,str),'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
         self.ds_kernel = Return_kernel(self.ds_factor,upscale_kernel=upscale_kernel)
-        # self.ds_kernel = ds_kernel
         self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel',self.conf.filter_pertubation_limit)
         # self.ds_kernel_invalidity_half_size = np.argwhere(Return_Filter_Energy_Distribution(self.ds_kernel)[::-1]>=self.conf.filter_pertubation_limit)[0][0]
         self.compute_inv_hTh()
@@ -43,8 +40,11 @@ class DTEnet:
             output_im = conv2(np.ones([TEST_IM_SIZE,TEST_IM_SIZE]), self.inv_hTh,mode='same')
         output_im /= output_im[int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)]
         invalidity_mask = np.exp(-np.abs(np.log(output_im)))<max_allowed_perturbation
-        margin_sizes = [len(np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])),
-                        len(np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)]))]
+        # Changed the way I find invalid region. Instead of looking at len() of invlid mask pixels, I look at the index of the deepest one, to accomodate cases of non-conitinous invalidity:
+        # margin_sizes = [len(np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])),
+        #                 len(np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)]))]
+        margin_sizes = [np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])[-1][0]+1,
+                        np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)])[-1][0]+1]
         assert np.abs(margin_sizes[0]-margin_sizes[1])<=1,'Different margins for each axis. Currently not supporting non-isotropic filters'
         return np.max(margin_sizes)
 
@@ -84,7 +84,9 @@ class DTEnet:
         if only_padders:
             return
         else:
-            return DTE_PyTorch(self,generated_image)
+            returnable =  DTE_PyTorch(self,generated_image)
+            self.OP_names = [m[0] for m in returnable.named_modules() if 'Filter_OP' in m[0]]
+            return returnable
 
     def Mask_Invalid_Regions_PyTorch(self,im1,im2):
         assert self.loss_mask is not None,'Mask not defined, probably didn''t pass patch size'
@@ -148,8 +150,6 @@ class DTEnet:
                 return tf.add(self.output_t,self.projected_2_ortho_generated_im,name='DTE_add_subspaces')
 
     def Enforce_DT_on_Image_Pair(self,LR_source,HR_input):
-        # margin_size = 2*self.ds_kernel_invalidity_half_size_LR*self.ds_factor
-        # HR_projected_2_h_subspace = Unpad_Image(self.DT_Satisfying_Upscale(imresize(Pad_Image(HR_input,margin_size),scale_factor=[1/self.ds_factor])),margin_size)
         same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         LR_scale_dimensions = [self.ds_factor*LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         assert np.all(np.logical_or(same_scale_dimensions,LR_scale_dimensions))
@@ -261,9 +261,7 @@ class DTE_PyTorch(nn.Module):
         Replication_Padder = nn.ReplicationPad2d((inv_hTh_padding[1],inv_hTh_padding[1],inv_hTh_padding[0],inv_hTh_padding[0]))
         self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(DTEnet.inv_hTh,pre_filter_func=Replication_Padder)
         downscale_antialiasing = np.rot90(DTEnet.ds_kernel,2)
-        # downscale_antialiasing_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(downscale_antialiasing,axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
         upscale_antialiasing = DTEnet.ds_kernel*DTEnet.ds_factor**2
-        # upscale_antialiasing_t = torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(upscale_antialiasing,axis=0),axis=0),reps=[3,1,1,1])).type(torch.cuda.FloatTensor)
         pre_stride, post_stride = calc_strides(None, DTEnet.ds_factor)
         Upscale_Padder = lambda x: nn.functional.pad(x,(pre_stride[1],post_stride[1],0,0,pre_stride[0],post_stride[0]))
         Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],DTEnet.ds_factor*x.size()[2],DTEnet.ds_factor*x.size()[3]])
@@ -332,13 +330,9 @@ def Return_Downscale_OP(ds_factor,ds_kernel=None):
         ds_kernel = Return_kernel(ds_factor)
     downscale_antialiasing = tf.constant(np.tile(np.expand_dims(np.expand_dims(np.rot90(ds_kernel, 2), axis=2), axis=3), reps=[1, 1, 3, 1]))
     pre_stride, post_stride = calc_strides(None, ds_factor)
-    # Cropped_2_Integer_Factors = lambda x: tf.slice(x, begin=[0, 0, 0, 0],size=tf.stack([-1, tf.cast(
-    #     tf.floor(tf.shape(x)[1] / ds_factor) * ds_factor,dtype=tf.int32), tf.cast(tf.floor(tf.shape(x)[2] / ds_factor) * ds_factor,dtype=tf.int32), -1]))
     ds_factor_float_t = tf.constant(ds_factor,dtype=tf.float32)
     input_shape_assertion = lambda x: tf.Assert(condition=tf.logical_and(tf.equal(tf.round(tf.cast(tf.shape(x)[1],tf.float32) / ds_factor_float_t),tf.cast(tf.shape(x)[1],tf.float32) / ds_factor_float_t),
         tf.equal(tf.round(tf.cast(tf.shape(x)[2],tf.float32) / ds_factor_float_t),tf.cast(tf.shape(x)[2],tf.float32) / ds_factor_float_t)),data=[tf.shape(x)])
-    # Reshaped_input = lambda x: tf.reshape(Cropped_2_Integer_Factors(x),shape=tf.stack(
-    #     [tf.shape(x)[0], tf.cast(tf.shape(x)[1] / ds_factor, dtype=tf.int32),ds_factor, tf.cast(tf.shape(x)[2] / ds_factor, dtype=tf.int32),ds_factor, tf.shape(x)[3]]))
     ds_factor_int_t = tf.constant(int(ds_factor),dtype=tf.int32)
     Reshaped_input = lambda x: tf.reshape(x,shape=tf.stack(
         [tf.shape(x)[0], tf.cast(tf.shape(x)[1] / ds_factor_int_t, dtype=tf.int32),ds_factor_int_t, tf.cast(tf.shape(x)[2] / ds_factor_int_t, dtype=tf.int32),ds_factor_int_t, tf.shape(x)[3]]))

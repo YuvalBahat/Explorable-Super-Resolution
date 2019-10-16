@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_1Dupdate_noDTE_OrgWeights_batchD24G6_debug" //  please remove "debug_" during training
+  "name": "ESRGAN_latent_input_1230" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -40,6 +40,9 @@
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 0
+    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
+    , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "sigmoid_range_limit": 0
     , "norm_type": null
     , "mode": "CNA"

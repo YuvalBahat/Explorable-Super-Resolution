@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
 from scipy.signal import convolve2d as conv2
+from scipy.signal import gaussian
+from scipy.stats import norm
 
 def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=False, return_upscale_kernel=False,use_zero_padding=False,antialiasing=True, kernel_shift_flag=False):
-    assert kernel is None or kernel=='cubic' or isinstance(kernel,np.ndarray)
+    assert kernel is None or any([word in kernel for word in ['cubic','blurry_cubic']]) or isinstance(kernel,np.ndarray)
     imresize.kernels = getattr(imresize,'kernels',{})
     if scale_factor is None:
         scale_factor = [output_shape[0]/im.shape[0]]
@@ -15,14 +17,13 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
         assert str(sf_4_kernel) not in imresize.kernels.keys() or np.all(np.equal(kernel,imresize.kernels[str(sf_4_kernel)])),'If using non-default kernel, make sure I always use it.'
         imresize.kernels[str(sf_4_kernel)] = kernel
     elif str(sf_4_kernel) not in imresize.kernels.keys():
-        DELTA_SIZE = 11
-        # imresize.sf = sf_4_kernel
-        delta_im = np.zeros([DELTA_SIZE, DELTA_SIZE])
-        delta_im[np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1] = 1
-        upscale_kernel = cv2.resize(delta_im,dsize=(sf_4_kernel*DELTA_SIZE,sf_4_kernel*DELTA_SIZE),interpolation=cv2.INTER_CUBIC)
-        kernel_support = np.nonzero(upscale_kernel[sf_4_kernel * np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, :])[0]
-        kernel_support = np.array([kernel_support[0],kernel_support[-1]])
-        imresize.kernels[str(sf_4_kernel)] = upscale_kernel[kernel_support[0]:kernel_support[1] + 1, kernel_support[0]:kernel_support[1] + 1]
+        kernel_2_use = Cubic_Kernel(sf_4_kernel)
+        if kernel is not None and 'blurry_cubic' in kernel:
+            sigma = float(kernel[len('blurry_cubic_'):])
+            blur_kernel = Gaussian_2D(sigma=sigma)
+            imresize.kernels['blur_'+str(sf_4_kernel)] = blur_kernel
+            kernel_2_use = conv2(kernel_2_use,blur_kernel)
+        imresize.kernels[str(sf_4_kernel)] = kernel_2_use
     assert len(scale_factor)==1 or scale_factor[0]==scale_factor[1]
     scale_factor = scale_factor[0]
     pre_stride,post_stride = calc_strides(im,scale_factor,align_center)
@@ -70,3 +71,21 @@ def calc_strides(array,factor,align_center = False):
         post_stride = (np.floor(np.maximum(factor,1/factor)/2)*np.ones([2])).astype(np.int32)
         pre_stride = (np.maximum(factor,1/factor)-post_stride-1).astype(np.int32)
     return pre_stride,post_stride
+
+def Cubic_Kernel(sf):
+    DELTA_SIZE = 11
+    delta_im = np.zeros([DELTA_SIZE, DELTA_SIZE])
+    delta_im[np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1] = 1
+    upscale_kernel = cv2.resize(delta_im, dsize=(sf * DELTA_SIZE, sf * DELTA_SIZE),interpolation=cv2.INTER_CUBIC)
+    kernel_support = np.nonzero(upscale_kernel[sf * np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, :])[0]
+    kernel_support = np.array([kernel_support[0], kernel_support[-1]])
+    return upscale_kernel[kernel_support[0]:kernel_support[1] + 1,kernel_support[0]:kernel_support[1] + 1]
+
+def Gaussian_2D(sigma,size=None):
+    if size is None:
+        # I want the kernel to contain 99% of the filter's energy (in 1D), so I'm leaving 0.5% on each side:
+        size = int(1+2*np.ceil(-1*norm.ppf(0.005,scale=sigma)))
+    else:
+        assert (size+1)/2==np.round((size+1)/2),'Size must be odd integer'
+    gaussian_2D =  gaussian(size,sigma).reshape([1,size])*gaussian(size,sigma).reshape([size,1])
+    return gaussian_2D/np.sum(gaussian_2D)

@@ -95,7 +95,7 @@ class BaseModel():
         return save_path
 
     # helper loading function that can be used by subclasses
-    def load_network(self, load_path, network, strict=True,optimizer=None):
+    def load_network(self, load_path, network, strict=False,optimizer=None):
         if isinstance(network, nn.DataParallel):
             network = network.module
         loaded_state_dict = torch.load(load_path)
@@ -124,12 +124,18 @@ class BaseModel():
                 assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
                 modified_key_names_counter += 1
             if self.latent_input is not None and \
-                'weight' in key and loaded_state_dict[key].dim()>1 and current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
+                'weight' in key and loaded_state_dict[key].dim()>1 and \
+                current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
+                # In case we initialize a newly trained model that has latent input, with pre-trained model that doesn't have, add weights corresponding to
+                # the added input layers (added as first layers), whose STD is LATENT_WEIGHTS_RELATIVE_STD*(STD of existing weights in this kernel):
                 additional_channels = current_state_dict[current_key].size()[1]-loaded_state_dict[key].size()[1]
                 loaded_weights_STD = loaded_state_dict[key].std()
                 modified_state_dict[current_key] = torch.cat([LATENT_WEIGHTS_RELATIVE_STD*loaded_weights_STD/current_state_dict[current_key][:,:additional_channels,:,:].std()*\
-                    current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),loaded_state_dict[key].cuda()],1)
+                    current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),\
+                                                              loaded_state_dict[key].cuda()],1)
                 self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
+            elif self.DTE_net is not None and any([DTE_op in key for DTE_op in self.DTE_net.OP_names]):
+                continue # Not loading DTE module weights
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]
         if modified_key_names_counter>0:
