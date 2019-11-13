@@ -9,7 +9,7 @@ from torch.optim import lr_scheduler
 import re
 import models.networks as networks
 from .base_model import BaseModel
-from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss
+from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels
 from torch.nn import Upsample
 import DTE.DTEnet as DTEnet
 import numpy as np
@@ -26,7 +26,7 @@ def Unit_Circle_rejection_Sampling(batch_size):
     return cur_Z
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None):
+    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None,**kwargs):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
@@ -42,7 +42,7 @@ class SRRaGANModel(BaseModel):
             # Loss encouraging effect of Z:
             if self.is_train and not opt['network_G']['DTE_arch']:#Training ESRGAN but with latent input:
                 self.cri_latent = None
-                self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
+                self.num_latent_channels = Latent_channels_desc_2_num_channels(latent_channels_desc=opt['network_G']['latent_channels'])
                 self.l_latent_w = 0
             elif self.is_train and (train_opt['latent_weight']>0 or self.debug):
                 self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
@@ -55,15 +55,17 @@ class SRRaGANModel(BaseModel):
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
         self.step = 0
-        if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']):
+        if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_Subspace()
             DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
             DTE_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
             DTE_conf.input_range = np.array(opt['range'])
             if self.is_train:
                 assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
                 DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
-
-            self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=None if opt['test'] is None else opt['test']['kernel'])
+            if opt['test'] is not None and opt['test']['kernel']=='estimated':
+                # Using a non-accurate estimated kernel increases the risk of insability when inverting hTh, so I take a higher lower bound:
+                DTE_conf.lower_magnitude_bound = 0.1
+            self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=kwargs['kernel'] if 'kernel' in kwargs.keys() else None if opt['test'] is None else opt['test']['kernel'])
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
                 self.optimalZ_loss_type = None
@@ -386,10 +388,8 @@ class SRRaGANModel(BaseModel):
                         if self.generator_step:
                             if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
                                 self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
-                                                      all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in
-                                                      self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
-                                                      all([val[1] > np.log(self.opt['train']['min_mean_D_correct']) for val in
-                                                           self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                                    all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
+                                    all([val[1] > np.log(self.opt['train']['min_mean_D_correct']) for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
                             elif self.D_verification=='convergence':
                                 if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
                                     std, slope = 0, 0

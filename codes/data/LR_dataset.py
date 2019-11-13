@@ -2,19 +2,28 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import data.util as util
-
+import scipy.io
+import os
 
 class LRDataset(data.Dataset):
     '''Read LR images only in the test phase.'''
 
-    def __init__(self, opt):
+    def __init__(self, opt,specific_image=None,kernel=None):
         super(LRDataset, self).__init__()
+        assert specific_image is None,'Unsupported here yet'
         self.opt = opt
         self.paths_LR = None
         self.LR_env = None  # environment for lmdb
-
         # read image list from lmdb or image files
         self.LR_env, self.paths_LR = util.get_image_paths(opt['data_type'], opt['dataroot_LR'])
+        self.paths_kernel = None
+        if kernel=='estimated':
+            self.paths_kernel = []
+            for im_path in self.paths_LR:
+                if 'img_' in im_path:
+                    self.paths_kernel.append(im_path.replace('img','kernel_')[:-4]+'_x4.mat')
+                else:
+                    self.paths_kernel.append(im_path[:-4]+'_kernel_x4.mat')
         assert self.paths_LR, 'Error: LR paths are empty.'
 
     def __getitem__(self, index):
@@ -33,8 +42,10 @@ class LRDataset(data.Dataset):
         if img_LR.shape[2] == 3:
             img_LR = img_LR[:, :, [2, 1, 0]]
         img_LR = torch.from_numpy(np.ascontiguousarray(np.transpose(img_LR, (2, 0, 1)))).float()
-
-        return {'LR': img_LR, 'LR_path': LR_path}
+        returned_dict = {'LR': img_LR, 'LR_path': LR_path}
+        if self.paths_kernel is not None:
+            returned_dict['kernel'] = scipy.io.loadmat(self.paths_kernel[index])['Kernel']
+        return returned_dict
 
     def __len__(self):
         return len(self.paths_LR)
