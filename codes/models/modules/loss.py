@@ -11,6 +11,14 @@ def ValidStructTensorIndicator(a,d,b):
     # return 1-(a**2==d**2)*(b*(a+d)==0)
     return ((2 * b * (a + d))**2+(a ** 2 - d ** 2)**2)>EPSILON
 
+def Latent_channels_desc_2_num_channels(latent_channels_desc):
+    if isinstance(latent_channels_desc,int):
+        return latent_channels_desc
+    elif latent_channels_desc == 'STD_1dir':  # Channel 0 controls STD, channel 1 controls horizontal Sobel
+        return 2
+    elif latent_channels_desc=='STD_directional' or 'structure_tensor' in latent_channels_desc:
+        return 3
+
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None):
         super(FilterLoss,self).__init__()
@@ -19,8 +27,9 @@ class FilterLoss(nn.Module):
         self.latent_channels = latent_channels
         self.NOISE_STD = 1e-15#1/255
         self.model_training = constant_Z is None
+        self.num_channels = Latent_channels_desc_2_num_channels(self.latent_channels)
         if latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
-            self.num_channels = 2
+            # self.num_channels = 2
             DELTA_SIZE = 7
             delta_im = np.zeros([DELTA_SIZE,DELTA_SIZE]); delta_im[DELTA_SIZE//2,DELTA_SIZE//2] = 1;
             dir_filter = cv2.Sobel(delta_im,ddepth=cv2.CV_64F,dx=1,dy=0)
@@ -29,10 +38,10 @@ class FilterLoss(nn.Module):
             self.filter = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=dir_filter.shape,bias=False,groups=3)
             self.filter.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(dir_filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
             self.filter.filter_layer = True
-        elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
-            self.num_channels = 3
+        # elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
+        #     self.num_channels = 3
         elif 'structure_tensor' in self.latent_channels:
-            self.num_channels = 3
+            # self.num_channels = 3
             self.NOISE_STD = 1e-7
             gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
             self.filters = []

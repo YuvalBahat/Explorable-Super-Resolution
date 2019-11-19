@@ -23,7 +23,9 @@ class DTEnet:
         self.conf = conf
         self.ds_factor = np.array(conf.scale_factor,dtype=np.int32)
         assert np.round(self.ds_factor)==self.ds_factor,'Currently only supporting integer scale factors'
-        assert upscale_kernel is None or isinstance(upscale_kernel,str),'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
+        assert upscale_kernel is None or isinstance(upscale_kernel,str) or isinstance(upscale_kernel,torch.Tensor),'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
+        if isinstance(upscale_kernel, torch.Tensor):
+            upscale_kernel = np.squeeze(upscale_kernel.data.cpu().numpy())
         self.ds_kernel = Return_kernel(self.ds_factor,upscale_kernel=upscale_kernel)
         self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel',self.conf.filter_pertubation_limit)
         # self.ds_kernel_invalidity_half_size = np.argwhere(Return_Filter_Energy_Distribution(self.ds_kernel)[::-1]>=self.conf.filter_pertubation_limit)[0][0]
@@ -39,13 +41,15 @@ class DTEnet:
         elif filter=='inv_hTh':
             output_im = conv2(np.ones([TEST_IM_SIZE,TEST_IM_SIZE]), self.inv_hTh,mode='same')
         output_im /= output_im[int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)]
+        output_im[output_im<=0] = max_allowed_perturbation/2 # Negative output_im are hella invalid... (and would not be identified as such without this line since I'm taking their log).
         invalidity_mask = np.exp(-np.abs(np.log(output_im)))<max_allowed_perturbation
         # Changed the way I find invalid region. Instead of looking at len() of invlid mask pixels, I look at the index of the deepest one, to accomodate cases of non-conitinous invalidity:
         # margin_sizes = [len(np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])),
         #                 len(np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)]))]
         margin_sizes = [np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])[-1][0]+1,
                         np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)])[-1][0]+1]
-        assert np.abs(margin_sizes[0]-margin_sizes[1])<=1,'Different margins for each axis. Currently not supporting non-isotropic filters'
+        # assert np.abs(margin_sizes[0]-margin_sizes[1])<=1,'Different margins for each axis. Currently not supporting non-isotropic filters'
+        margin_sizes = np.max(margin_sizes)*np.ones([2]).astype(margin_sizes[0].dtype)
         return np.max(margin_sizes)
 
     def Pad_LR_Batch(self,batch,num_recursion=1):
@@ -153,7 +157,7 @@ class DTEnet:
         same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         LR_scale_dimensions = [self.ds_factor*LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         assert np.all(np.logical_or(same_scale_dimensions,LR_scale_dimensions))
-        LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else LR_source
+        LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else self.Project_2_Subspace(LR_source)
         HR_projected_2_h_subspace = self.Project_2_Subspace(HR_input)
         return  HR_input-HR_projected_2_h_subspace+LR_source
 
@@ -189,21 +193,22 @@ class DTEnet:
         hTh = Aliased_Down_Sampling(hTh,self.ds_factor)
         pad_pre = pad_post = np.array(self.NFFT_add/2,dtype=np.int32)
         hTh_fft = np.fft.fft2(np.pad(hTh,((pad_pre,pad_post),(pad_pre,pad_post)),mode='constant',constant_values=0))
+        # When ds_kernel is wide, some frequencies get completely wiped out, which causes instability when hTh is inverted. I therfore bound this filter's magnitude from below in the Fourier domain:
+        magnitude_increasing_map = np.maximum(1,self.conf.lower_magnitude_bound/np.abs(hTh_fft))
+        hTh_fft = hTh_fft*magnitude_increasing_map
+        # Now inverting the filter:
         self.inv_hTh = np.real(np.fft.ifft2(1/hTh_fft))
+        # Making sure the filter's maximal value sits in its middle:
         max_row = np.argmax(self.inv_hTh)//self.inv_hTh.shape[0]
         max_col = np.mod(np.argmax(self.inv_hTh),self.inv_hTh.shape[0])
         if not np.all(np.equal(np.ceil(np.array(self.inv_hTh.shape)/2),np.array([max_row,max_col])-1)):
             half_filter_size = np.min([self.inv_hTh.shape[0]-max_row-1,self.inv_hTh.shape[0]-max_col-1,max_row,max_col])
             self.inv_hTh = self.inv_hTh[max_row-half_filter_size:max_row+half_filter_size+1,max_col-half_filter_size:max_col+half_filter_size+1]
-        # filter_energy = Return_Filter_Energy_Distribution(self.inv_hTh)
-        # self.inv_hTh_invalidity_half_size = np.argwhere(filter_energy[::-1]>=self.conf.filter_pertubation_limit)[0][0]
+
         self.inv_hTh_invalidity_half_size = self.Return_Invalid_Margin_Size_in_LR('inv_hTh',self.conf.filter_pertubation_limit)
         margins_2_drop = self.inv_hTh.shape[0]//2-self.Return_Invalid_Margin_Size_in_LR('inv_hTh',self.conf.desired_inv_hTh_energy_portion)
         if margins_2_drop>0:
             self.inv_hTh = self.inv_hTh[margins_2_drop:-margins_2_drop,margins_2_drop:-margins_2_drop]
-        # if self.conf.desired_inv_hTh_energy_portion<1:
-        #     desired_half_filter_size = np.argwhere(filter_energy>=self.conf.desired_inv_hTh_energy_portion)[-1][0]
-        #     self.inv_hTh = self.inv_hTh[desired_half_filter_size:-desired_half_filter_size,desired_half_filter_size:-desired_half_filter_size]
 
     def compute_conv_with_inv_hTh_OP(self):
         self.inv_hTh_t = tf.constant(np.tile(np.expand_dims(np.expand_dims(self.inv_hTh,axis=2),axis=3),reps=[1,1,3,1]))
@@ -358,10 +363,6 @@ def Aliased_Down_Up_Sampling(array,factor):
 def Return_kernel(ds_factor,upscale_kernel=None):
     return np.rot90(imresize(None, [ds_factor, ds_factor], return_upscale_kernel=True,kernel=upscale_kernel), 2).astype(np.float32) / (ds_factor ** 2)
 
-def Return_Filter_Energy_Distribution(filter):
-    sqrt_energy =  [np.sqrt(np.sum(filter**2))]+[np.sqrt(np.sum(filter[frame_num:-frame_num,frame_num:-frame_num]**2)) for frame_num in range(1,int(np.ceil(filter.shape[0]/2)))]
-    return sqrt_energy/sqrt_energy[0]
-
 def Pad_Image(image,margin_size):
     try:
         return np.pad(image,pad_width=((margin_size,margin_size),(margin_size,margin_size),(0,0)),mode='edge')
@@ -390,6 +391,7 @@ def Get_DTE_Conf(sf):
         desired_inv_hTh_energy_portion = 1 - 1e-6#1-1e-10
         filter_pertubation_limit = 0.999
         sigmoid_range_limit = False
+        lower_magnitude_bound = 0.01 # Lower bound on hTh filter magnitude in Fourier domain
         # input_range = np.array([0.,1.])
     return conf
 def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):

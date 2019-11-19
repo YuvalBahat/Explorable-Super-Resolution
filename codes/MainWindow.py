@@ -323,7 +323,11 @@ class Ui_MainWindow(object):
         icon_scribble_reset.addPixmap(QtGui.QPixmap("images/apply_scribble.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.actionApplyScrible = QtWidgets.QAction(icon=icon_scribble_reset,parent=self.Scribble_Toolbar)
         self.actionApplyScrible.setObjectName("actionApplyScrible")
-        # self.actionApplyScrible.setEnabled(False)
+
+        icon_scribble_reset = QtGui.QIcon()
+        icon_scribble_reset.addPixmap(QtGui.QPixmap("images/loop_apply_scribble.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionLoopApplyScrible = QtWidgets.QAction(icon=icon_scribble_reset,parent=self.Scribble_Toolbar)
+        self.actionLoopApplyScrible.setObjectName("actionLoopApplyScrible")
 
         icon8 = QtGui.QIcon()
         icon8.addPixmap(QtGui.QPixmap("images/pencil.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)

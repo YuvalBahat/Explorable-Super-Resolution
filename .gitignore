@@ -30,5 +30,3 @@ data_samples/samples_byteimg
 data_samples/samples_colorimg
 data_samples/samples_segprob
 data_samples/samples_result
-/codes/DTE/main_4_Omer.py
-/codes/DTE/DTEnet_4_Omer.py

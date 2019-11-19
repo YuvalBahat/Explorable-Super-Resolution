@@ -13,8 +13,22 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
         scale_factor = [scale_factor]
     assert np.round(scale_factor[0])==scale_factor[0] or np.round(1/scale_factor[0])==1/scale_factor[0],'Only supporting integer downsampling or upsampling rates'
     sf_4_kernel = np.maximum(scale_factor[0], 1 / scale_factor[0]).astype(np.int32)
+    assert len(scale_factor)==1 or scale_factor[0]==scale_factor[1]
+    scale_factor = scale_factor[0]
+    pre_stride,post_stride = calc_strides(im,scale_factor,align_center)
+    # Padding the kernel to compenstae for imbalanced padding, in the case of an even scale factor. This increases kernel size by 1 for even scale factors or 0 for odd:
+    kernel_post_padding = np.maximum(0, pre_stride - post_stride)
+    kernel_pre_padding = np.maximum(0, post_stride - pre_stride)
     if isinstance(kernel,np.ndarray):
-        assert str(sf_4_kernel) not in imresize.kernels.keys() or np.all(np.equal(kernel,imresize.kernels[str(sf_4_kernel)])),'If using non-default kernel, make sure I always use it.'
+        if str(sf_4_kernel) in imresize.kernels.keys():
+            print('Overriding previous kernel with given kernel...')
+        # assert str(sf_4_kernel) not in imresize.kernels.keys() or np.all(np.equal(kernel,imresize.kernels[str(sf_4_kernel)])),'If using non-default kernel, make sure I always use it.'
+        assert np.abs(1-np.sum(kernel))<np.finfo(np.float32).eps,'Supplied non-default kernel does not sum to 1'
+        # I assume the supplied kernel is a downscaling kernel, while the kernel saved here should be an upscaling one:
+        kernel = np.rot90(kernel,2)
+        kernel = Center_Mass(kernel,ds_factor=sf_4_kernel)*sf_4_kernel**2
+        assert kernel.shape[0]==kernel.shape[1],'Only square kernels supported for now'
+        assert np.all(np.mod(kernel.shape+kernel_post_padding+kernel_pre_padding-1,sf_4_kernel)==0),'Convolution-invalidated size should be an integer multiplication of sf_4_kernel'
         imresize.kernels[str(sf_4_kernel)] = kernel
     elif str(sf_4_kernel) not in imresize.kernels.keys():
         kernel_2_use = Cubic_Kernel(sf_4_kernel)
@@ -24,13 +38,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
             imresize.kernels['blur_'+str(sf_4_kernel)] = blur_kernel
             kernel_2_use = conv2(kernel_2_use,blur_kernel)
         imresize.kernels[str(sf_4_kernel)] = kernel_2_use
-    assert len(scale_factor)==1 or scale_factor[0]==scale_factor[1]
-    scale_factor = scale_factor[0]
-    pre_stride,post_stride = calc_strides(im,scale_factor,align_center)
-    kernel_post_padding = np.maximum(0,pre_stride-post_stride)
-    kernel_pre_padding = np.maximum(0,post_stride-pre_stride)
-    antialiasing_kernel = np.pad(imresize.kernels[str(sf_4_kernel)],
-                                 ((kernel_pre_padding[0],kernel_post_padding[0]),(kernel_pre_padding[1],kernel_post_padding[1])),mode='constant')
+    antialiasing_kernel = np.pad(imresize.kernels[str(sf_4_kernel)],((kernel_pre_padding[0],kernel_post_padding[0]),(kernel_pre_padding[1],kernel_post_padding[1])),mode='constant')
     if scale_factor < 1:
         antialiasing_kernel = np.rot90(antialiasing_kernel * scale_factor ** 2, 2)
     if return_upscale_kernel:
@@ -49,37 +57,44 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
                 mode='constant'),newshape=desired_size))
             if use_zero_padding:
                 output[-1] = conv2(output[-1],antialiasing_kernel,mode='same')
-            else:
+            else:# Use edge padding:
                 output[-1] = conv2(np.pad(output[-1],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),antialiasing_kernel,mode='valid')
         else:
             if use_zero_padding:
                 output.append(conv2(im[:,:,channel_num],antialiasing_kernel,mode='same'))
-            else:
+            else:# Use edge padding:
                 output.append(conv2(np.pad(im[:,:,channel_num],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),
                                     antialiasing_kernel,mode='valid'))
             output[-1] = output[-1][pre_stride[0]::int(1 / scale_factor),pre_stride[1]::int(1 / scale_factor)]
     return np.squeeze(np.stack(output,-1))
 
 def calc_strides(array,factor,align_center = False):
+    integer_factor = np.maximum(factor,1/factor).astype(np.int32)
+    # Overall I should pad with (integer_factor-1) zeros:
     if align_center:
         half_image_size = np.ceil(np.array(array.shape[:2])/2*(factor if factor>1 else 1))
-        pre_stride = np.mod(half_image_size,np.maximum(factor,1/factor))
-        pre_stride[np.equal(pre_stride,0)] = np.maximum(factor,1/factor)
+        pre_stride = np.mod(half_image_size,integer_factor)
+        pre_stride[np.equal(pre_stride,0)] = integer_factor
         pre_stride = (pre_stride-1).astype(np.int32)
-        post_stride = np.maximum(factor,1/factor).astype(np.int32)-pre_stride-1
+        post_stride = integer_factor-pre_stride-1
     else:
-        post_stride = (np.floor(np.maximum(factor,1/factor)/2)*np.ones([2])).astype(np.int32)
-        pre_stride = (np.maximum(factor,1/factor)-post_stride-1).astype(np.int32)
+        # This is an arbitrary convention for dividing the padding before and after each value (for the case of even factor). The padding of the DS kernel should comply to avoid translation.
+        post_stride = (np.floor(integer_factor/2)*np.ones([2])).astype(np.int32)
+        pre_stride = (integer_factor-post_stride-1).astype(np.int32)
     return pre_stride,post_stride
 
 def Cubic_Kernel(sf):
     DELTA_SIZE = 11
-    delta_im = np.zeros([DELTA_SIZE, DELTA_SIZE])
-    delta_im[np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1] = 1
+    delta_im = Delta_Im(DELTA_SIZE)
     upscale_kernel = cv2.resize(delta_im, dsize=(sf * DELTA_SIZE, sf * DELTA_SIZE),interpolation=cv2.INTER_CUBIC)
     kernel_support = np.nonzero(upscale_kernel[sf * np.ceil(DELTA_SIZE / 2).astype(np.int32) - 1, :])[0]
     kernel_support = np.array([kernel_support[0], kernel_support[-1]])
     return upscale_kernel[kernel_support[0]:kernel_support[1] + 1,kernel_support[0]:kernel_support[1] + 1]
+
+def Delta_Im(size):
+    delta_im = np.zeros([size, size])
+    delta_im[np.ceil(size / 2).astype(np.int32) - 1, np.ceil(size / 2).astype(np.int32) - 1] = 1
+    return delta_im
 
 def Gaussian_2D(sigma,size=None):
     if size is None:
@@ -89,3 +104,58 @@ def Gaussian_2D(sigma,size=None):
         assert (size+1)/2==np.round((size+1)/2),'Size must be odd integer'
     gaussian_2D =  gaussian(size,sigma).reshape([1,size])*gaussian(size,sigma).reshape([size,1])
     return gaussian_2D/np.sum(gaussian_2D)
+
+def Round_2_Int(num):
+    return int(np.round(num))
+
+def Center_Mass(kernel,ds_factor):
+    assert kernel.shape[0]==kernel.shape[1],'Currently supporting only square kernels'
+    kernel_size = kernel.shape[0]
+    x_grid,y_grid = np.meshgrid(np.arange(kernel_size),np.arange(kernel_size))
+    x_grid,y_grid = conv2(x_grid,kernel,mode='valid')+1,conv2(y_grid,kernel,mode='valid')+1
+    x_pad,y_pad = 2*(kernel_size/2-x_grid),2*(kernel_size/2-y_grid)
+    padding_diff = np.round(np.abs(y_pad))-np.round(np.abs(x_pad))
+    pre_x_pad,post_x_pad = np.maximum(0,-x_pad),np.maximum(0,x_pad)
+    pre_y_pad,post_y_pad = np.maximum(0,-y_pad),np.maximum(0,y_pad)
+    # # Making sure final kernel size-1 is an integer multiplication of ds_factor (Otherwise I get an error later because of padding issues, I'm not sure why...):
+    # global_padding = 2*ds_factor-np.mod(Round_2_Int(pre_y_pad+post_y_pad+kernel_size)-1,2*ds_factor)
+    # pre_y_pad, post_y_pad = pre_y_pad+global_padding/2,post_y_pad+global_padding/2
+    # Making sure I keeo the square kernel shape:
+    # padding_diff = np.round(pre_y_pad)+np.round(post_y_pad)-(np.round(pre_x_pad)+np.round(post_x_pad))
+    def Wisely_Add_Padding_2_Axis(pre_pad,post_pad,padding_diff):
+        # Decide how to split the extra padding needed (in case it's odd), considering the padding quantization error:
+        centering_offset_to_right = np.round(post_pad)-post_pad-(np.round(pre_pad)-pre_pad)
+        pre_pad,post_pad = Round_2_Int(pre_pad), Round_2_Int(post_pad)
+        if centering_offset_to_right>0:
+            post_pad += int(np.ceil(padding_diff/2))
+            pre_pad += int(np.floor(padding_diff/2))
+        else:
+            pre_pad += int(np.ceil(padding_diff/2))
+            post_pad += int(np.floor(padding_diff/2))
+        return pre_pad,post_pad
+    if padding_diff>0:#Pad horizontal axis (x):
+        pre_y_pad,post_y_pad = Round_2_Int(pre_y_pad), Round_2_Int(post_y_pad)
+        pre_x_pad,post_x_pad = Wisely_Add_Padding_2_Axis(pre_x_pad,post_x_pad,padding_diff)
+        # centering_offset_to_right = np.round(post_x_pad)-post_x_pad-(np.round(pre_x_pad)-pre_x_pad)
+        # pre_x_pad,post_x_pad = Round_2_Int(pre_x_pad), Round_2_Int(post_x_pad)
+        # if centering_offset_to_right>0:
+        #     post_x_pad += int(np.ceil(padding_diff/2))
+        #     pre_x_pad += int(np.floor(padding_diff/2))
+        # pre_x_pad,post_x_pad = pre_x_pad+padding_diff/2,post_x_pad+padding_diff/2
+    elif padding_diff<0:#Pad vetical axis (y):
+        pre_x_pad,post_x_pad = Round_2_Int(pre_x_pad), Round_2_Int(post_x_pad)
+        pre_y_pad,post_y_pad = Wisely_Add_Padding_2_Axis(pre_y_pad,post_y_pad,-padding_diff)
+        # pre_y_pad,post_y_pad = pre_y_pad-padding_diff/2,post_y_pad-padding_diff/2
+    kernel = np.pad(kernel,((Round_2_Int(pre_y_pad),Round_2_Int(post_y_pad)),(Round_2_Int(pre_x_pad),Round_2_Int(post_x_pad))),mode='constant')
+    assert kernel.shape[0]==kernel.shape[1],'I caused the kernel to stop being a square...'
+    margins_2_remove = np.argwhere(Return_Filter_Energy_Distribution(kernel)<0.99)[0][0]*np.ones([2]).astype(np.int32)
+    pre_post_index = 0
+    while np.mod(kernel.shape[0]-np.sum(margins_2_remove)-1+np.mod(ds_factor+1,2),ds_factor)!=0:
+        margins_2_remove[pre_post_index] -= 1
+        pre_post_index = np.mod(pre_post_index+1,2)
+    kernel = kernel[margins_2_remove[0]:-margins_2_remove[1],margins_2_remove[0]:-margins_2_remove[1]]
+    return kernel/np.sum(kernel)
+
+def Return_Filter_Energy_Distribution(filter):
+    sqrt_energy =  [np.sqrt(np.sum(filter**2))]+[np.sqrt(np.sum(filter[frame_num:-frame_num,frame_num:-frame_num]**2)) for frame_num in range(1,int(np.ceil(filter.shape[0]/2)))]
+    return sqrt_energy/sqrt_energy[0]

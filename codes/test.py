@@ -20,6 +20,7 @@ from scipy.stats import norm
 import imageio
 import torch
 import subprocess
+from models.modules.loss import Latent_channels_desc_2_num_channels
 
 SPECIFIC_DEBUG = False
 # Parameters:
@@ -58,17 +59,18 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    assert dataset_opt['dataroot_LR'] is None,'Should not rely on saved LR versions here. Downscaling images myself using DTE_imresize in the get_item routine.'
+    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using DTE_imresize in the get_item routine.'
     test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE,kernel=None if opt['test'] is None else opt['test']['kernel'])
     test_loader = create_dataloader(test_set, dataset_opt)
     print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
     test_loaders.append(test_loader)
 
 # Create model
-if 'VGG' in LATENT_DISTRIBUTION:
-    model = create_model(opt,init_Fnet=True)
-else:
-    model = create_model(opt)
+if not opt['test']['kernel']=='estimated': #I don't want to create the model in advance if I'm going to have a per-image kernel.
+    if 'VGG' in LATENT_DISTRIBUTION:
+        model = create_model(opt,init_Fnet=True)
+    else:
+        model = create_model(opt)
 # assert SAVE_IMAGE_COLLAGE or not TEST_LATENT_OUTPUT,'Must use image collage for creating GIF'
 # TEST_LATENT_OUTPUT = TEST_LATENT_OUTPUT if opt['network_G']['latent_input'] else None
 assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_LATENT_OUTPUT,'Use 1 image only for these Z input types'
@@ -79,6 +81,7 @@ for test_loader in test_loaders:
     print('\nTesting [{:s}]...'.format(test_set_name))
     test_start_time = time.time()
     dataset_dir = os.path.join(opt['path']['results_root'], test_set_name+('' if (opt['test'] is None or opt['test']['kernel'] is None) else ('_'+opt['test']['kernel'])))
+    assert not (os.path.isdir(dataset_dir) and len(os.listdir(dataset_dir))>0),'Results folder %s already exists and non-empty'%(dataset_dir)
     util.mkdir(dataset_dir)
     num_val_images = len(test_loader.dataset)
     if SAVE_IMAGE_COLLAGE:
@@ -107,7 +110,11 @@ for test_loader in test_loaders:
             Z_latent = list(np.linspace(start=-LATENT_RANGE,stop=0,num=np.ceil(NUM_SAMPLES/2)))[:-1]
             Z_latent = Z_latent+[0]+[-z for z in Z_latent[::-1]]
         elif LATENT_DISTRIBUTION == 'rand_Uniform':
-            Z_latent = np.random.uniform(low=-LATENT_RANGE,high=LATENT_RANGE,size=[NUM_SAMPLES,1,model.num_latent_channels,1,1]) if opt['network_G']['DTE_arch'] else np.zeros(1)
+            if opt['network_G']['latent_channels'] == 0 or dataset_opt['dataroot_HR'] is None:#Using single Z=0 when there are no latent channels or in the realistic LR images experiment
+                Z_latent = np.zeros(1)
+            else:
+                Z_latent = np.random.uniform(low=-LATENT_RANGE,high=LATENT_RANGE,
+                    size=[NUM_SAMPLES,1,Latent_channels_desc_2_num_channels(opt['network_G']['latent_channels']),1,1])
         elif LATENT_DISTRIBUTION=='Input_Z_Im' or 'Desired_Im' in LATENT_DISTRIBUTION:
             Z_image_names = os.listdir(INPUT_Z_IM_PATH)
             if 'Desired_Im' in LATENT_DISTRIBUTION:
@@ -128,13 +135,22 @@ for test_loader in test_loaders:
     if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS+['UnitCircle','rand_Uniform']:
         Z_latent = sorted(Z_latent)
     image_idx = -1
+    stop_processing_data = False
+    pixels_STDs = []
     for data in tqdm(test_loader):
-        # if opt['network_G']['DTE_arch']:
-        #     # LR version does not necessarily correspond to downsampling kernel in use. I discard it and create it myself:
-        #     data['LR'] = model.netG.module.DownscaleOP(data['HR'].type(torch.cuda.FloatTensor))
-
-        if SPECIFIC_DEBUG and '41033' not in data['LR_path'][0]:
-            continue
+        if stop_processing_data:
+            break
+        if opt['test']['kernel'] == 'estimated':  # Re-creating model for each image, with its specific kernel:
+            if 'VGG' in LATENT_DISTRIBUTION:
+                model = create_model(opt, init_Fnet=True,kernel=data['kernel'])
+            else:
+                model = create_model(opt,kernel=data['kernel'])
+        # if SPECIFIC_DEBUG and '41033' not in data['LR_path'][0]:
+        if SPECIFIC_DEBUG:
+            if '101085' not in data['LR_path'][0]:
+                continue
+            else:
+                stop_processing_data = True
         image_idx += 1
         image_high_freq_versions = []
         for z_sample_num,cur_Z_raw in enumerate(Z_latent):
@@ -187,11 +203,13 @@ for test_loader in test_loaders:
                 else:
                     save_img_path = os.path.join(dataset_dir, img_name + '.png')
                 util.save_img((255*sr_img).astype(np.uint8), save_img_path)
-
+            if opt['test']['kernel'] == 'estimated':#Saving NN-interpolated version of the LR input, for the figures I create:
+                util.save_img(cv2.resize(255*data['LR'][0].data.cpu().numpy().transpose((1,2,0)),dsize=tuple(sr_img.shape[:2][::-1]),interpolation=cv2.INTER_NEAREST)[:,:,::-1],
+                              save_img_path.replace('.png','_LR.png'))
             # calculate PSNR and SSIM
             if need_HR:
                 if z_sample_num==0:
-                    if opt['network_G']['DTE_arch']:
+                    if opt['network_G']['latent_channels']>0:
                         gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
                         img_projected_2_kernel_subspace = model.DTE_net.Project_2_Subspace(gt_img)
                         gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
@@ -200,12 +218,12 @@ for test_loader in test_loaders:
                     else:
                         HR_STD = 0
                 if TEST_LATENT_OUTPUT=='stats':
-                    if opt['network_G']['DTE_arch']:
+                    if opt['network_G']['latent_channels']>0:
                         image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
                     if z_sample_num==(len(Z_latent)-1):
-                        if opt['network_G']['DTE_arch']:
-                            # normalized_pixel_STD = np.mean(np.std(np.stack(image_high_freq_versions),0))/np.std(gt_orthogonal_component,axis=(0,1)).mean()
-                            pixel_STD = 255*np.mean(np.std(np.stack(image_high_freq_versions),0))
+                        if opt['network_G']['latent_channels']>0:
+                            pixels_STDs.append(255*np.std(np.stack(image_high_freq_versions),0))
+                            pixel_STD = np.mean(pixels_STDs[-1])
                         else:
                             # normalized_pixel_STD = 0
                             pixel_STD = 0
@@ -256,6 +274,14 @@ for test_loader in test_loaders:
                 ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
                 print('----Y channel, average PSNR/SSIM----\n\tPSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}\n'\
                     .format(ave_psnr_y, ave_ssim_y))
+    if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0:
+        pixels_STDs = [v.reshape([-1,3]) for v in pixels_STDs]
+        with open(os.path.join(dataset_dir,'stats.txt'),'w') as f:
+            f.write('STD of per-image mean pixels STD: %.4f\n' % (np.std(np.stack([np.mean(v) for v in pixels_STDs]))))
+            pixels_STDs = np.concatenate(pixels_STDs, 0)
+            f.write('Overall mean pixels STD: %.4f\n'%(pixels_STDs.mean()))
+            f.write('Overall STD of pixels STD: %.4f\n' % (np.std(pixels_STDs,0).mean()))
+
     if TEST_LATENT_OUTPUT in ['GIF','video']:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS else ''))
         if model.num_latent_channels>1 and LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:

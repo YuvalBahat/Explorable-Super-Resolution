@@ -154,7 +154,6 @@ class Optimizable_Temperature(torch.nn.Module):
 class SoftHistogramLoss(torch.nn.Module):
     def __init__(self,bins,min,max,desired_hist_image_mask=None,desired_hist_image=None,gray_scale=True,input_im_HR_mask=None,patch_size=1,automatic_temperature=False,
             image_Z=None,temperature=0.05,dictionary_not_histogram=False,no_patch_DC=False,no_patch_STD=False):
-        # OVERLAPPING_PATCHES = False
         self.temperature = temperature#0.05**2#0.006**6
         self.exp_power = 2#6
         self.SQRT_EPSILON = 1e-7
@@ -186,9 +185,7 @@ class SoftHistogramLoss(torch.nn.Module):
         if patch_size>1:
             assert gray_scale and (desired_hist_image is not None),'Not supporting color images or patch histograms for model training loss for now'
             self.num_dims = patch_size**2
-            DESIRED_HIST_PATCHES_OVERLAP = (self.num_dims-4)/self.num_dims
-            # desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size,device=self.device,
-            #     patches_overlap=DESIRED_HIST_PATCHES_OVERLAP).to(self.device) for hist_im_mask in desired_hist_image_mask]
+            DESIRED_HIST_PATCHES_OVERLAP = (self.num_dims-patch_size)/self.num_dims # Patches overlap should correspond to entire patch but one row/column.
             desired_im_patch_extraction_mat = [ReturnPatchExtractionMat(hist_im_mask,patch_size=patch_size,device=self.device,
                 patches_overlap=DESIRED_HIST_PATCHES_OVERLAP) for hist_im_mask in desired_hist_image_mask]
             desired_hist_image = [torch.sparse.mm(desired_im_patch_extraction_mat[i],desired_hist_image[i]).view([self.num_dims,-1,1]) for i in range(len(desired_hist_image))]
@@ -217,7 +214,6 @@ class SoftHistogramLoss(torch.nn.Module):
         if not dictionary_not_histogram:
             self.loss = torch.nn.KLDivLoss()
         if patch_size>1:
-            # self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,patches_overlap=int(OVERLAPPING_PATCHES)).to(self.device)
             self.patch_extraction_mat = ReturnPatchExtractionMat(input_im_HR_mask.data.cpu().numpy(),patch_size=patch_size,device=self.device,patches_overlap=0.5)#.to(self.device)
             self.image_mask = None
         else:
@@ -353,7 +349,7 @@ class SoftHistogramLoss(torch.nn.Module):
                 self.desired_hists_list.append(self.ComputeSoftHistogram(self.desired_hist_image, image_mask=self.desired_hist_image_mask,return_log_hist=False,
                                                               reshape_image=False, compute_hist_normalizer=True))
             else:
-                temperature = self.temperature*(1 if len(cur_images)==1 else 5**(i-1))
+                temperature = self.temperature*(1 if (len(cur_images)==1 or True) else 5**(i-1)) #I used to multiply temperature for multi-scale histogram - I'm not sure why I did that, and I cancel it now since I use multiple images for the random initializations of the z optimization.
             cur_images_hists.append(self.ComputeSoftHistogram(cur_image, self.image_mask, return_log_hist=True,reshape_image=True, compute_hist_normalizer=False,temperature=temperature))
             if self.temperature_optimizer:
                 KLdiv_grad_sizes.append(-1*(torch.autograd.grad(outputs=self.loss(cur_images_hists[-1],self.desired_hists_list[-1]),inputs=self.image_Z,create_graph=True)[0]).norm(p=2))
@@ -371,6 +367,8 @@ def ReturnPatchExtractionMat(mask,patch_size,device,patches_overlap=1,return_non
                                          (patch_size, patch_size)).reshape([-1, patch_size**2])
     patches_indexes = patches_indexes[np.all(patches_indexes > 0, 1), :] - 1
     if patches_overlap<1:
+        # I discard patches by discarding those containing too many pixels that are already covered by a previous patch. Patches are ordered right to left, top to bottom.
+        # For exampe, if the stride corresponds to one row/column, it would be one row. There might be simpler ways to achieve this...
         unique_indexes = list(set(list(patches_indexes.reshape([-1]))))
         min_index = min(unique_indexes)
         index_taken_indicator = np.zeros([max(unique_indexes) - min(unique_indexes)]).astype(np.bool)
@@ -443,6 +441,7 @@ class Optimizable_Z(torch.nn.Module):
             torch.nn.init.xavier_uniform_(self.Z.data,gain=100)
         else:
             torch.nn.init.xavier_uniform_(self.Z.data[1:], gain=100)
+            # self.Z.data[1] = 1 * self.Z.data[3]
 
     def Return_Detached_Z(self):
         return self.forward().detach()

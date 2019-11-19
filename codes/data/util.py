@@ -8,7 +8,7 @@ import torch
 import cv2
 from skimage import io
 
-IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
+IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP','tif']
 
 ####################
 # Files & IO
@@ -22,11 +22,14 @@ def is_image_file(filename):
 def _get_paths_from_images(path):
     assert os.path.isdir(path), '{:s} is not a valid directory'.format(path)
     images = []
-    for dirpath, _, fnames in sorted(os.walk(path)):
-        for fname in sorted(fnames):
-            if is_image_file(fname):
-                img_path = os.path.join(dirpath, fname)
-                images.append(img_path)
+    # Replaced the following code to prevent searching for images in subfolders, and use only images in this parent folder path.
+    # for dirpath, _, fnames in sorted(os.walk(path)):
+    #     for fname in sorted(fnames):
+    dirpath = path
+    for fname in os.listdir(dirpath):
+        if is_image_file(fname):
+            img_path = os.path.join(dirpath, fname)
+            images.append(img_path)
     assert images, '{:s} has no valid image file'.format(path)
     return images
 
