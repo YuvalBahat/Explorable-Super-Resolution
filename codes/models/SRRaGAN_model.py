@@ -38,10 +38,10 @@ class SRRaGANModel(BaseModel):
         self.debug = 'debug' in opt['path']['log']
         self.using_encoder = False  # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
         self.cri_latent = None
+        self.optimalZ_loss_type = None
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
-            if self.is_train and not opt['network_G']['DTE_arch']:#Training ESRGAN but with latent input:
-                self.cri_latent = None
+            if self.is_train and (not opt['network_G']['DTE_arch'] or not isinstance(opt['network_G']['latent_channels'],int)):#Not imposing Z-losses and not in debug mode:
                 self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
                 self.l_latent_w = 0
             elif self.is_train and (train_opt['latent_weight']>0 or self.debug):
@@ -66,7 +66,6 @@ class SRRaGANModel(BaseModel):
             self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=None if opt['test'] is None else opt['test']['kernel'])
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
-                self.optimalZ_loss_type = None
         self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels).to(self.device)  # G
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
@@ -77,7 +76,8 @@ class SRRaGANModel(BaseModel):
                 self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
                 self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
-                self.optimalZ_loss_type = opt['train']['optimalZ_loss_type'] if opt['train']['optimalZ_loss_type'] != 'None' else None
+                if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight']>0 or self.debug):
+                    self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past',None]
             if self.D_verification=='convergence':
@@ -499,8 +499,10 @@ class SRRaGANModel(BaseModel):
                 # l_g_total /= self.grad_accumulation_steps_G
                 # if last_dual_batch_step:
                 l_g_total.backward()
-                self.l_g_pix_grad_step.append(l_g_pix.item())
-                self.l_g_fea_grad_step.append(l_g_fea.item())
+                if self.cri_pix:
+                    self.l_g_pix_grad_step.append(l_g_pix.item())
+                if self.cri_fea:
+                    self.l_g_fea_grad_step.append(l_g_fea.item())
                 self.l_g_gan_grad_step.append(l_g_gan.item())
                 if self.cri_range: #range loss
                     self.l_g_range_grad_step.append(l_g_range.item())
