@@ -762,7 +762,8 @@ class Z_optimizer():
                 for logger_num,logger in enumerate(self.loggers):
                     cur_value = Z_loss[logger_num].item() if Z_loss.dim()>0 else Z_loss.item()
                     logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': cur_value}, dont_print=True)
-            self.latest_Z_loss_values = [val.item() for val in Z_loss]
+            if not self.model_training:
+                self.latest_Z_loss_values = [val.item() for val in Z_loss]
             Z_loss = Z_loss.mean()
             Z_loss.backward()
             self.loss_values.append(Z_loss.item())
