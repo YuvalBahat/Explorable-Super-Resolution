@@ -46,7 +46,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
     assert output_shape is None or np.all(scale_factor*np.array(im.shape[:2])==output_shape[:2])
     padding_size = np.floor(np.array(antialiasing_kernel.shape)/2).astype(np.int32)
     desired_size = scale_factor*np.array(im.shape[:2])
-    assert np.all(desired_size==np.round(desired_size))
+    assert np.all(desired_size==np.round(desired_size)),'Seems like an attempt to downscale with a factor inducing a non-integer image size'
     desired_size = desired_size.astype(np.int32)
     if im.ndim<3:
         im = np.expand_dims(im,-1)

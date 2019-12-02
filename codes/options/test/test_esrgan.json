@@ -42,7 +42,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 0
+    , "DTE_arch": 1
     , "latent_input": "None" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
     , "latent_channels": 0
