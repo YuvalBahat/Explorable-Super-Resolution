@@ -25,9 +25,12 @@ class FilterLoss(nn.Module):
         self.LOCAL_LOSS_4_TEST = False
 
         self.latent_channels = latent_channels
+        self.num_channels = Latent_channels_desc_2_num_channels(self.latent_channels)
+        if self.num_channels==0:
+            print('No control input channels z')
+            return
         self.NOISE_STD = 1e-15#1/255
         self.model_training = constant_Z is None
-        self.num_channels = Latent_channels_desc_2_num_channels(self.latent_channels)
         if latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
             # self.num_channels = 2
             DELTA_SIZE = 7

@@ -39,18 +39,27 @@ class SRRaGANModel(BaseModel):
         self.using_encoder = False  # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
         self.cri_latent = None
         self.optimalZ_loss_type = None
+        self.generator_started_learning = False #I'm adding this flag to avoid wasting time optimizing over the Z space when D is still in its early learning phase. I don't change it when resuming training of a saved model - it would change by itself after 1 generator step.
+        self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
         if self.latent_input is not None:
             # Loss encouraging effect of Z:
-            if self.is_train and (not opt['network_G']['DTE_arch'] or not isinstance(opt['network_G']['latent_channels'],int)):#Not imposing Z-losses and not in debug mode:
-                self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
-                self.l_latent_w = 0
-            elif self.is_train and (train_opt['latent_weight']>0 or self.debug):
-                self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
-                self.num_latent_channels = self.cri_latent.num_channels
+            # if self.is_train and (not opt['network_G']['DTE_arch'] or not isinstance(opt['network_G']['latent_channels'],int)):#Not imposing Z-losses and not in debug mode:
+            if self.is_train:
                 self.l_latent_w = train_opt['latent_weight']
+                if train_opt['latent_weight']>0 or self.debug:
+                    self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
+                    # self.num_latent_channels = self.cri_latent.num_channels
+                    # self.l_latent_w = train_opt['latent_weight']
+                # elif not opt['network_G']['DTE_arch'] or train_opt['latent_weight']==0:
+                #     # self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
+                #     self.l_latent_w = 0
+            # elif self.is_train and (train_opt['latent_weight']>0 or self.debug):
+            #     self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
+            #     # self.num_latent_channels = self.cri_latent.num_channels
+            #     self.l_latent_w = train_opt['latent_weight']
             else:
                 assert isinstance(opt['network_G']['latent_channels'],int)
-                self.num_latent_channels = opt['network_G']['latent_channels']
+                # self.num_latent_channels = opt['network_G']['latent_channels']
         # define networks and load pretrained models
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
@@ -309,7 +318,7 @@ class SRRaGANModel(BaseModel):
             G_grads_retained = False
             for p in self.netG.parameters():
                 p.requires_grad = False
-        actual_dual_step_steps = int(self.optimalZ_loss_type is not None)+1 # 2 if I actually have an optimized-Z step, 1 otherwise
+        actual_dual_step_steps = int(self.optimalZ_loss_type is not None and self.generator_started_learning)+1 # 2 if I actually have an optimized-Z step, 1 otherwise
         for possible_dual_step_num in range(actual_dual_step_steps):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
             first_dual_batch_step = possible_dual_step_num==0
@@ -441,6 +450,7 @@ class SRRaGANModel(BaseModel):
             # if first_dual_batch_step:
             l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
             if self.generator_step:
+                self.generator_started_learning = True
                 for p in self.netD.parameters():
                     p.requires_grad = False
                 for p in self.netG.parameters():

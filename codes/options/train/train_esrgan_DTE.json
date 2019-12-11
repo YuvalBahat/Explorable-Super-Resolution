@@ -1,5 +1,5 @@
 {
-  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_No_StrutTensor_Binding_losses" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "GUI_paper_model_config_from_scratch_NoZloss_noDverification" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -34,8 +34,8 @@
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+//    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+//    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
   , "network_G": {
@@ -80,7 +80,7 @@
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
     , "steps_4_loss_std": 500
-    , "std_4_lr_drop": 1.6 //0.3 //0.03
+    , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
@@ -90,7 +90,7 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "past" //'current', 'convergence', 'past'
+//    , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
@@ -102,7 +102,7 @@
     , "feature_weight": 0 //1
     , "gan_weight": 1 //5e-3
     , "latent_weight": 0 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 100
+    , "optimalZ_loss_weight": 0 //100
     , "range_weight": 5000
 
     //for wgan-gp
@@ -112,7 +112,7 @@
      , "gp_weigth": 10
 
     , "manual_seed": 0
-    , "niter": 51000 //23532 //500100 //5e5
+    , "niter": 510000 //23532 //500100 //5e5
     , "val_freq": 500 //5e3
   }
 
