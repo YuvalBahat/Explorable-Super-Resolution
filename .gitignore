@@ -30,3 +30,10 @@ data_samples/samples_byteimg
 data_samples/samples_colorimg
 data_samples/samples_segprob
 data_samples/samples_result
+/codes/images/
+/pretrained_models/
+/codes/baboon.png
+/codes/barbara_edited.png
+/codes/face.png
+/codes/face_GT_HR.png
+/codes/GT.png
