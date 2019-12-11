@@ -5,7 +5,7 @@ from scipy.signal import gaussian
 from scipy.stats import norm
 
 def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=False, return_upscale_kernel=False,use_zero_padding=False,antialiasing=True, kernel_shift_flag=False):
-    assert kernel is None or any([word in kernel for word in ['cubic','blurry_cubic']]) or isinstance(kernel,np.ndarray)
+    assert kernel is None or any([word in kernel for word in ['cubic','blurry_cubic','reset_2_default']]) or isinstance(kernel,np.ndarray)
     imresize.kernels = getattr(imresize,'kernels',{})
     if scale_factor is None:
         scale_factor = [output_shape[0]/im.shape[0]]
@@ -30,7 +30,9 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
         assert kernel.shape[0]==kernel.shape[1],'Only square kernels supported for now'
         assert np.all(np.mod(kernel.shape+kernel_post_padding+kernel_pre_padding-1,sf_4_kernel)==0),'Convolution-invalidated size should be an integer multiplication of sf_4_kernel'
         imresize.kernels[str(sf_4_kernel)] = kernel
-    elif str(sf_4_kernel) not in imresize.kernels.keys():
+    elif str(sf_4_kernel) not in imresize.kernels.keys() or kernel=='reset_2_default':
+        if str(sf_4_kernel) in imresize.kernels.keys(): #Called by 'reset_2_default'
+            print('Overriding previous kernel with default kernel...')
         kernel_2_use = Cubic_Kernel(sf_4_kernel)
         if kernel is not None and 'blurry_cubic' in kernel:
             sigma = float(kernel[len('blurry_cubic_'):])
@@ -46,7 +48,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
     assert output_shape is None or np.all(scale_factor*np.array(im.shape[:2])==output_shape[:2])
     padding_size = np.floor(np.array(antialiasing_kernel.shape)/2).astype(np.int32)
     desired_size = scale_factor*np.array(im.shape[:2])
-    assert np.all(desired_size==np.round(desired_size))
+    assert np.all(desired_size==np.round(desired_size)),'Seems like an attempt to downscale with a factor inducing a non-integer image size'
     desired_size = desired_size.astype(np.int32)
     if im.ndim<3:
         im = np.expand_dims(im,-1)

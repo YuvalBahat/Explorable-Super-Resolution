@@ -64,7 +64,7 @@ class SRRaGANModel(BaseModel):
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
         self.step = 0
-        if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_Subspace()
+        if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_ortho_2_NS()
             DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
             DTE_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
             DTE_conf.input_range = np.array(opt['range'])

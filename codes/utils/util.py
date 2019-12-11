@@ -362,6 +362,7 @@ class SoftHistogramLoss(torch.nn.Module):
 
 
 def ReturnPatchExtractionMat(mask,patch_size,device,patches_overlap=1,return_non_covered=False):
+    RANDOM_PATCHES_SELECTION = False #If true, patches are dropped in a random order, satisfying the maximal overlap constraint, rather than moving columns first ,than rows. This typically discards of much more patches.
     mask = binary_opening(mask, np.ones([patch_size, patch_size]).astype(np.bool))
     patches_indexes = extract_patches_2d(np.multiply(mask, 1 + np.arange(mask.size).reshape(mask.shape)),
                                          (patch_size, patch_size)).reshape([-1, patch_size**2])
@@ -373,11 +374,15 @@ def ReturnPatchExtractionMat(mask,patch_size,device,patches_overlap=1,return_non
         min_index = min(unique_indexes)
         index_taken_indicator = np.zeros([max(unique_indexes) - min(unique_indexes)]).astype(np.bool)
         valid_patches = np.ones([patches_indexes.shape[0]]).astype(np.bool)
-        for patch_num, patch in enumerate(patches_indexes):
-            if (patches_overlap==0 and np.any(index_taken_indicator[patch - min_index - 1])) or np.mean(index_taken_indicator[patch - min_index - 1])>patches_overlap:
+        randomized_patches_indexes = np.random.permutation(patches_indexes.shape[0])
+        oredered_patches_indexes = randomized_patches_indexes if RANDOM_PATCHES_SELECTION else np.arange(patches_indexes.shape[0])
+        for patch_num in oredered_patches_indexes:
+        # for patch_num, patch in enumerate(patches_indexes):
+            if (patches_overlap==0 and np.any(index_taken_indicator[patches_indexes[patch_num,:] - min_index - 1]))\
+                    or np.mean(index_taken_indicator[patches_indexes[patch_num,:] - min_index - 1])>patches_overlap:
                 valid_patches[patch_num] = False
                 continue
-            index_taken_indicator[patch - min_index - 1] = True
+            index_taken_indicator[patches_indexes[patch_num,:] - min_index - 1] = True
         patches_indexes = patches_indexes[valid_patches]
         print('%.3f of desired pixels are covered by assigned patches'%(index_taken_indicator[unique_indexes-min_index-1].mean()))
         if return_non_covered:

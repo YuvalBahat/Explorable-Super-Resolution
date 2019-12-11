@@ -141,10 +141,11 @@ for test_loader in test_loaders:
         if stop_processing_data:
             break
         if opt['test']['kernel'] == 'estimated':  # Re-creating model for each image, with its specific kernel:
+            kernel_2_use = np.squeeze(data['kernel'].data.cpu().numpy())
             if 'VGG' in LATENT_DISTRIBUTION:
-                model = create_model(opt, init_Fnet=True,kernel=data['kernel'])
+                model = create_model(opt, init_Fnet=True,kernel=kernel_2_use)
             else:
-                model = create_model(opt,kernel=data['kernel'])
+                model = create_model(opt,kernel=kernel_2_use)
         # if SPECIFIC_DEBUG and '41033' not in data['LR_path'][0]:
         if SPECIFIC_DEBUG:
             if '101085' not in data['LR_path'][0]:
@@ -211,7 +212,7 @@ for test_loader in test_loaders:
                 if z_sample_num==0:
                     if opt['network_G']['latent_channels']>0:
                         gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
-                        img_projected_2_kernel_subspace = model.DTE_net.Project_2_Subspace(gt_img)
+                        img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
                         gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
                         HR_STD = 255*np.std(gt_orthogonal_component,axis=(0,1)).mean()
                         gt_img *= 255.
