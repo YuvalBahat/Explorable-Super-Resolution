@@ -23,12 +23,11 @@ class DTEnet:
         self.conf = conf
         self.ds_factor = np.array(conf.scale_factor,dtype=np.int32)
         assert np.round(self.ds_factor)==self.ds_factor,'Currently only supporting integer scale factors'
-        assert upscale_kernel is None or isinstance(upscale_kernel,str) or isinstance(upscale_kernel,torch.Tensor),'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
-        if isinstance(upscale_kernel, torch.Tensor):
-            upscale_kernel = np.squeeze(upscale_kernel.data.cpu().numpy())
+        assert upscale_kernel is None or isinstance(upscale_kernel,str) or isinstance(upscale_kernel,np.ndarray),'To support given kernels, change the Return_Invalid_Margin_Size_in_LR function and make sure everything else works'
+        # if isinstance(upscale_kernel, torch.Tensor):
+        #     upscale_kernel = np.squeeze(upscale_kernel.data.cpu().numpy())
         self.ds_kernel = Return_kernel(self.ds_factor,upscale_kernel=upscale_kernel)
         self.ds_kernel_invalidity_half_size_LR = self.Return_Invalid_Margin_Size_in_LR('ds_kernel',self.conf.filter_pertubation_limit)
-        # self.ds_kernel_invalidity_half_size = np.argwhere(Return_Filter_Energy_Distribution(self.ds_kernel)[::-1]>=self.conf.filter_pertubation_limit)[0][0]
         self.compute_inv_hTh()
         self.invalidity_margins_LR = 2* self.ds_kernel_invalidity_half_size_LR + self.inv_hTh_invalidity_half_size
         self.invalidity_margins_HR = self.ds_factor * self.invalidity_margins_LR
@@ -43,22 +42,18 @@ class DTEnet:
         output_im /= output_im[int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)]
         output_im[output_im<=0] = max_allowed_perturbation/2 # Negative output_im are hella invalid... (and would not be identified as such without this line since I'm taking their log).
         invalidity_mask = np.exp(-np.abs(np.log(output_im)))<max_allowed_perturbation
-        # Changed the way I find invalid region. Instead of looking at len() of invlid mask pixels, I look at the index of the deepest one, to accomodate cases of non-conitinous invalidity:
-        # margin_sizes = [len(np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])),
-        #                 len(np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)]))]
+        # Finding invalid shoulder size, by searching for the index of the deepest invalid pixel, to accomodate cases of non-conitinous invalidity:
         margin_sizes = [np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])[-1][0]+1,
                         np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)])[-1][0]+1]
-        # assert np.abs(margin_sizes[0]-margin_sizes[1])<=1,'Different margins for each axis. Currently not supporting non-isotropic filters'
         margin_sizes = np.max(margin_sizes)*np.ones([2]).astype(margin_sizes[0].dtype)
         return np.max(margin_sizes)
 
     def Pad_LR_Batch(self,batch,num_recursion=1):
-        # margin_size = 2*self.ds_kernel_invalidity_half_size_LR+self.inv_hTh_invalidity_half_size
         for i in range(num_recursion):
             batch = 1.0*np.pad(batch, pad_width=((0, 0), (self.invalidity_margins_LR, self.invalidity_margins_LR),(self.invalidity_margins_LR, self.invalidity_margins_LR), (0, 0)), mode='edge')
         return batch
+
     def Unpad_HR_Batch(self,batch,num_recursion=1):
-        # margin_size = self.ds_factor*(2*self.ds_kernel_invalidity_half_size_LR+self.inv_hTh_invalidity_half_size)
         margins_2_remove = (self.ds_factor**(num_recursion))*self.invalidity_margins_LR*num_recursion
         return batch[:,margins_2_remove:-margins_2_remove,margins_2_remove:-margins_2_remove, :]
 
@@ -70,7 +65,6 @@ class DTEnet:
 
     def WrapArchitecture_PyTorch(self,generated_image=None,training_patch_size=None,only_padders=False):
         assert pytorch_loaded,'Failed to load PyTorch - Necessary for this function of DTE'
-        # self.DTEnet = DTEnet.DTEnet(DTEnet.Get_DTE_Conf(self.args.scale[0]))
         invalidity_margins_4_test_LR = self.invalidity_margins_LR
         invalidity_margins_4_test_HR = self.ds_factor*invalidity_margins_4_test_LR
         self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
@@ -112,14 +106,11 @@ class DTEnet:
             HR_padding_OP = Create_Tensor_Pad_OP(HR_padding_size)
             def Return_Padded_Input():
                 return LR_padding_OP(unpadded_input_t)
-                # return tf.pad(unpadded_input_t,paddings=tf.constant([[0,0],[LR_padding_size,LR_padding_size],[LR_padding_size,LR_padding_size],[0,0]]),
-                #               mode='SYMMETRIC')
             def Return_Unpadded_Input():
                 return unpadded_input_t
             self.LR_input_t = tf.cond(self.pre_pad_input,true_fn=Return_Padded_Input,false_fn=Return_Unpadded_Input)
-            # self.LR_input_t = unpadded_input_t
 
-            self.projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP((self.LR_input_t)))
+            self.ortho_2_NS_HR_component = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP((self.LR_input_t)))
             if generated_image_t is None:
                 print('Creating an HR image generator network...')
                 self.create_im_generator()
@@ -133,17 +124,16 @@ class DTEnet:
                     return self.generated_im
                 self.generated_im = tf.cond(self.pre_pad_input,true_fn=Return_Padded_Generated_Im,false_fn=Return_Unpadded_Generated_Im)
 
-            self.projected_generated_im = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(self.generated_im)))
-            self.projected_2_ortho_generated_im = self.generated_im-self.projected_generated_im
+            self.ortho_2_NS_generated_component = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(self.generated_im)))
+            self.NS_HR_component = self.generated_im-self.ortho_2_NS_generated_component
             if PAD_GENRATED_TOO:
-                output = tf.add(self.projected_upscaled_input,self.projected_2_ortho_generated_im,name='DTE_add_subspaces')
+                output = tf.add(self.ortho_2_NS_HR_component,self.NS_HR_component,name='DTE_add_subspaces')
             else:
-                output = self.projected_upscaled_input
+                output = self.ortho_2_NS_HR_component
             # Remove image padding for inference time or leaving as-is for training:
             def Return_Output():
                 return output
             def Return_Cropped_Output():
-                # margins_2_crop = tf.cast((tf.shape(output)-self.ds_factor*tf.shape(unpadded_input_t))/2,dtype=tf.int32)
                 margins_2_crop = tf.cast((tf.shape(output)-self.ds_factor*tf.shape(unpadded_input_t))/2,dtype=tf.int32)
                 return tf.slice(output,begin=tf.stack([0,margins_2_crop[1],margins_2_crop[2],0]),
                                 size=tf.stack([-1,self.ds_factor*tf.shape(unpadded_input_t)[1],self.ds_factor*tf.shape(unpadded_input_t)[2],-1]))
@@ -151,17 +141,17 @@ class DTEnet:
             if PAD_GENRATED_TOO:
                 return self.output_t
             else:
-                return tf.add(self.output_t,self.projected_2_ortho_generated_im,name='DTE_add_subspaces')
+                return tf.add(self.output_t,self.NS_HR_component,name='DTE_add_subspaces')
 
     def Enforce_DT_on_Image_Pair(self,LR_source,HR_input):
         same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         LR_scale_dimensions = [self.ds_factor*LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         assert np.all(np.logical_or(same_scale_dimensions,LR_scale_dimensions))
-        LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else self.Project_2_Subspace(LR_source)
-        HR_projected_2_h_subspace = self.Project_2_Subspace(HR_input)
+        LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else self.Project_2_ortho_2_NS(LR_source)
+        HR_projected_2_h_subspace = self.Project_2_ortho_2_NS(HR_input)
         return  HR_input-HR_projected_2_h_subspace+LR_source
 
-    def Project_2_Subspace(self,HR_input):
+    def Project_2_ortho_2_NS(self,HR_input):
         return self.DT_Satisfying_Upscale(imresize(HR_input,scale_factor=[1/self.ds_factor]))
 
     def Supplement_Pseudo_DTE(self,input_t):
@@ -284,7 +274,6 @@ class DTE_PyTorch(nn.Module):
         self.return_2_components = 'decomposed_output' in self.conf.__dict__ and self.conf.decomposed_output
 
     def forward(self, x):
-        # assert not (self.pre_pad and self.return_2_components),'Unsupported'
         return_2_components = self.return_2_components and not self.pre_pad
         if self.pre_pad:
             LR_Z = x.size(1) - 3 == self.generated_image_model.num_latent_channels
@@ -299,14 +288,12 @@ class DTE_PyTorch(nn.Module):
         generated_image = self.generated_image_model(x)
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
-        projected_upscaled_input = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
-        projected_generated_im = self.DownscaleOP(generated_image)
-        projected_generated_im = self.Conv_LR_with_Inv_hTh_OP(projected_generated_im)
-        projected_generated_im = self.Upscale_OP(projected_generated_im)
-        projected_2_ortho_generated_im = generated_image - projected_generated_im
+        ortho_2_NS_HR_component = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
+        ortho_2_NS_generated = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(generated_image)))
+        NS_HR_component = generated_image - ortho_2_NS_generated
         if self.conf.sigmoid_range_limit:
-            projected_2_ortho_generated_im = torch.tanh(projected_2_ortho_generated_im)*(self.conf.input_range[1]-self.conf.input_range[0])
-        output = [projected_upscaled_input,projected_2_ortho_generated_im] if return_2_components else projected_upscaled_input+projected_2_ortho_generated_im
+            NS_HR_component = torch.tanh(NS_HR_component)*(self.conf.input_range[1]-self.conf.input_range[0])
+        output = [ortho_2_NS_HR_component,NS_HR_component] if return_2_components else ortho_2_NS_HR_component+NS_HR_component
         return self.HR_unpadder(output) if self.pre_pad else output
 
     def train(self,mode=True):
@@ -392,8 +379,8 @@ def Get_DTE_Conf(sf):
         filter_pertubation_limit = 0.999
         sigmoid_range_limit = False
         lower_magnitude_bound = 0.01 # Lower bound on hTh filter magnitude in Fourier domain
-        # input_range = np.array([0.,1.])
     return conf
+
 def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
     if all([('generated_image_model' in key or 'Filter' in key) for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch
         modified_names_dict = collections.OrderedDict()
