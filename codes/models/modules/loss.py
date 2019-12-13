@@ -22,48 +22,43 @@ def Latent_channels_desc_2_num_channels(latent_channels_desc):
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None):
         super(FilterLoss,self).__init__()
-        self.LOCAL_LOSS_4_TEST = False
-
         self.latent_channels = latent_channels
         self.num_channels = Latent_channels_desc_2_num_channels(self.latent_channels)
         if self.num_channels==0:
             print('No control input channels z')
             return
         self.NOISE_STD = 1e-15#1/255
-        self.model_training = constant_Z is None
-        if latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
-            # self.num_channels = 2
-            DELTA_SIZE = 7
-            delta_im = np.zeros([DELTA_SIZE,DELTA_SIZE]); delta_im[DELTA_SIZE//2,DELTA_SIZE//2] = 1;
-            dir_filter = cv2.Sobel(delta_im,ddepth=cv2.CV_64F,dx=1,dy=0)
-            filter_margins = np.argwhere(np.any(dir_filter!=0,0))[0][0]
-            dir_filter = dir_filter[filter_margins:-filter_margins,filter_margins:-filter_margins]
-            self.filter = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=dir_filter.shape,bias=False,groups=3)
-            self.filter.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(dir_filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
-            self.filter.filter_layer = True
-        # elif latent_channels=='STD_directional':#Channel 1-2 control the energy of a specific directional derivative, channel 0 controls the remainder of energy (all other directions)
-        #     self.num_channels = 3
-        elif 'structure_tensor' in self.latent_channels:
-            # self.num_channels = 3
-            self.NOISE_STD = 1e-7
-            gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
-            self.filters = []
-            for filter in gradient_filters:
-                filter = np.array(filter)
-                conv_layer = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
-                conv_layer.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
-                conv_layer.filter_layer = True
-                self.filters.append(conv_layer)
-        else:
-            raise Exception('Unknown latent channel setting %s' % (latent_channels))
+        # self.model_training = constant_Z is None
+        self.model_training = isinstance(self.latent_channels,str)
         if self.model_training:
-            self.collected_ratios = [deque(maxlen=10000) for i in range(self.num_channels)]
-        else:
-            self.HR_mask,self.LR_mask = masks['HR'],masks['LR']
-            if self.LOCAL_LOSS_4_TEST:
-                self.constant_Z = torch.nn.functional.interpolate(input=constant_Z,scale_factor=int(self.HR_mask.size(0)/self.LR_mask.size(0)),mode='bilinear',align_corners=False).to(self.LR_mask.device)[:,:,:-1,:-1]
+            if self.latent_channels == 'STD_1dir':#Channel 0 controls STD, channel 1 controls horizontal Sobel
+                DELTA_SIZE = 7
+                delta_im = np.zeros([DELTA_SIZE,DELTA_SIZE]); delta_im[DELTA_SIZE//2,DELTA_SIZE//2] = 1;
+                dir_filter = cv2.Sobel(delta_im,ddepth=cv2.CV_64F,dx=1,dy=0)
+                filter_margins = np.argwhere(np.any(dir_filter!=0,0))[0][0]
+                dir_filter = dir_filter[filter_margins:-filter_margins,filter_margins:-filter_margins]
+                self.filter = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=dir_filter.shape,bias=False,groups=3)
+                self.filter.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(dir_filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+                self.filter.filter_layer = True
+            elif 'structure_tensor' in self.latent_channels:
+                self.NOISE_STD = 1e-7
+                gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
+                self.filters = []
+                for filter in gradient_filters:
+                    filter = np.array(filter)
+                    conv_layer = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
+                    conv_layer.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+                    conv_layer.filter_layer = True
+                    self.filters.append(conv_layer)
             else:
-                self.constant_Z = (constant_Z.to(self.LR_mask.device)*self.LR_mask).sum(dim=(2,3))/self.LR_mask.sum()
+                raise Exception('Unknown latent channel setting %s' % (self.latent_channels))
+
+            # if self.model_training:
+            self.collected_ratios = [deque(maxlen=10000) for i in range(self.num_channels)]
+        # else:
+        if constant_Z is not None:
+            self.HR_mask,self.LR_mask = masks['HR'],masks['LR']
+            self.constant_Z = (constant_Z.to(self.LR_mask.device)*self.LR_mask).sum(dim=(2,3))/self.LR_mask.sum()
             reference_derivatives = {}
             for ref_image in reference_images.keys():
                 reference_derivatives[ref_image] = []
@@ -71,21 +66,10 @@ class FilterLoss(nn.Module):
                     reference_derivatives[ref_image].append(filter(reference_images[ref_image]))
                 reference_derivatives[ref_image] = torch.stack(reference_derivatives[ref_image], 0)
                 reference_derivatives[ref_image] = torch.cat([reference_derivatives[ref_image]**2,torch.prod(reference_derivatives[ref_image],dim=0,keepdim=True)],0)
-                if self.LOCAL_LOSS_4_TEST:
-                    reference_derivatives[ref_image] = reference_derivatives[ref_image].mean(dim=2)
-                else:
-                    reference_derivatives[ref_image] = (reference_derivatives[ref_image].mean(dim=2)*self.HR_mask[:-1,:-1]).sum(dim=(2,3))/self.HR_mask[:-1,:-1].sum()
-            if self.LOCAL_LOSS_4_TEST:
-                reference_derivatives['tensor_normalizer'] = torch.sqrt(torch.prod(torch.stack([torch.mean(
-                    torch.cat([reference_derivatives[ref_image][i] for ref_image in reference_images.keys()]),dim=0) for i in
-                                                                                                range(2)]),dim=0))
-            else:
-                reference_derivatives['tensor_normalizer'] = torch.sqrt(torch.prod(torch.stack([torch.mean(torch.cat([reference_derivatives[ref_image][i] for ref_image in reference_images.keys()])) for i in range(2)]))).item()
+                reference_derivatives[ref_image] = (reference_derivatives[ref_image].mean(dim=2)*self.HR_mask[:-1,:-1]).sum(dim=(2,3))/self.HR_mask[:-1,:-1].sum()
+            reference_derivatives['tensor_normalizer'] = torch.sqrt(torch.prod(torch.stack([torch.mean(torch.cat([reference_derivatives[ref_image][i] for ref_image in reference_images.keys()])) for i in range(2)]))).item()
             for ref_image in reference_images.keys():
-                if self.LOCAL_LOSS_4_TEST:
-                    reference_derivatives[ref_image] = [(val / (reference_derivatives['tensor_normalizer'] + self.NOISE_STD)) for val in reference_derivatives[ref_image]]
-                else:
-                    reference_derivatives[ref_image] = [(val/(reference_derivatives['tensor_normalizer']+self.NOISE_STD)).item() for val in reference_derivatives[ref_image]]
+                reference_derivatives[ref_image] = [(val/(reference_derivatives['tensor_normalizer']+self.NOISE_STD)).item() for val in reference_derivatives[ref_image]]
             self.reference_derivatives = reference_derivatives
 
     def forward(self, data):
@@ -153,10 +137,7 @@ class FilterLoss(nn.Module):
             if self.model_training:
                 derivatives_SR = derivatives_SR.mean(dim=(2, 3,4))  # In ALL configurations, I also average all values before taking ratios - should think whether it might be a problem.
             else:
-                if self.LOCAL_LOSS_4_TEST:
-                    derivatives_SR = derivatives_SR.mean(dim=2)
-                else:
-                    derivatives_SR = (derivatives_SR.mean(dim=2)*self.HR_mask[:-1,:-1]).sum(dim=(2,3))/self.HR_mask[:-1,:-1].sum()
+                derivatives_SR = (derivatives_SR.mean(dim=2)*self.HR_mask[:-1,:-1]).sum(dim=(2,3))/self.HR_mask[:-1,:-1].sum()
             if self.latent_channels == 'SVD_structure_tensor':
                 lambda0_SR,lambda1_SR,theta_SR = SVD_Symmetric_2x2(*derivatives_SR)
                 images_validity_4_backprop = ValidStructTensorIndicator(*derivatives_SR)
@@ -198,11 +179,7 @@ class FilterLoss(nn.Module):
                             measured_values[i] = measured_values[i]/np.pi
                             normalized_Z.append((torch.fmod(data['SVD']['theta'],torch.tensor(np.pi))-np.pi/2)/np.pi)
                 else:
-                    if self.LOCAL_LOSS_4_TEST:
-                        normalized_Z.append((cur_Z[:, i]) / 2 * (self.reference_derivatives['max'][i] - self.reference_derivatives['min'][i]) +
-                            torch.mean(torch.cat([self.reference_derivatives['max'][i], self.reference_derivatives['min'][i]],0),0,keepdim=True))
-                    else:
-                        normalized_Z.append((cur_Z[:, i]) / 2 * (self.reference_derivatives['max'][i] - self.reference_derivatives['min'][i]) + np.mean([self.reference_derivatives['max'][i],self.reference_derivatives['min'][i]]))
+                    normalized_Z.append((cur_Z[:, i]) / 2 * (self.reference_derivatives['max'][i] - self.reference_derivatives['min'][i]) + np.mean([self.reference_derivatives['max'][i],self.reference_derivatives['min'][i]]))
 
             if self.latent_channels in ['structure_tensor','SVDinNormedOut_structure_tensor']:
                 measured_values = torch.stack(measured_values,1)
