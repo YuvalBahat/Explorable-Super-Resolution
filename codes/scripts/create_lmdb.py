@@ -10,9 +10,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
 # configurations
-dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/data/Databases'
-img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_bicLRx4/*')  # glob matching pattern
-lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb')  # must end with .lmdb
+dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets'
+img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_GrayScale/*')  # glob matching pattern
+lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_GrayScale.lmdb')  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
 dataset = []

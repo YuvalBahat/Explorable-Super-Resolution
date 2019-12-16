@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.init as init
 import torchvision
 from . import block as B
 from . import spectral_norm as SN
@@ -44,6 +45,43 @@ class SRResNet(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
+
+class DnCNN(nn.Module):
+    def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',latent_input=None,num_latent_channels=None):
+        super(DnCNN, self).__init__()
+        assert in_nc==64 and out_nc==64,'Currently only supporting 64 DCT channels'
+        assert act_type=='leakyrelu'
+        assert norm_type=='batch'
+        assert latent_input is None and num_latent_channels is None
+
+        padding = kernel_size//2
+        layers = []
+
+        layers.append(nn.Conv2d(in_channels=in_nc, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
+        layers.append(nn.ReLU(inplace=True))
+        for _ in range(depth - 2):
+            layers.append(nn.Conv2d(in_channels=n_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
+            layers.append(nn.LeakyReLU(inplace=True))
+        layers.append(nn.Conv2d(in_channels=n_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        layers.append(nn.Sigmoid())
+        self.dncnn = nn.Sequential(*layers)
+        # self._initialize_weights()
+
+    def forward(self, x):
+        quantization_err_estimation = self.dncnn(x)-0.5
+        return x+quantization_err_estimation
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.orthogonal_(m.weight)
+                print('init weight')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
 
 
 class RRDBNet(nn.Module):

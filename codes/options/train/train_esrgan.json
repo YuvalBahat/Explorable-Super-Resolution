@@ -31,7 +31,7 @@
   }
 
   , "path": {
-    "root": "/home/tiras/ybahat/SRGAN"
+    "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
     , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
@@ -41,9 +41,9 @@
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "DTE_arch": 0
-    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
-    , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": 0 //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "sigmoid_range_limit": 0
     , "norm_type": null
     , "mode": "CNA"
@@ -64,7 +64,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

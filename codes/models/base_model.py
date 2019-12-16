@@ -134,7 +134,7 @@ class BaseModel():
                     current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),\
                                                               loaded_state_dict[key].cuda()],1)
                 self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
-            elif self.DTE_net is not None and self.DTE_arch and any([DTE_op in key for DTE_op in self.DTE_net.OP_names]):
+            elif 'DTE_net' in self.__dict__ and self.DTE_arch and any([DTE_op in key for DTE_op in self.DTE_net.OP_names]):
                 continue # Not loading DTE module weights
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]

@@ -24,8 +24,6 @@ def Assign_GPU():
     return GPU_2_use
 
 
-# RELATIVE_PATH_FIELDS_DATABASE = [['datasets','train','dataroot_HR'],['datasets','train','dataroot_LR'],['datasets','val','dataroot_HR'],['datasets','val','dataroot_LR']]
-
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
@@ -52,14 +50,15 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     # if running_on_Technion:
     #     opt['datasets']['train']['n_workers'] = 0
     # datasets
+    non_degraded_images_fieldname = 'dataroot_Uncomp' if name=='JPEG' else 'dataroot_HR'
     for phase, dataset in opt['datasets'].items():
         phase = phase.split('_')[0]
         dataset['phase'] = phase
         dataset['scale'] = scale
         is_lmdb = False
-        if 'dataroot_HR' in dataset and dataset['dataroot_HR'] is not None:
-            dataset['dataroot_HR'] = os.path.expanduser(os.path.join(dataset_root_path,dataset['dataroot_HR']))
-            if dataset['dataroot_HR'].endswith('lmdb'):
+        if non_degraded_images_fieldname in dataset and dataset[non_degraded_images_fieldname] is not None:
+            dataset[non_degraded_images_fieldname] = os.path.expanduser(os.path.join(dataset_root_path,dataset[non_degraded_images_fieldname]))
+            if dataset[non_degraded_images_fieldname].endswith('lmdb'):
                 is_lmdb = True
         if 'dataroot_HR_bg' in dataset and dataset['dataroot_HR_bg'] is not None:
             dataset['dataroot_HR_bg'] = os.path.expanduser(os.path.join(dataset_root_path,dataset['dataroot_HR_bg']))
@@ -80,10 +79,12 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     if 'tiras' in os.getcwd():
         opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
     if name is not None:
-        opt['name'] = name
+        opt['name'] = os.path.join(name,opt['name'])
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
     opt['path']['models'] = os.path.join(experiments_root, 'models')
+    if opt['network_G']['latent_input']=='None':
+        opt['network_G']['latent_channels'] = 0
     if is_train:
         opt['path']['log'] = experiments_root
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
@@ -99,17 +100,11 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         assert opt['datasets']['train']['batch_size_4_grads_D']>=opt['datasets']['train']['batch_size_4_grads_G'],'Currently not supporting G_batch>D_batch'
         opt['train']['grad_accumulation_steps_G'] = opt['datasets']['train']['batch_size_4_grads_G']//opt['datasets']['train']['batch_size']
         opt['train']['grad_accumulation_steps_D'] = opt['datasets']['train']['batch_size_4_grads_D']//opt['datasets']['train']['batch_size']
-        assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
+        # assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
         if opt['network_D']['which_model_D']=='PatchGAN':
             assert opt['train']['gan_type'] in ['lsgan','wgan-gp']
         else:
             assert (opt['train']['gan_type']!='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
-        # change some options for debug mode
-        # if 'debug' in opt['name']:
-        #     opt['train']['val_freq'] = 8
-        #     opt['logger']['print_freq'] = 2
-        #     opt['logger']['save_checkpoint_freq'] = 8
-        #     opt['train']['lr_decay_iter'] = 10
     else:  # test
         results_root = os.path.join(opt['path']['root'], 'results', opt['name'])
         opt['path']['results_root'] = results_root
@@ -117,9 +112,6 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
 
     # network
     opt['network_G']['scale'] = scale
-    # if not opt['network_G']['DTE_arch']:
-    #     opt['network_G']['latent_input'] = 'None'
-    #     opt['network_G']['latent_channels'] = 0
 
     return opt
 

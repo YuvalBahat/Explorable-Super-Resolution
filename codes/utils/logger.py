@@ -46,7 +46,7 @@ class Logger(object):
                 logger_dir_num = int(existing_dirs[-1])+1
             self.tb_logger = TensorboardLogger(os.path.join(tb_logger_dir,str(logger_dir_num)+tb_logger_suffix))
 
-    def print_format_results(self, mode, rlt,dont_print=False):
+    def print_format_results(self, mode, rlt,dont_print=False,keys_ignore_list=[]):
         epoch = rlt.pop('epoch')
         iters = rlt.pop('iters')
         time = rlt.pop('time')
@@ -59,7 +59,7 @@ class Logger(object):
             message = '<epoch:{:3d}, iter:{:8,d}, time:{:.2f}> '.format(epoch, iters, time)
 
         for label, value in rlt.items():
-            if label in ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD','l_g_pix']:
+            if label in keys_ignore_list:
                 continue
             if mode == 'train':
                 message += '{:s}: {:.2e} '.format(label, value)
