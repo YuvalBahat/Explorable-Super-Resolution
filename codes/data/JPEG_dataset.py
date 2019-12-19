@@ -48,9 +48,6 @@ class JpegDataset(data.Dataset):
     def __getitem__(self, index):
         scale = self.opt['scale']
         Uncomp_size = self.opt['patch_size']
-        QF = self.quality_factors[np.random.choice(len(self.quality_factors),p=self.QF_probs)]
-        if isinstance(QF,list):
-            raise Exception('QF range is unsupported yet')
 
         # get Uncomp image
         Uncomp_path = self.paths_Uncomp[index]
@@ -64,6 +61,10 @@ class JpegDataset(data.Dataset):
 
         # randomly scale during training
         if self.opt['phase'] == 'train':
+            QF = self.quality_factors[np.random.choice(len(self.quality_factors), p=self.QF_probs)]
+            if isinstance(QF, list):
+                raise Exception('QF range is unsupported yet')
+
             random_scale = random.choice(self.random_scale_list)
             H_s, W_s, _ = img_Uncomp.shape
 
@@ -79,6 +80,8 @@ class JpegDataset(data.Dataset):
             if img_Uncomp.ndim == 2:
                 img_Uncomp = np.expand_dims(img_Uncomp,-1)
                 # img_Uncomp = cv2.cvtColor(img_Uncomp, cv2.COLOR_GRAY2BGR)
+        else:
+            QF = self.quality_factors[int(np.round(index/len(self)*len(self.quality_factors)))]
 
         H, W, _ = img_Uncomp.shape
         # # using DTE imresize:
