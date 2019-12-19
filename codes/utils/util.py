@@ -43,9 +43,9 @@ def mkdir_and_rename(path):
         print('Path already exists. Changing to [{:s}]'.format(renamed_path))
     os.makedirs(path)
 
-def Assign_GPU(max_GPUs=1):
+def Assign_GPU(max_GPUs=1,**kwargs):
     excluded_IDs = []
-    GPU_2_use = GPUtil.getAvailable(order='memory',excludeID=excluded_IDs,limit=max_GPUs if max_GPUs is not None else 100)
+    GPU_2_use = GPUtil.getAvailable(order='memory',excludeID=excluded_IDs,limit=max_GPUs if max_GPUs is not None else 100,**kwargs)
     if len(GPU_2_use)==0:
         print('No available GPUs. waiting...')
         while len(GPU_2_use)==0:

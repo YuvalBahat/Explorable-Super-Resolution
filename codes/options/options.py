@@ -78,8 +78,10 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             opt['path'][key] = os.path.expanduser(path)
     if 'tiras' in os.getcwd():
         opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
-    if name is not None:
-        opt['name'] = os.path.join(name,opt['name'])
+    if name=='JPEG':
+        opt['name'] = os.path.join('JPEG', opt['name'])
+    elif name is not None:
+        opt['name'] = os.path.join(name)
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
     opt['path']['models'] = os.path.join(experiments_root, 'models')

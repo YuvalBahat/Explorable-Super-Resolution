@@ -20,8 +20,18 @@ class JpegDataset(data.Dataset):
         self.opt = opt
         self.paths_Uncomp = None
         self.Uncomp_env = None
+        self.quality_factors = opt['jpeg_quality_factor']
+        if not isinstance(self.quality_factors,list):
+            self.quality_factors = [self.quality_factors]
+        self.QF_probs = opt['QF_probs']
+        if self.QF_probs is None:
+            self.QF_probs = np.ones([len(self.quality_factors)])
+        else:
+            assert len(self.QF_probs)==len(self.quality_factors)
+        self.QF_probs /= self.QF_probs.sum()
+
         if self.opt['phase'] == 'train':
-            assert not self.opt['Uncomp_size']%8,'Training for JPEG compression artifacts removal - Training images should have an integer number of 8x8 blocks.'
+            assert not self.opt['patch_size']%8,'Training for JPEG compression artifacts removal - Training images should have an integer number of 8x8 blocks.'
         # read image list from subset list txt
         if opt['subset_file'] is not None and opt['phase'] == 'train':
             with open(opt['subset_file']) as f:
@@ -36,9 +46,11 @@ class JpegDataset(data.Dataset):
         self.random_scale_list = [1]
 
     def __getitem__(self, index):
-        Uncomp_path = None
         scale = self.opt['scale']
-        Uncomp_size = self.opt['Uncomp_size']
+        Uncomp_size = self.opt['patch_size']
+        QF = self.quality_factors[np.random.choice(len(self.quality_factors),p=self.QF_probs)]
+        if isinstance(QF,list):
+            raise Exception('QF range is unsupported yet')
 
         # get Uncomp image
         Uncomp_path = self.paths_Uncomp[index]
@@ -90,7 +102,7 @@ class JpegDataset(data.Dataset):
             img_Uncomp = img_Uncomp[:, :, [2, 1, 0]]
         img_Uncomp = torch.from_numpy(np.ascontiguousarray(np.transpose(img_Uncomp, (2, 0, 1)))).float()
 
-        return {'Uncomp': img_Uncomp,  'Uncomp_path': Uncomp_path}
+        return {'Uncomp': img_Uncomp,  'Uncomp_path': Uncomp_path,'QF':QF}
 
     def __len__(self):
         return len(self.paths_Uncomp)

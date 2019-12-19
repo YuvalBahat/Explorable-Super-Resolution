@@ -17,6 +17,7 @@ from utils.logger import Logger, PrintLogger
 import tqdm
 from datetime import datetime
 
+IGNORED_KEYS_LIST = ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD','l_g_pix']
 
 def main():
     # options
@@ -133,7 +134,7 @@ def main():
                 for k, v in logs.items():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
-                logger.print_format_results('train', print_rlt,keys_ignore_list=['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD','l_g_pix'])
+                logger.print_format_results('train', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0: # and gradient_step_num>=opt['train']['D_init_iters']:
@@ -218,7 +219,7 @@ def main():
                 print_rlt['time'] = time_elapsed
                 model.display_log_figure()
                 model.generator_changed = False
-                logger.print_format_results('val', print_rlt)
+                logger.print_format_results('val', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
                 print('-----------------------------------')
 
             # update learning rate

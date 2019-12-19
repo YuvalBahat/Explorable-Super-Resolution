@@ -4,6 +4,7 @@ import torch.nn as nn
 import DTE.DTEnet as DTEnet
 import numpy as np
 import collections
+import matplotlib.pyplot as plt
 
 class BaseModel():
     def __init__(self, opt):
@@ -141,3 +142,73 @@ class BaseModel():
         if modified_key_names_counter>0:
             print('Warning: Modified %d key names due to the change to using ModuleLists' % (modified_key_names_counter))
         return modified_state_dict
+
+    def plot_curves(self,steps,loss):
+        SMOOTH_CURVES = True
+        if SMOOTH_CURVES:
+            steps_induced_upper_bound = np.ceil(1000/np.diff(steps).mean()) if len(steps)>1 else 1
+            smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
+            loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
+            if steps is not None:
+                steps = np.convolve(steps, np.ones([smoothing_win]) / smoothing_win,'valid')
+        if steps is not None:
+            plt.plot(steps,loss)
+        else:
+            plt.plot(loss)
+        return np.min(loss),np.max(loss)
+
+    def display_log_figure(self):
+        # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
+        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
+                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ']
+        PER_KEY_FIGURE = True
+        legend_strings = []
+        plt.figure(2)
+        plt.clf()
+        min_global_val, max_global_val = np.finfo(np.float32).max,np.finfo(np.float32).min
+        for key in keys_2_display:
+            if key in self.log_dict.keys() and len(self.log_dict[key])>0:
+                if PER_KEY_FIGURE:
+                    plt.figure(1)
+                    plt.clf()
+                if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
+                    cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    if 'LR_decrease' in self.log_dict.keys():
+                        for decrease in self.log_dict['LR_decrease']:
+                            plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
+                    if isinstance(self.log_dict[key][0][1],torch.Tensor):
+                        series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
+                    else:
+                        series_avg = np.mean([val[1] for val in self.log_dict[key]])
+                else:
+                    raise Exception('Should always have step numbers')
+                    self.plot_curves(self.log_dict[key])
+                    # plt.plot(self.log_dict[key])
+                    if isinstance(self.log_dict[key][0][1],torch.Tensor):
+                        series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
+                    else:
+                        series_avg = np.mean(self.log_dict[key])
+                cur_legend_string = key + ' (%.2e)' % (series_avg)
+                if PER_KEY_FIGURE:
+                    plt.xlabel('Steps')
+                    plt.legend([cur_legend_string], loc='best')
+                    plt.savefig(os.path.join(self.log_path, 'logs_%s.pdf' % (key)))
+                    plt.figure(2)
+                    if key=='psnr_val':
+                        cur_legend_string = 'MSE_val' + ' (%s:%.2e)' % (key,series_avg)
+                        cur_curve[1] = 255*np.exp(-cur_curve[1]/20)
+                    if np.std(cur_curve[1])>0:
+                        cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
+                    else:
+                        cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
+                legend_strings.append(cur_legend_string)
+        plt.legend(legend_strings,loc='best')
+        plt.xlabel('Steps')
+        if 'LR_decrease' in self.log_dict.keys():
+            for decrease in self.log_dict['LR_decrease']:
+                plt.plot([decrease[0], decrease[0]], [min_global_val,max_global_val], 'k')
+        plt.savefig(os.path.join(self.log_path,'logs.pdf'))
+

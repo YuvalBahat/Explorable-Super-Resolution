@@ -65,7 +65,7 @@
   }
 , "datasets": {
     "train": {
-       "HR_size": 256}
+       "patch_size": 256}
   }
 //  ,"test": {
 //    "kernel": "estimated" //"estimated","cubic","blurry_cubic_1"

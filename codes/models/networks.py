@@ -109,7 +109,7 @@ def define_G(opt,DTE=None,num_latent_channels=None):
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
     if opt_net['DTE_arch']:
-        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['HR_size'] if opt['is_train'] else None)
+        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['patch_size'] if opt['is_train'] else None)
     if opt['is_train']:# and which_model != 'DnCNN':
         init_weights(netG, init_type='kaiming', scale=0.1)
     if gpu_ids:
@@ -123,7 +123,7 @@ def define_D(opt,DTE=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_D']
     which_model = opt_net['which_model_D']
-    input_patch_size = opt['datasets']['train']['HR_size']
+    input_patch_size = opt['datasets']['train']['patch_size']
     # in_nc = opt_net['in_nc']*(2 if opt['network_D']['decomposed_input'] else 1)
     in_nc = opt_net['in_nc']
     assert not ((opt_net['pre_clipping'] or opt_net['decomposed_input']) and which_model!='PatchGAN'),'Unsupported yet'

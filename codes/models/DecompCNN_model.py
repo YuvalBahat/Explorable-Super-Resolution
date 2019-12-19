@@ -1,6 +1,6 @@
 import os
 from collections import OrderedDict
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
@@ -38,8 +38,8 @@ class DecompCNNModel(BaseModel):
                 assert isinstance(opt['network_G']['latent_channels'],int)
         # define networks and load pretrained models
         self.step = 0
-        self.jpeg_compressor = JPEG(quality_factor=50, compress=True, quantize=True).to(self.device)
-        self.jpeg_extractor = JPEG(quality_factor=50, compress=False).to(self.device)
+        self.jpeg_compressor = JPEG(compress=True, quantize=True).to(self.device)
+        self.jpeg_extractor = JPEG(compress=False).to(self.device)
 
         self.netG = networks.define_G(opt,num_latent_channels=self.num_latent_channels).to(self.device)  # G
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
@@ -89,7 +89,7 @@ class DecompCNNModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['HR_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
                     max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
@@ -160,8 +160,7 @@ class DecompCNNModel(BaseModel):
             else:
                 lr_G = train_opt['lr_G']
                 lr_D = train_opt['lr_D']
-            self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G, \
-                weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
+            self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G,weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
             self.optimizers.append(self.optimizer_G)
             # D
             if self.D_exists:
@@ -207,6 +206,9 @@ class DecompCNNModel(BaseModel):
         return latent
 
     def feed_data(self, data, need_Uncomp=True):
+        self.QF = data['QF']
+        self.jpeg_compressor.Set_QF(self.QF)
+        self.jpeg_extractor.Set_QF(self.QF)
         self.var_Comp = self.jpeg_compressor(data['Uncomp'].to(self.device))
         if self.latent_input is not None:
             if 'Z' in data.keys():
@@ -293,7 +295,7 @@ class DecompCNNModel(BaseModel):
                         self.optimizer_D.zero_grad()
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
                     if first_dual_batch_step:
-                        pred_d_real = self.netD(elf.var_ref)
+                        pred_d_real = self.netD(self.var_ref)
                     pred_d_fake = self.netD(self.fake_H.detach())  # detach to avoid BP to G
                     if self.relativistic_D:
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
@@ -322,7 +324,7 @@ class DecompCNNModel(BaseModel):
                     self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         self.generator_step = (self.gradient_step_num) % max(
-                            [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > max([self.D_init_iters,self.E_init_iters])
+                            [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
                         # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
                         self.generator_step = self.generator_step and self.step % \
                                               self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
@@ -346,7 +348,7 @@ class DecompCNNModel(BaseModel):
                         self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                             and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
                     if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
-                            self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
+                            self.fake_H = self.fake_H.detach()
                     l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
                     l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
 
@@ -387,7 +389,7 @@ class DecompCNNModel(BaseModel):
                     l_g_fea = self.cri_fea(fake_fea, real_fea)
                     l_g_total += self.l_fea_w * l_g_fea/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                 if self.cri_range: #range loss
-                    l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
+                    l_g_range = self.cri_range(self.fake_H)
                     l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                 if self.cri_latent and last_dual_batch_step:
                     latent_loss_dict = {'Decomp':self.fake_H,'Uncomp':self.var_Uncomp,'Z':static_Z}
@@ -408,7 +410,7 @@ class DecompCNNModel(BaseModel):
                     pred_g_fake = self.netD(self.fake_H)
 
                     if self.relativistic_D:
-                        pred_d_real = self.netD([self.fake_H[0], self.var_ref - self.fake_H[0]] if self.decomposed_output else self.var_ref).detach()
+                        pred_d_real = self.netD(self.var_ref).detach()
                         l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
                                                   self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                     else:
@@ -534,61 +536,61 @@ class DecompCNNModel(BaseModel):
             for i,file in enumerate(collected_stats.files):
                 self.cri_latent.collected_ratios[i] = deque(collected_stats[file],maxlen=self.cri_latent.collected_ratios[i].maxlen)
 
-    def display_log_figure(self):
-        # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
-        keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
-                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ']
-        PER_KEY_FIGURE = True
-        legend_strings = []
-        plt.figure(2)
-        plt.clf()
-        min_global_val, max_global_val = np.finfo(np.float32).max,np.finfo(np.float32).min
-        for key in keys_2_display:
-            if key in self.log_dict.keys() and len(self.log_dict[key])>0:
-                if PER_KEY_FIGURE:
-                    plt.figure(1)
-                    plt.clf()
-                if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
-                    cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
-                    if 'LR_decrease' in self.log_dict.keys():
-                        for decrease in self.log_dict['LR_decrease']:
-                            plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
-                    if isinstance(self.log_dict[key][0][1],torch.Tensor):
-                        series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
-                    else:
-                        series_avg = np.mean([val[1] for val in self.log_dict[key]])
-                else:
-                    raise Exception('Should always have step numbers')
-                    self.plot_curves(self.log_dict[key])
-                    # plt.plot(self.log_dict[key])
-                    if isinstance(self.log_dict[key][0][1],torch.Tensor):
-                        series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
-                    else:
-                        series_avg = np.mean(self.log_dict[key])
-                cur_legend_string = key + ' (%.2e)' % (series_avg)
-                if PER_KEY_FIGURE:
-                    plt.xlabel('Steps')
-                    plt.legend([cur_legend_string], loc='best')
-                    plt.savefig(os.path.join(self.log_path, 'logs_%s.pdf' % (key)))
-                    plt.figure(2)
-                    if key=='psnr_val':
-                        cur_legend_string = 'MSE_val' + ' (%s:%.2e)' % (key,series_avg)
-                        cur_curve[1] = 255*np.exp(-cur_curve[1]/20)
-                    if np.std(cur_curve[1])>0:
-                        cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
-                    else:
-                        cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
-                    min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
-                legend_strings.append(cur_legend_string)
-        plt.legend(legend_strings,loc='best')
-        plt.xlabel('Steps')
-        if 'LR_decrease' in self.log_dict.keys():
-            for decrease in self.log_dict['LR_decrease']:
-                plt.plot([decrease[0], decrease[0]], [min_global_val,max_global_val], 'k')
-        plt.savefig(os.path.join(self.log_path,'logs.pdf'))
-
+    # def display_log_figure(self):
+    #     # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
+    #     keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
+    #                       'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ']
+    #     PER_KEY_FIGURE = True
+    #     legend_strings = []
+    #     plt.figure(2)
+    #     plt.clf()
+    #     min_global_val, max_global_val = np.finfo(np.float32).max,np.finfo(np.float32).min
+    #     for key in keys_2_display:
+    #         if key in self.log_dict.keys() and len(self.log_dict[key])>0:
+    #             if PER_KEY_FIGURE:
+    #                 plt.figure(1)
+    #                 plt.clf()
+    #             if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
+    #                 cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
+    #                 min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+    #                 if 'LR_decrease' in self.log_dict.keys():
+    #                     for decrease in self.log_dict['LR_decrease']:
+    #                         plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
+    #                 if isinstance(self.log_dict[key][0][1],torch.Tensor):
+    #                     series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
+    #                 else:
+    #                     series_avg = np.mean([val[1] for val in self.log_dict[key]])
+    #             else:
+    #                 raise Exception('Should always have step numbers')
+    #                 self.plot_curves(self.log_dict[key])
+    #                 # plt.plot(self.log_dict[key])
+    #                 if isinstance(self.log_dict[key][0][1],torch.Tensor):
+    #                     series_avg = np.mean([val[1].data.cpu().numpy() for val in self.log_dict[key]])
+    #                 else:
+    #                     series_avg = np.mean(self.log_dict[key])
+    #             cur_legend_string = key + ' (%.2e)' % (series_avg)
+    #             if PER_KEY_FIGURE:
+    #                 plt.xlabel('Steps')
+    #                 plt.legend([cur_legend_string], loc='best')
+    #                 plt.savefig(os.path.join(self.log_path, 'logs_%s.pdf' % (key)))
+    #                 plt.figure(2)
+    #                 if key=='psnr_val':
+    #                     cur_legend_string = 'MSE_val' + ' (%s:%.2e)' % (key,series_avg)
+    #                     cur_curve[1] = 255*np.exp(-cur_curve[1]/20)
+    #                 if np.std(cur_curve[1])>0:
+    #                     cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
+    #                 else:
+    #                     cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
+    #                 min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+    #                 min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
+    #             legend_strings.append(cur_legend_string)
+    #     plt.legend(legend_strings,loc='best')
+    #     plt.xlabel('Steps')
+    #     if 'LR_decrease' in self.log_dict.keys():
+    #         for decrease in self.log_dict['LR_decrease']:
+    #             plt.plot([decrease[0], decrease[0]], [min_global_val,max_global_val], 'k')
+    #     plt.savefig(os.path.join(self.log_path,'logs.pdf'))
+    #
 
     def get_current_visuals(self, need_Uncomp=True,entire_batch=False):
         out_dict = OrderedDict()
@@ -599,23 +601,25 @@ class DecompCNNModel(BaseModel):
                 out_dict['Uncomp'] = self.var_Uncomp.detach().float().cpu()
         else:
             out_dict['Comp'] = self.var_Comp.detach()[0].float().cpu()
-            out_dict['Decomp'] = (self.fake_H[0]+self.fake_H[1] if isinstance(self.fake_H,list) else self.fake_H).detach()[0].float().cpu()
+            out_dict['Decomp'] = self.fake_H.detach()[0].float().cpu()
             if need_Uncomp:
                 out_dict['Uncomp'] = self.var_Uncomp.detach()[0].float().cpu()
         return out_dict
-    def plot_curves(self,steps,loss):
-        SMOOTH_CURVES = True
-        if SMOOTH_CURVES:
-            smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),1000).astype(np.int32)
-            loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
-            if steps is not None:
-                steps = np.convolve(steps, np.ones([smoothing_win]) / smoothing_win,'valid')
-        if steps is not None:
-            plt.plot(steps,loss)
-        else:
-            plt.plot(loss)
-        return np.min(loss),np.max(loss)
 
+    # def plot_curves(self,steps,loss):
+    #     SMOOTH_CURVES = True
+    #     if SMOOTH_CURVES:
+    #         steps_induced_upper_bound = np.ceil(1000/np.diff(steps).mean())
+    #         smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
+    #         loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
+    #         if steps is not None:
+    #             steps = np.convolve(steps, np.ones([smoothing_win]) / smoothing_win,'valid')
+    #     if steps is not None:
+    #         plt.plot(steps,loss)
+    #     else:
+    #         plt.plot(loss)
+    #     return np.min(loss),np.max(loss)
+    #
     def print_network(self):
         # Generator
         s, n = self.get_network_description(self.netG)

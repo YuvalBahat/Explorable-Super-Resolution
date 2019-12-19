@@ -15,7 +15,7 @@
       , "use_shuffle": true
       , "n_workers": 8
       , "batch_size": 16
-      , "HR_size": 128 // 128 | 192
+      , "patch_size": 128 // 128 | 192
       , "use_flip": true
       , "use_rot": true
     }

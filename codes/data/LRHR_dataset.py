@@ -48,7 +48,7 @@ class LRHRDataset(data.Dataset):
     def __getitem__(self, index):
         HR_path, LR_path = None, None
         scale = self.opt['scale']
-        HR_size = self.opt['HR_size']
+        HR_size = self.opt['patch_size']
 
         # get HR image
         HR_path = self.paths_HR[index]

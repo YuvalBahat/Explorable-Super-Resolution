@@ -18,7 +18,7 @@
       , "batch_size": 6 //3
       , "batch_size_4_grads_G": 48 //6
       , "batch_size_4_grads_D": 48 //24
-      , "HR_size": 256
+      , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
     }

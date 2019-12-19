@@ -27,6 +27,7 @@ def main():
     if parser.parse_args().single_GPU:
         available_GPUs = util.Assign_GPU()
     else:
+        # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
     opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG')
 
@@ -88,7 +89,7 @@ def main():
             break
         val_images_collage_rows -= 1
     start_time = time.time()
-    min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
+    # min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
     save_GT_Uncomp = True
     lr_too_low = False
     print('---------- Start training -------------')
@@ -111,7 +112,8 @@ def main():
                 if len(recently_saved_models)>3:
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
-                    os.remove(model_2_delete.replace('_G.','_D.'))
+                    if model.D_exists:
+                        os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
 
             if model.step > total_iters:
@@ -136,6 +138,7 @@ def main():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
                 logger.print_format_results('train', print_rlt)
+                model.display_log_figure()
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0: # and gradient_step_num>=opt['train']['D_init_iters']:
@@ -144,7 +147,7 @@ def main():
                     print('---------- validation -------------')
                     start_time = time.time()
                     if SAVE_IMAGE_COLLAGE:
-                        GT_image_collage = []
+                        GT_image_collage,quantized_image_collage = [],[]
                         cur_train_results = model.get_current_visuals(entire_batch=True)
                         train_psnrs = [
                             util.calculate_psnr(util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]),
@@ -164,11 +167,11 @@ def main():
                     Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
                     print_rlt['psnr'] = 0
                     for cur_Z in Z_latent:
-                        avg_psnr = 0.0
+                        avg_psnr,avg_quantized_psnr = 0.0,0.0
                         idx = 0
                         image_collage = []
                         for val_data in tqdm.tqdm(val_loader):
-                            if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
+                            if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
                             idx += 1
                             img_name = os.path.splitext(os.path.basename(val_data['Uncomp_path'][0]))[0]
                             val_data['Z'] = cur_Z
@@ -179,11 +182,6 @@ def main():
                             sr_img = util.tensor2img(visuals['Decomp'],out_type=np.uint8,min_max=[0,255])  # float32
                             gt_img = util.tensor2img(visuals['Uncomp'],out_type=np.uint8,min_max=[0,255])  # float32
 
-                            # calculate PSNR
-                            # crop_size = opt['scale']
-                            # gt_img *= 255.
-                            # sr_img *= 255.
-                            # cur_psnr = util.calculate_psnr(sr_img, gt_img)
                             avg_psnr += util.calculate_psnr(sr_img, gt_img)
 
                             if SAVE_IMAGE_COLLAGE:
@@ -191,6 +189,9 @@ def main():
                                 image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...],0,255).astype(np.uint8))
                                 if save_GT_Uncomp:#Save GT Uncomp images
                                     GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...],0,255).astype(np.uint8))
+                                    quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(val_data['Uncomp'].to(model.device))),out_type=np.uint8,min_max=[0,255])
+                                    quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...])
+                                    avg_quantized_psnr += util.calculate_psnr(quantized_image, gt_img)
                             else:
                                 # Save Decomp images for reference
                                 img_dir = os.path.join(opt['path']['val_images'], img_name)
@@ -205,6 +206,9 @@ def main():
                             if save_GT_Uncomp:  # Save GT Uncomp images
                                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                                     os.path.join(os.path.join(opt['path']['val_images']), 'GT_Uncomp.png'))
+                                avg_quantized_psnr = avg_quantized_psnr / idx
+                                util.save_img(np.concatenate([np.concatenate(col, 0) for col in quantized_image_collage], 1),
+                                    os.path.join(os.path.join(opt['path']['val_images']), 'Quantized_PSNR{:.3f}.png'.format(avg_quantized_psnr)))
                                 save_GT_Uncomp = False
                         print_rlt['psnr'] += avg_psnr/len(Z_latent)
                     model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']))
@@ -216,7 +220,7 @@ def main():
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = gradient_step_num
                 print_rlt['time'] = time_elapsed
-                model.display_log_figure()
+                # model.display_log_figure()
                 model.generator_changed = False
                 logger.print_format_results('val', print_rlt)
                 print('-----------------------------------')

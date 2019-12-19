@@ -77,7 +77,7 @@ COLORS = [
 
 FONT_SIZES = [7, 8, 9, 10, 11, 12, 13, 14, 18, 24, 36, 48, 64, 72, 96, 144, 288]
 
-SCRIBBLE_MODES = ['pen','line', 'polygon','ellipse', 'rect','im_input','im_input_auto_location']
+SCRIBBLE_MODES = ['pencil','line', 'polygon','ellipse', 'rect','im_input','im_input_auto_location']
 MODES = [
     'selectpoly', 'selectrect','indicatePeriodicity',
     #'eraser', 'fill',
@@ -331,8 +331,8 @@ class Canvas(QLabel):
         if fn:
             returnable =  fn(e)
             if self.mode in self.scribble_modes and not self.within_drawing:
-                self.actionApplyScrible.setEnabled(self.any_scribbles_within_mask())
-                self.actionLoopApplyScrible.setEnabled(self.any_scribbles_within_mask())
+                self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
+                self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
             return returnable
 
     def mouseDoubleClickEvent(self, e):
@@ -340,8 +340,8 @@ class Canvas(QLabel):
         if fn:
             returnable =  fn(e)
             if self.mode in self.scribble_modes and not self.within_drawing:
-                self.actionApplyScrible.setEnabled(self.any_scribbles_within_mask())
-                self.actionLoopApplyScrible.setEnabled(self.any_scribbles_within_mask())
+                self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
+                self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
             return returnable
 
     # Generic events (shared by brush-like tools)
@@ -403,8 +403,8 @@ class Canvas(QLabel):
         self.timer_cleanup()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
-            self.actionApplyScrible.setEnabled(self.any_scribbles_within_mask())
-            self.actionLoopApplyScrible.setEnabled(self.any_scribbles_within_mask())
+            self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
+            self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
         # self.selectpoly_copy()#I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
 
     def update_Z_mask_display_size(self):
@@ -576,8 +576,8 @@ class Canvas(QLabel):
         self.timer_cleanup()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
-            self.actionApplyScrible.setEnabled(self.any_scribbles_within_mask())
-            self.actionLoopApplyScrible.setEnabled(self.any_scribbles_within_mask())
+            self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
+            self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
         # self.selectrect_copy()  # I add this to remove the dashed selection lines from the image, after I didn't find any better way. This removes it if done immediatly after selection, for some yet to be known reason
 
     def Z_optimizer_Reset(self):
@@ -1410,9 +1410,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 
         self.actionProcessRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=False))
-        self.actionScribbleReset.triggered.connect(self.Reset_Image_4_Scribbling)
-        self.actionApplyScrible.triggered.connect(lambda x:self.Optimize_Z('scribble'))
-        self.actionLoopApplyScrible.triggered.connect(lambda x:self.Optimize_Z('scribble',loop=True))
+        self.scribble_reset_button.pressed.connect(self.Reset_Image_4_Scribbling)
+        self.apply_scribble_button.pressed.connect(lambda x:self.Optimize_Z('scribble'))
+        self.loop_apply_scribble_button.pressed.connect(lambda x:self.Optimize_Z('scribble',loop=True))
         self.actionProcessLimitedRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=True))
 
         # self.DisplayedImageSelectionButton.highlighted.connect(self.SelectImage2Display)
@@ -1562,8 +1562,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.periodicity_mag_1.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         self.canvas.periodicity_mag_2 = self.periodicity_mag_2
         self.canvas.periodicity_mag_2.valueChanged.connect(self.canvas.Z_optimizer_Reset)
-        self.canvas.actionApplyScrible = self.actionApplyScrible
-        self.canvas.actionLoopApplyScrible = self.actionLoopApplyScrible
+        self.canvas.apply_scribble_button = self.apply_scribble_button
+        self.canvas.loop_apply_scribble_button = self.loop_apply_scribble_button
         self.canvas.Update_Image_Display = self.Update_Image_Display
         self.canvas.Enforce_DT_on_Image_Pair = self.canvas.SR_model.DTE_net.Enforce_DT_on_Image_Pair
         self.canvas.Project_2_Orthog_Nullspace = self.canvas.SR_model.DTE_net.Project_2_ortho_2_NS
@@ -1590,7 +1590,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # # self.taller_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_im_input(modification='taller'))
 
         #Scribble:
-        self.Scribble_Toolbar.addAction(self.actionScribbleReset)
+        self.Scribble_Toolbar.addWidget(self.scribble_reset_button)
         sizeicon = QLabel()
         sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))
         self.Scribble_Toolbar.addWidget(sizeicon)
@@ -1601,7 +1601,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Scribble_Toolbar.addWidget(self.sizeselect)
 
         self.Scribble_Toolbar.addWidget(self.dropper_button)
-        self.Scribble_Toolbar.addWidget(self.pen_button)
+        self.Scribble_Toolbar.addWidget(self.pencil_button)
         # self.Scribble_Toolbar.addWidget(self.brush_button)
         self.Scribble_Toolbar.addWidget(self.line_button)
         self.Scribble_Toolbar.addWidget(self.ellipse_button)
@@ -1609,8 +1609,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Scribble_Toolbar.addWidget(self.rect_button)
         self.Scribble_Toolbar.addWidget(self.im_input_button)
         self.Scribble_Toolbar.addWidget(self.im_input_auto_location_button)
-        self.Scribble_Toolbar.addAction(self.actionApplyScrible)
-        self.Scribble_Toolbar.addAction(self.actionLoopApplyScrible)
+        self.Scribble_Toolbar.addWidget(self.apply_scribble_button)
+        self.Scribble_Toolbar.addWidget(self.loop_apply_scribble_button)
         self.canvas.SelectImage2Display = self.SelectImage2Display
         self.canvas.DisplayedImageSelection_button = self.DisplayedImageSelection_button
         self.canvas.scribble_modes = SCRIBBLE_MODES
@@ -1788,8 +1788,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.SelectImage2Display(self.cur_Z_im_index)
                 self.SelectImage2Display(self.canvas.scribble_display_index)
 
-        self.actionApplyScrible.setEnabled(False)
-        self.actionLoopApplyScrible.setEnabled(False)
+        self.apply_scribble_button.setEnabled(False)
+        self.loop_apply_scribble_button.setEnabled(False)
 
     def Initialize_Image_4_Scribbling_Display_Size(self):
         self.canvas.image_4_scribbling_display_size = 1*self.canvas.image_4_scribbling
@@ -2167,8 +2167,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.update_Z_mask_display_size()
         self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
         if 'current_scribble_mask' in self.canvas.__dict__.keys():
-            self.canvas.actionApplyScrible.setEnabled(self.canvas.any_scribbles_within_mask())
-            self.canvas.actionLoopApplyScrible.setEnabled(self.canvas.any_scribbles_within_mask())
+            self.canvas.apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
+            self.canvas.loop_apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
         self.canvas.LR_mask_vertices = [(0,0),tuple(self.canvas.LR_size[::-1])]
         self.canvas.update_mask_bounding_rect()
         self.canvas.Update_Z_Sliders()
@@ -2308,8 +2308,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.update_Z_mask_display_size()
             self.canvas.Update_Z_Sliders()
             self.canvas.Z_optimizer_Reset()
-            self.canvas.actionApplyScrible.setEnabled(self.canvas.any_scribbles_within_mask())
-            self.canvas.actionLoopApplyScrible.setEnabled(self.canvas.any_scribbles_within_mask())
+            self.canvas.apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
+            self.canvas.loop_apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
 
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
@@ -2397,6 +2397,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(False)
             if self.display_ESRGAN:
                 ESRGAN_opt = option.parse('./options/test/GUI_esrgan.json', is_train=False,name='RRDB_ESRGAN_x4')
+                ESRGAN_opt['name']
                 ESRGAN_opt = option.dict_to_nonedict(ESRGAN_opt)
                 ESRGAN_opt['network_G']['latent_input'] = 'None'
                 ESRGAN_opt['network_G']['latent_channels'] = 0
