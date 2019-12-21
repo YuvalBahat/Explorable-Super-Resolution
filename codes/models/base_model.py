@@ -146,7 +146,7 @@ class BaseModel():
     def plot_curves(self,steps,loss):
         SMOOTH_CURVES = True
         if SMOOTH_CURVES:
-            steps_induced_upper_bound = np.ceil(1000/np.diff(steps).mean()) if len(steps)>1 else 1
+            steps_induced_upper_bound = np.ceil(1000/np.diff(steps).max()) if len(steps)>1 else 1
             smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
             loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
             if steps is not None:

@@ -17,7 +17,7 @@ from models import create_model
 from utils.logger import Logger, PrintLogger
 import tqdm
 from datetime import datetime
-
+import cv2
 
 def main():
     # options
@@ -192,6 +192,8 @@ def main():
                                     quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(val_data['Uncomp'].to(model.device))),out_type=np.uint8,min_max=[0,255])
                                     quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...])
                                     avg_quantized_psnr += util.calculate_psnr(quantized_image, gt_img)
+                                    cv2.putText(quantized_image_collage[-1][-1],str(val_data['QF'].item()),(0, 50), cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
+                                                color=np.mod(255/2+quantized_image_collage[-1][-1][:25,:25].mean(),255),thickness=2)
                             else:
                                 # Save Decomp images for reference
                                 img_dir = os.path.join(opt['path']['val_images'], img_name)

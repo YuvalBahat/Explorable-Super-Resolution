@@ -1392,8 +1392,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             btn.pressed.connect(lambda mode=mode: self.canvas.set_mode(mode))
             mode_group.addButton(btn)
 
-        # Setup up action signals
-        self.actionCopy.triggered.connect(self.copy_to_clipboard)
+        # # Setup up action signals
+        # self.actionCopy.triggered.connect(self.copy_to_clipboard)
 
         # Initialize animation timer.
         self.timer = QTimer()
@@ -1403,9 +1403,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # Menu options
         self.actionNewImage.triggered.connect(lambda x: self.open_file(HR_image=True))
-        self.actionOpenImage.triggered.connect(lambda x: self.open_file(HR_image=False))
-        self.actionLoad_Z.triggered.connect(self.Load_Z)
-        self.actionLoad_Z_mask.triggered.connect(self.Load_Z_mask)
+        self.open_image_button.clicked.connect(lambda x: self.open_file(HR_image=False))
+        self.Z_load_button.pressed.connect(self.Load_Z)
+        self.Z_mask_load_button.pressed.connect(self.Load_Z_mask)
         self.estimatedKenrel_button.pressed.connect(self.Change_kernel_in_use)
 
 
@@ -1471,7 +1471,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionDecreaseDisplayZoom.triggered.connect(lambda x: self.Change_Display_Zoom(increase=False))
         self.actionIncreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
         self.actionIncreaseDisplayZoom.triggered.connect(lambda x: self.Change_Display_Zoom(increase=True))
-        self.actionClearImage.triggered.connect(self.canvas.reset)
+        # self.actionClearImage.triggered.connect(self.canvas.reset)
         self.actionInvertColors.triggered.connect(self.invert)
         self.actionFlipHorizontal.triggered.connect(self.flip_horizontal)
         self.actionFlipVertical.triggered.connect(self.flip_vertical)
@@ -2407,10 +2407,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 with torch.no_grad():
                     self.ESRGAN_SR = ESRGAN_model.netG(self.var_L).detach().to(torch.device('cpu'))
                 self.canvas.HR_size = list(self.ESRGAN_SR.size()[2:])
-                # if not ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS:
-                #     pixmap = QPixmap()
-                #     pixmap.convertFromImage(qimage2ndarray.array2qimage(255 * self.ESRGAN_SR[0].data.cpu().numpy().transpose(1,2,0).copy()))
-                #     self.ESRGAN_canvas.setPixmap(pixmap)
 
             if 'random_Z_images' in self.canvas.__dict__.keys():
                 del self.canvas.random_Z_images
