@@ -72,6 +72,13 @@ class DnCNN(nn.Module):
         quantization_err_estimation = self.dncnn(x)-0.5
         return x+quantization_err_estimation
 
+    def save_estimated_errors_fig(self,quantization_err_batch):
+        import matplotlib.pyplot as plt
+        plt.clf()
+        plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
+        plt.colorbar()
+        plt.savefig('Est_quantization_errors.png')
+
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -103,11 +110,11 @@ class RRDBNet(nn.Module):
         if latent_input is None or 'all_layers' not in latent_input:
             num_latent_channels,num_latent_channels_HR = 0,0
 
-        USE_NODULE_LISTS = True
-        fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
+        USE_MODULE_LISTS = True
+        fea_conv = B.conv_block(in_nc, nf, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_MODULE_LISTS)
         rb_blocks = [B.RRDB(nf, kernel_size=3, gc=32, stride=1, bias=True, pad_type='zero', \
             norm_type=norm_type, act_type=act_type, mode='CNA',latent_input_channels=num_latent_channels) for _ in range(nb)]
-        LR_conv = B.conv_block(nf+num_latent_channels, nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode,return_module_list=USE_NODULE_LISTS)
+        LR_conv = B.conv_block(nf+num_latent_channels, nf, kernel_size=3, norm_type=norm_type, act_type=None, mode=mode,return_module_list=USE_MODULE_LISTS)
 
         if upsample_mode == 'upconv':
             upsample_block = B.upconv_blcok
@@ -122,12 +129,12 @@ class RRDBNet(nn.Module):
         if latent_input is not None and 'all_layers' in latent_input:
             if 'LR' in latent_input:
                 self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
-        HR_conv0 = B.conv_block(nf+num_latent_channels_HR, nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_NODULE_LISTS)
-        HR_conv1 = B.conv_block(nf+num_latent_channels_HR, out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_NODULE_LISTS)
+        HR_conv0 = B.conv_block(nf+num_latent_channels_HR, nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_MODULE_LISTS)
+        HR_conv1 = B.conv_block(nf+num_latent_channels_HR, out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_MODULE_LISTS)
 
-        if USE_NODULE_LISTS:
+        if USE_MODULE_LISTS:
             self.model = nn.ModuleList(fea_conv+\
-                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_NODULE_LISTS),latent_input_channels=num_latent_channels,use_module_list=True)]+\
+                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_MODULE_LISTS),latent_input_channels=num_latent_channels,use_module_list=True)]+\
                                        upsampler+HR_conv0+HR_conv1)
         else:
             self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*rb_blocks, LR_conv)),\
@@ -306,45 +313,65 @@ class PatchGAN_Discriminator(nn.Module):
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128):
+    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5):
         super(Discriminator_VGG_128, self).__init__()
+        assert num_2_strides<=5,'Can be modified by adding more stridable layers, if needed.'
+        self.num_2_strides = 1*num_2_strides
         # features
         # hxw, c
         # 128, 64
+        FC_end_patch_size = 1*input_patch_size
         conv0 = B.conv_block(in_nc, base_nf, kernel_size=3, norm_type=None, act_type=act_type,mode=mode)
-        conv1 = B.conv_block(base_nf, base_nf, kernel_size=4, stride=2, norm_type=norm_type,act_type=act_type, mode=mode)
+        conv1 = B.conv_block(base_nf, base_nf, kernel_size=4, stride=2 if num_2_strides>0 else 1, norm_type=norm_type,act_type=act_type, mode=mode)
+        FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
+        num_2_strides -= 1
         # 64, 64
         conv2 = B.conv_block(base_nf, base_nf*2, kernel_size=3, stride=1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
-        conv3 = B.conv_block(base_nf*2, base_nf*2, kernel_size=4, stride=2, norm_type=norm_type, \
+        conv3 = B.conv_block(base_nf*2, base_nf*2, kernel_size=4, stride=2 if num_2_strides>0 else 1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
+        FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
+        num_2_strides -= 1
         # 32, 128
         conv4 = B.conv_block(base_nf*2, base_nf*4, kernel_size=3, stride=1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
-        conv5 = B.conv_block(base_nf*4, base_nf*4, kernel_size=4, stride=2, norm_type=norm_type, \
+        conv5 = B.conv_block(base_nf*4, base_nf*4, kernel_size=4, stride=2 if num_2_strides>0 else 1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
+        FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
+        num_2_strides -= 1
         # 16, 256
         conv6 = B.conv_block(base_nf*4, base_nf*8, kernel_size=3, stride=1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
-        conv7 = B.conv_block(base_nf*8, base_nf*8, kernel_size=4, stride=2, norm_type=norm_type, \
+        conv7 = B.conv_block(base_nf*8, base_nf*8, kernel_size=4, stride=2 if num_2_strides>0 else 1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
+        FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
+        num_2_strides -= 1
         # 8, 512
         conv8 = B.conv_block(base_nf*8, base_nf*8, kernel_size=3, stride=1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
-        conv9 = B.conv_block(base_nf*8, base_nf*8, kernel_size=4, stride=2, norm_type=norm_type, \
+        conv9 = B.conv_block(base_nf*8, base_nf*8, kernel_size=4, stride=2 if num_2_strides>0 else 1, norm_type=norm_type, \
             act_type=act_type, mode=mode)
+        FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
+        num_2_strides -= 1
         # 4, 512
         self.features = B.sequential(conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,\
             conv9)
 
+        self.last_FC_layers = self.num_2_strides==5 #Replacing the FC layers with convolutions, which means using a patch discriminator:
+
         # classifier
-        FC_end_patch_size = input_patch_size//(2**5)
-        self.classifier = nn.Sequential(
-            nn.Linear(base_nf*8 * FC_end_patch_size**2, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
+        # FC_end_patch_size = input_patch_size//(2**self.num_2_strides)
+        if self.last_FC_layers:
+            self.classifier = nn.Sequential(nn.Linear(base_nf*8 * int(FC_end_patch_size)**2, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
+        else:
+            pseudo_FC_conv0 = B.conv_block(base_nf*8,100,kernel_size=8,stride=1,norm_type=norm_type,act_type=act_type, mode=mode,pad_type=None)
+            pseudo_FC_conv1 = B.conv_block(100,1,kernel_size=1,stride=1,norm_type=norm_type,act_type=act_type, mode=mode)
+            self.classifier = nn.Sequential(pseudo_FC_conv0, nn.LeakyReLU(0.2, False),pseudo_FC_conv1) # Changed the LeakyRelu inplace arg to False here, because it caused a bug for some reason.
 
     def forward(self, x):
         x = self.features(x)
-        x = x.view(x.size(0), -1)
+        if self.last_FC_layers:
+            x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
 

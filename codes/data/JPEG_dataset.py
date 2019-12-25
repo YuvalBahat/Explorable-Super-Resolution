@@ -15,7 +15,7 @@ class JpegDataset(data.Dataset):
     The pair is ensured by 'sorted' function, so please check the name convention.
     '''
 
-    def __init__(self, opt):
+    def __init__(self, opt,specific_image=None):
         super(JpegDataset, self).__init__()
         self.opt = opt
         self.paths_Uncomp = None

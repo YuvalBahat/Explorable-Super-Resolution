@@ -59,7 +59,7 @@ class Logger(object):
             message = '<epoch:{:3d}, iter:{:8,d}, time:{:.2f}> '.format(epoch, iters, time)
 
         for label, value in rlt.items():
-            if label in keys_ignore_list:
+            if label in keys_ignore_list or '_baseline' in label:
                 continue
             if mode == 'train':
                 message += '{:s}: {:.2e} '.format(label, value)

@@ -421,8 +421,8 @@ class Canvas(QLabel):
         if len(self.history_pos)==3:
             self.locked = True
             # self.generic_poly_mousePressEvent(e)
-            self.actionIncreasePeriodicity.setEnabled(True)
-            self.actionIncreasePeriodicity_1D.setEnabled(True)
+            self.IncreasePeriodicity_2D_button.setEnabled(True)
+            self.IncreasePeriodicity_1D_button.setEnabled(True)
             self.Z_optimizer_Reset()
             if AUTO_CYCLE_LENGTH_4_PERIODICITY:
                 def im_coordinates_2_grid(points):
@@ -1402,18 +1402,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.timer.start()
 
         # Menu options
-        self.actionNewImage.triggered.connect(lambda x: self.open_file(HR_image=True))
+        self.open_HR_image_button.clicked.connect(lambda x: self.open_file(HR_image=True))
         self.open_image_button.clicked.connect(lambda x: self.open_file(HR_image=False))
         self.Z_load_button.pressed.connect(self.Load_Z)
         self.Z_mask_load_button.pressed.connect(self.Load_Z_mask)
         self.estimatedKenrel_button.pressed.connect(self.Change_kernel_in_use)
 
 
-        self.actionProcessRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=False))
+        self.ProcessRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=False))
         self.scribble_reset_button.pressed.connect(self.Reset_Image_4_Scribbling)
         self.apply_scribble_button.pressed.connect(lambda x:self.Optimize_Z('scribble'))
         self.loop_apply_scribble_button.pressed.connect(lambda x:self.Optimize_Z('scribble',loop=True))
-        self.actionProcessLimitedRandZ.triggered.connect(lambda x: self.Process_Random_Z(limited=True))
+        self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
 
         # self.DisplayedImageSelectionButton.highlighted.connect(self.SelectImage2Display)
         # if ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS:
@@ -1438,15 +1438,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.CopyFromRandom_button.pressed.connect(self.CopyRandom2Default)
         self.Copy2Random_button.pressed.connect(self.CopyDefault2Random)
-        self.actionIncreaseSTD.triggered.connect(lambda x:self.Optimize_Z('STD_increase' if RELATIVE_STD_OPT else 'max_STD'))
-        self.actionDecreaseSTD.triggered.connect(lambda x:self.Optimize_Z('STD_decrease' if RELATIVE_STD_OPT else 'min_STD'))
-        self.actionDecreaseTV.triggered.connect(lambda x:self.Optimize_Z('TV'))
-        self.actionImitateHist.triggered.connect(lambda x:self.Optimize_Z('hist'))
-        self.actionImitatePatchHist.triggered.connect(lambda x:self.Optimize_Z('patchhist'))
-        self.actionFoolAdversary.triggered.connect(lambda x:self.Optimize_Z('Adversarial'))
-        self.actionIncreasePeriodicity.triggered.connect(lambda x:self.Optimize_Z('periodicity'))
-        self.actionIncreasePeriodicity_1D.triggered.connect(lambda x:self.Optimize_Z('periodicity_1D'))
-        # self.actionMatchSliders.triggered.connect(lambda x:self.Optimize_Z('desired_SVD'))
+        self.IncreaseSTD_button.clicked.connect(lambda x:self.Optimize_Z('STD_increase' if RELATIVE_STD_OPT else 'max_STD'))
+        self.DecreaseSTD_button.clicked.connect(lambda x:self.Optimize_Z('STD_decrease' if RELATIVE_STD_OPT else 'min_STD'))
+        self.DecreaseTV_button.clicked.connect(lambda x:self.Optimize_Z('TV'))
+        self.ImitateHist_button.clicked.connect(lambda x:self.Optimize_Z('hist'))
+        self.ImitatePatchHist_button.clicked.connect(lambda x:self.Optimize_Z('patchhist'))
+        self.FoolAdversary_button.clicked.connect(lambda x:self.Optimize_Z('Adversarial'))
+        self.IncreasePeriodicity_2D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity'))
+        self.IncreasePeriodicity_1D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity_1D'))
+        # self.MatchSliders_button.clicked.connect(lambda x:self.Optimize_Z('desired_SVD'))
 
         self.unselect_button.clicked.connect(self.Clear_Z_Mask)
         self.invertSelection_button.clicked.connect(self.Invert_Z_Mask)
@@ -1465,16 +1465,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.auto_hist_temperature_mode_Enabled:
             self.auto_hist_temperature_mode_button.clicked.connect(lambda checked:self.AutoHistTemperatureMode(checked))
 
-        self.actionSaveImage.triggered.connect(self.save_file)
-        self.actionSaveImageAndData.triggered.connect(self.save_file_and_Z_map)
-        self.actionDecreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
-        self.actionDecreaseDisplayZoom.triggered.connect(lambda x: self.Change_Display_Zoom(increase=False))
-        self.actionIncreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
-        self.actionIncreaseDisplayZoom.triggered.connect(lambda x: self.Change_Display_Zoom(increase=True))
-        # self.actionClearImage.triggered.connect(self.canvas.reset)
-        self.actionInvertColors.triggered.connect(self.invert)
-        self.actionFlipHorizontal.triggered.connect(self.flip_horizontal)
-        self.actionFlipVertical.triggered.connect(self.flip_vertical)
+        self.SaveImage_button.clicked.connect(self.save_file)
+        self.SaveImageAndData_button.clicked.connect(self.save_file_and_Z_map)
+        self.DecreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
+        self.DecreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=False))
+        self.IncreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
+        self.IncreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=True))
+        # self.ClearImage_button.clicked.connect(self.canvas.reset)
+        self.InvertColors_button.clicked.connect(self.invert)
+        self.FlipHorizontal_button.clicked.connect(self.flip_horizontal)
+        self.FlipVertical_button.clicked.connect(self.flip_vertical)
 
         # sizeicon = QLabel()
         # sizeicon.setPixmap(QPixmap(os.path.join('images', 'border-weight.png')))
@@ -1536,27 +1536,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.ZToolbar.addWidget(self.periodicity_mag_1,0,4,1,1)
             self.ZToolbar.addWidget(self.periodicity_mag_2,0,5,1,1)
         self.ZToolbar2.addWidget(self.special_behavior_button)
-        self.ZToolbar2.addAction(self.actionIncreaseSTD)
-        self.ZToolbar2.addAction(self.actionDecreaseSTD)
+        self.ZToolbar2.addWidget(self.IncreaseSTD_button)
+        self.ZToolbar2.addWidget(self.DecreaseSTD_button)
         self.ZToolbar2.addWidget(self.STD_increment)
-        self.ZToolbar2.addAction(self.actionDecreaseTV)
-        self.ZToolbar2.addAction(self.actionImitateHist)
-        self.ZToolbar2.addAction(self.actionImitatePatchHist)
-        self.ZToolbar2.addAction(self.actionFoolAdversary)
-        self.ZToolbar2.addAction(self.actionIncreasePeriodicity_1D)
-        self.ZToolbar2.addAction(self.actionIncreasePeriodicity)
+        self.ZToolbar2.addWidget(self.DecreaseTV_button)
+        self.ZToolbar2.addWidget(self.ImitateHist_button)
+        self.ZToolbar2.addWidget(self.ImitatePatchHist_button)
+        self.ZToolbar2.addWidget(self.FoolAdversary_button)
+        self.ZToolbar2.addWidget(self.IncreasePeriodicity_1D_button)
+        self.ZToolbar2.addWidget(self.IncreasePeriodicity_2D_button)
         self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
-        # self.ZToolbar2.addAction(self.actionMatchSliders)
-        self.ZToolbar2.addAction(self.actionProcessRandZ)
-        self.ZToolbar2.addAction(self.actionProcessLimitedRandZ)
+        # self.ZToolbar2.addWidget(self.MatchSliders)
+        self.ZToolbar2.addWidget(self.ProcessRandZ_button)
+        self.ZToolbar2.addWidget(self.ProcessLimitedRandZ_button)
 
         # Assigning handle to some buttons to canvas:
         self.canvas.special_behavior_button = self.special_behavior_button
-        self.canvas.FoolAdversary_button = self.actionFoolAdversary
+        self.canvas.FoolAdversary_button = self.FoolAdversary_button
         self.canvas.selectrect_button = self.selectrect_button
         self.canvas.selectpoly_button = self.selectpoly_button
-        self.canvas.actionIncreasePeriodicity_1D = self.actionIncreasePeriodicity_1D
-        self.canvas.actionIncreasePeriodicity = self.actionIncreasePeriodicity
+        self.canvas.actionIncreasePeriodicity_1D = self.IncreasePeriodicity_1D_button
+        self.canvas.actionIncreasePeriodicity = self.IncreasePeriodicity_2D_button
         self.canvas.indicatePeriodicity_button = self.indicatePeriodicity_button
         self.canvas.periodicity_mag_1 = self.periodicity_mag_1
         self.canvas.periodicity_mag_1.valueChanged.connect(self.canvas.Z_optimizer_Reset)
@@ -1647,27 +1647,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # self.canvas.primary_color = QColor(Qt.black)
 
-        self.actionFillShapes.triggered.connect(lambda s: self.canvas.set_config('fill', s))
-        self.actionFillShapes.setChecked(True)
+        self.FillShapes_button.clicked.connect(lambda s: self.canvas.set_config('fill', s))
+        self.FillShapes_button.setChecked(True)
         # self.open_file(pre_loaded_image=self.image_with_estimated_kernel)
         self.show()
 
-    def Change_kernel_in_use(self):
-        self.using_estimated_kernel = not self.estimatedKenrel_button.isChecked()
+    def Change_kernel_in_use(self,use_estimated=None):
+        if use_estimated is None:
+            self.using_estimated_kernel = not self.estimatedKenrel_button.isChecked()
+        else:
+            self.using_estimated_kernel = use_estimated
+            self.estimatedKenrel_button.setChecked(use_estimated)
         if self.using_estimated_kernel:
             if self.estimated_kernel is None: #estimate the SR kernel, using the KernelGAN method
                 print('Using the KernelGAN method to estimate the SR kernel corresponding to the LR image. This may take a while...')
                 KernelGAN_conf = KernelGAN.Config().parse(['--X4'] if self.canvas.DTE_opt['scale']==4 else [])
                 KernelGAN_conf.LR_image = self.LR_image
                 self.estimated_kernel = KernelGAN.train(KernelGAN_conf)
-            # kernel_4_model = torch.from_numpy(self.estimated_kernel)
             kernel_4_model = self.estimated_kernel
-            # self.canvas.SR_model = create_model(self.opt,init_Dnet=False,init_Fnet=VGG_RANDOM_DOMAIN,kernel=self.estimated_kernel)
         else:
             kernel_4_model = 'reset_2_default'
-        #     self.canvas.SR_model = create_model(self.opt,init_Dnet=False,init_Fnet=VGG_RANDOM_DOMAIN,kernel='reset_2_default')
-        # self.ReProcess(dont_update_undo_list=True)
         self.Initialize_SR_model(kernel=kernel_4_model)
+        # Disabling ESRGAN result display to prevent misleading - ESRGAN cannot use the estimated kernel: (This is primarily for the (frequent) cases of the estimated kernel inducing poor results.)
+        self.DisplayedImageSelection_button.model().item(self.ESRGAN_index).setEnabled(not self.using_estimated_kernel)
 
     def choose_color(self, callback):
         dlg = QColorDialog(self.canvas.primary_color)
@@ -1723,8 +1725,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             #     self.canvas.desired_image_HR_mask_vertices = self.canvas.HR_mask_vertices_display_size
             self.MasksStorage(False)
             self.Update_Image_Display()
-            self.actionImitateHist.setEnabled(True)
-            self.actionImitatePatchHist.setEnabled(True)
+            self.ImitateHist_button.setEnabled(True)
+            self.ImitatePatchHist_button.setEnabled(True)
             self.im_input_auto_location_button.setEnabled(True)
             self.im_input_button.setEnabled(True)
             self.canvas.desired_image,self.canvas.desired_image_HR_mask = [self.canvas.desired_image],[self.canvas.desired_image_HR_mask] #Warpping in a list to have a unified framework for the case of transformed hist image versions.
@@ -2181,9 +2183,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.Z_optimizer_Reset()
         self.canvas.contained_Z_mask = not self.canvas.contained_Z_mask
         if self.canvas.contained_Z_mask:
-            self.actionFoolAdversary.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.mask_bounding_rect[2:]]))
+            self.FoolAdversary_button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.mask_bounding_rect[2:]]))
         else:
-            self.actionFoolAdversary.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.HR_size]))
+            self.FoolAdversary_button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.HR_size]))
 
     def ApplyUniformZ(self):
         self.canvas.Update_Z_Sliders()
@@ -2246,8 +2248,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Update_Scribble_Data()
         # Change display zoom factor:
         self.canvas.display_zoom_factor += 1 if increase else -1
-        self.actionDecreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
-        self.actionIncreaseDisplayZoom.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
+        self.DecreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
+        self.IncreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
         # Resize saved data whose dimensions correspond to display size:
         self.canvas.image_4_scribbling_display_size = \
             util.ResizeScribbleImage(self.canvas.image_4_scribbling_display_size,dsize=tuple([self.canvas.display_zoom_factor * val for val in self.canvas.HR_size]))
@@ -2335,11 +2337,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 loaded_data = np.load(scribble_data_path)
                 if 'estimated_kernel' in loaded_data.files:
                     self.estimated_kernel = loaded_data['estimated_kernel']
-                    # self.Initialize_SR_model(kernel=torch.from_numpy(self.estimated_kernel))
-                    self.Initialize_SR_model(kernel=self.estimated_kernel)
-                    # self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=self.estimated_kernel)
-                    self.using_estimated_kernel = True
-                    self.estimatedKenrel_button.setChecked(True)
+                    self.Change_kernel_in_use(use_estimated=True)
                 if 'scribble_image' in loaded_data.files:
                     self.canvas.image_4_scribbling = loaded_data['scribble_image']
                     self.canvas.image_4_scribbling_display_size = 1 * self.canvas.image_4_scribbling

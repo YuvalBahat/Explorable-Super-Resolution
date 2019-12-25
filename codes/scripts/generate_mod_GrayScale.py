@@ -11,14 +11,17 @@ dataset_root_path = '/media/ybahat/data/Datasets' if gethostname() == 'Yuval-Tec
 # input_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub')
 # save_LR_folder = os.path.join(dataset_root_path,'DIV2K/DIV2K_train_HR_sub_bicLRx4')
 # scale_factor = 2
-dataset_name = 'Set14'#'DIV2K_train'#'Set14','BSD100'
-data_category_string = ''#'_GaussianKernel'#'_sub'#'_train'
+dataset_name = 'LIVE_release2'#'DIV2K_train'#'Set14','BSD100'
+data_category_string = '/refimgs'#'_GaussianKernel'#'_sub'#'_train'
 # upscale_kernel = None#create_Gaussian_Upscale_kernel(size=16,sf=scale_factor,std=0.6)
 
 input_folder = os.path.join(dataset_root_path,'%s/%s%s_HR'%(dataset_name,dataset_name,data_category_string))
 if dataset_name=='Set14':
     input_folder = input_folder.replace('HR','HRx4')
 save_Uncomp_folder = os.path.join(dataset_root_path,'%s/%s%s_Uncomp'%(dataset_name,dataset_name,data_category_string))
+if dataset_name=='LIVE_release2':
+    input_folder = input_folder.replace('_HR','').replace(os.path.join(dataset_name,dataset_name),dataset_name)
+    save_Uncomp_folder = save_Uncomp_folder.replace(os.path.join(dataset_name,dataset_name),dataset_name)
 # save_LR_folder = os.path.join(dataset_root_path,'%s/%s%s_bicLRx%d'%(dataset_name,dataset_name,data_category_string,scale_factor))
 
 # up_scale = scale_factor

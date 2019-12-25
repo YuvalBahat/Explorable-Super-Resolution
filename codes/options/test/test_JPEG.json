@@ -1,0 +1,57 @@
+{
+    "name": "256_channels_QF10"
+  , "suffix": ""
+  , "model": "dncnn"
+  , "scale": 4
+  , "gpu_ids": [0]
+  , "use_tb_logger": 1
+  , "datasets": {
+    "test_1": { // the 2nd test dataset
+      "name": "LIVE"
+      , "mode": "JPEG"
+      , "jpeg_quality_factor": 10
+      , "dataroot_Uncomp": "LIVE_release2/refimgs_Uncomp"
+//      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
+    } //,
+//    "test_1": { // the 2nd test dataset
+//      "name": "Real_LR"
+//      , "mode": "LR"
+////      , "dataroot_LR": "Real_Images/KernelGAN"
+//      , "dataroot_LR": "Real_Images/Olympus"
+//    } //,
+//    "test_3": { // the 2nd test dataset
+//      "name": "DIV2K"
+//      , "mode": "LRHR"
+//      , "dataroot_HR": "DIV2K_valid/DIV2K_valid_HRx4"
+//      , "dataroot_LR": "DIV2K_valid/DIV2K_valid_bicLRx4"
+//    },
+//     "test_2": { // the 1st test dataset
+//      "name": "set14"
+//      , "mode": "LRHR"
+//      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
+//      , "dataroot_LR": "Set14/Set14_bicLRx4"
+//    }
+  }
+
+  , "path": {
+    "root": "/media/ybahat/data/projects/SRGAN"
+    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
+  }
+
+  , "network_G": {
+    "which_model_G": "DnCNN" // RRDB_net | sr_resnet
+    , "latent_input": "None" // "all_layers","first_layer","None"
+    , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
+    , "latent_channels": 0
+    , "norm_type": "batch"
+    , "mode": "CNA"
+    , "nf": 256
+    , "nb": 17
+    , "in_nc": 64
+    , "out_nc": 64
+    , "gc": 32
+    , "group": 1
+  }
+  ,"test": {
+  }
+}

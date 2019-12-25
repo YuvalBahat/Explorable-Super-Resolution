@@ -8,13 +8,15 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         struct = conf.G_structure
         # First layer - down sampling
-        self.first_layer = nn.Conv2d(in_channels=1, out_channels=conf.G_chan, kernel_size=struct[0], stride=int(1 / conf.scale_factor), bias=False)
+        # FIXME: self.first_layer = nn.Conv2d(in_channels=1, out_channels=conf.G_chan, kernel_size=struct[0], stride=int(1 / conf.scale_factor), bias=False)
+        self.first_layer = nn.Conv2d(in_channels=1, out_channels=conf.G_chan, kernel_size=struct[0], stride=1, bias=False)
 
         feature_block = []  # Stacking intermediate layer
         for layer in range(1, len(struct) - 1):
             feature_block += [nn.Conv2d(in_channels=conf.G_chan, out_channels=conf.G_chan, kernel_size=struct[layer], bias=False)]
         self.feature_block = nn.Sequential(*feature_block)
-        self.final_layer = nn.Conv2d(in_channels=conf.G_chan, out_channels=1, kernel_size=struct[-1], bias=False)
+        # FIXME: self.final_layer = nn.Conv2d(in_channels=conf.G_chan, out_channels=1, kernel_size=struct[-1], bias=False)
+        self.final_layer = nn.Conv2d(in_channels=conf.G_chan, out_channels=1, kernel_size=struct[-1], stride=int(1 / conf.scale_factor), bias=False)
 
         # Calculate number of pixels shaved in the forward pass
         self.output_size = self.forward(torch.FloatTensor(torch.ones([1, 1, conf.input_crop_size, conf.input_crop_size]))).shape[-1]

@@ -165,9 +165,9 @@ def main():
                                  range(len(cur_train_results['Decomp']))],
                                 0)), 1), 0, 255).astype(np.uint8), save_img_path)
                     Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
-                    print_rlt['psnr'] = 0
+                    print_rlt['psnr'],print_rlt['psnr_baseline'] = 0,0
                     for cur_Z in Z_latent:
-                        avg_psnr,avg_quantized_psnr = 0.0,0.0
+                        avg_psnr,avg_quantized_psnr = [],[]
                         idx = 0
                         image_collage = []
                         for val_data in tqdm.tqdm(val_loader):
@@ -182,7 +182,7 @@ def main():
                             sr_img = util.tensor2img(visuals['Decomp'],out_type=np.uint8,min_max=[0,255])  # float32
                             gt_img = util.tensor2img(visuals['Uncomp'],out_type=np.uint8,min_max=[0,255])  # float32
 
-                            avg_psnr += util.calculate_psnr(sr_img, gt_img)
+                            avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
 
                             if SAVE_IMAGE_COLLAGE:
                                 margins2crop = ((np.array(sr_img.shape[:2])-per_image_saved_patch)/2).astype(np.int32)
@@ -191,7 +191,7 @@ def main():
                                     GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...],0,255).astype(np.uint8))
                                     quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(val_data['Uncomp'].to(model.device))),out_type=np.uint8,min_max=[0,255])
                                     quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],...])
-                                    avg_quantized_psnr += util.calculate_psnr(quantized_image, gt_img)
+                                    avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
                                     cv2.putText(quantized_image_collage[-1][-1],str(val_data['QF'].item()),(0, 50), cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
                                                 color=np.mod(255/2+quantized_image_collage[-1][-1][:25,:25].mean(),255),thickness=2)
                             else:
@@ -200,20 +200,26 @@ def main():
                                 util.mkdir(img_dir)
                                 save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
                                 util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
-
-                        avg_psnr = avg_psnr / idx
+                        for i,QF in enumerate(val_loader.dataset.per_index_QF):
+                            if save_GT_Uncomp:
+                                model.log_dict['per_im_psnr_baseline_QF%d'%(QF)] = [(0, avg_quantized_psnr[i])]
+                            print_rlt['psnr_gain_QF%d'%(QF)] = avg_psnr[i]-model.log_dict['per_im_psnr_baseline_QF%d'%(QF)][0][1]
+                        avg_psnr = 1*np.mean(avg_psnr)
                         if SAVE_IMAGE_COLLAGE:
                             save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_{}PSNR{:.3f}.png'.format(gradient_step_num,('Z'+str(cur_Z)) if opt['network_G']['latent_input'] else '',avg_psnr))
                             util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
                             if save_GT_Uncomp:  # Save GT Uncomp images
                                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                                     os.path.join(os.path.join(opt['path']['val_images']), 'GT_Uncomp.png'))
-                                avg_quantized_psnr = avg_quantized_psnr / idx
+                                avg_quantized_psnr = 1*np.mean(avg_quantized_psnr)
+                                print_rlt['psnr_baseline'] += avg_quantized_psnr/len(Z_latent)
                                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in quantized_image_collage], 1),
                                     os.path.join(os.path.join(opt['path']['val_images']), 'Quantized_PSNR{:.3f}.png'.format(avg_quantized_psnr)))
-                                save_GT_Uncomp = False
                         print_rlt['psnr'] += avg_psnr/len(Z_latent)
                     model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']))
+                    if save_GT_Uncomp:  # Save GT Uncomp images
+                        model.log_dict['psnr_val_baseline'] = [(gradient_step_num, print_rlt['psnr_baseline'])]
+                        save_GT_Uncomp = False
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
@@ -237,6 +243,7 @@ def main():
 
     print('Saving the final model.')
     model.save(gradient_step_num)
+    model.save_log()
     print('End of training.')
 
 

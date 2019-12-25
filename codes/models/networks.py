@@ -130,8 +130,11 @@ def define_D(opt,DTE=None):
     if DTE is not None:
         input_patch_size -= 2*DTE.invalidity_margins_HR
     if which_model == 'discriminator_vgg_128':
+        kwargs = {}
+        if 'num_2_strides' in opt_net:
+            kwargs['num_2_strides'] = opt_net['num_2_strides']
         netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], \
-            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size)
+            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,**kwargs)
 
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
