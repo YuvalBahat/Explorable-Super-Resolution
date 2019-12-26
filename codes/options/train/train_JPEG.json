@@ -1,5 +1,5 @@
 {
-  "name": "nf128nb8_QF10_Dstrides2nf16pastV" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "nf256nb8_QF10_Dstrides2nf32" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"dncnn"
   , "scale": 4
@@ -10,7 +10,7 @@
     "train": {
       "name": "DIV2K"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 10 //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": 10 //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_sub_GrayScale.lmdb"
       , "subset_file": null
       , "use_shuffle": true
@@ -25,14 +25,16 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 10 //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": 10 //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "Set14/Set14_GrayScale" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-//    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf128nb8_QF10/models/175082_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
+    //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+//    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
@@ -43,7 +45,7 @@
     , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "nf": 128 //256
+    , "nf": 256
     , "nb": 8 //17
     , "in_nc": 64
     , "out_nc": 64
@@ -61,12 +63,12 @@
     , "mode": "CNA"
     , "num_2_strides": 2
     , "n_layers": 6
-    , "nf": 16 //64
+    , "nf": 32 //64
     , "in_nc": 1
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,11 +89,11 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "past" //'current', 'convergence', 'past'
+//    , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
-    , "min_mean_D_correct": 0 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 10 //0
+    , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
+    , "D_update_ratio": 1 //10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
@@ -109,8 +111,8 @@
      , "gp_weigth": 10
 
     , "manual_seed": 0
-    , "niter": 2e6 //23532 //500100 //5e5
-    , "val_freq": 1e4
+    , "niter": 1e6 //23532 //500100 //5e5
+    , "val_freq": 1e4 //5e2 //1e4
   }
 
   , "logger": {
