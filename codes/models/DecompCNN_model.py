@@ -12,6 +12,9 @@ import numpy as np
 from collections import deque
 from utils.util import Z_optimizer,SVD_2_LatentZ
 from JPEG_module.JPEG import JPEG
+import tqdm
+from utils import util
+import cv2
 
 class DecompCNNModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None,**kwargs):
@@ -46,6 +49,8 @@ class DecompCNNModel(BaseModel):
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_optimalZ']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
+        self.avg_estimated_err = np.empty(shape=[8,8,0])
+        self.avg_estimated_err_step = []
         if self.is_train:
             if self.latent_input:
                 self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
@@ -459,6 +464,82 @@ class DecompCNNModel(BaseModel):
             self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
         self.netG.train()
 
+    def perform_validation(self,data_loader,cur_Z,print_rlt,GT_and_quantized,save_images,collect_avg_err_est=True):
+        SAVE_IMAGE_COLLAGE = True
+        avg_psnr, avg_quantized_psnr = [], []
+        idx = 0
+        image_collage = []
+        if save_images:
+            num_val_images = len(data_loader.dataset)
+            val_images_collage_rows = int(np.floor(np.sqrt(num_val_images)))
+            while val_images_collage_rows > 1:
+                if np.round(num_val_images / val_images_collage_rows) == num_val_images / val_images_collage_rows:
+                    break
+                val_images_collage_rows -= 1
+            per_image_saved_patch = min([min(im['Uncomp'].shape[1:]) for im in data_loader.dataset]) - 2
+            GT_image_collage, quantized_image_collage = [], []
+        QF_images_counter = {}
+        for val_data in tqdm.tqdm(data_loader):
+            if save_images:
+                if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
+            idx += 1
+            QF = val_data['QF'].item()
+            img_name = os.path.splitext(os.path.basename(val_data['Uncomp_path'][0]))[0]
+            val_data['Z'] = cur_Z
+            self.feed_data(val_data)
+            self.test()
+            visuals = self.get_current_visuals()
+            sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255])  # float32
+            gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255])  # float32
+            avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
+            if save_images:
+                if SAVE_IMAGE_COLLAGE:
+                    margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
+                    image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
+                    if GT_and_quantized:  # Save GT Uncomp images
+                        GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
+                        quantized_image = util.tensor2img(self.jpeg_extractor(self.jpeg_compressor(val_data['Uncomp'].to(self.device))),out_type=np.uint8, min_max=[0, 255])
+                        quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
+                        avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
+                        cv2.putText(quantized_image_collage[-1][-1], str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
+                                    color=np.mod(255 / 2 + quantized_image_collage[-1][-1][:25, :25].mean(), 255),thickness=2)
+                else:
+                    # Save Decomp images for reference
+                    img_dir = os.path.join(self.opt['path']['val_images'], img_name)
+                    util.mkdir(img_dir)
+                    save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, self.gradient_step_num))
+                    util.save_img(np.clip(sr_img, 0, 255).astype(np.uint8), save_img_path)
+            if QF in QF_images_counter.keys(): QF_images_counter[QF] += 1
+            else:
+                QF_images_counter[QF] = 1
+                print_rlt['psnr_gain_QF%d' % (QF)] = 0
+                if GT_and_quantized:
+                    self.log_dict['per_im_psnr_baseline_QF%d' % (QF)] = [(0, 0)]
+            if GT_and_quantized:
+                self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0] = \
+                    (0,((QF_images_counter[QF]-1)*self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1] + avg_quantized_psnr[-1])/QF_images_counter[QF])
+
+        if collect_avg_err_est:
+            self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.netG.module.return_collected_err_avg(),-1)],-1)
+            self.avg_estimated_err_step.append(self.gradient_step_num)
+            # self.log_dict['avg_est_err'].append((self.gradient_step_num,self.netG.module.return_collected_err_avg()))
+        for i, QF in enumerate(data_loader.dataset.per_index_QF):
+            print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1])/QF_images_counter[QF]
+        avg_psnr = 1 * np.mean(avg_psnr)
+        if SAVE_IMAGE_COLLAGE and save_images:
+            save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
+                ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
+            util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
+            if GT_and_quantized:  # Save GT Uncomp images
+                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))
+                avg_quantized_psnr = 1 * np.mean(avg_quantized_psnr)
+                print_rlt['psnr_baseline'] = avg_quantized_psnr
+                util.save_img(np.concatenate([np.concatenate(col, 0) for col in quantized_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']),
+                                           'Quantized_PSNR{:.3f}.png'.format(avg_quantized_psnr)))
+                self.log_dict['psnr_val_baseline'] = [(self.gradient_step_num, print_rlt['psnr_baseline'])]
+
+        print_rlt['psnr'] += avg_psnr
+
     def update_learning_rate(self,cur_step=None):
         #The returned value is LR_too_low
         SLOPE_BASED = False
@@ -515,6 +596,8 @@ class DecompCNNModel(BaseModel):
         np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
+        if 'avg_estimated_err' in self.__dir__():
+            np.savez(os.path.join(self.log_path,'avg_estimated_err.npz'),avg_estimated_err=self.avg_estimated_err,avg_estimated_err_step=self.avg_estimated_err_step)
 
     def load_log(self,max_step=None):
         PREPEND_OLD_LOG = False
@@ -535,6 +618,9 @@ class DecompCNNModel(BaseModel):
             collected_stats = np.load(os.path.join(self.log_path,'collected_stats.npz'))
             for i,file in enumerate(collected_stats.files):
                 self.cri_latent.collected_ratios[i] = deque(collected_stats[file],maxlen=self.cri_latent.collected_ratios[i].maxlen)
+        if os.path.isfile(os.path.join(self.log_path,'avg_estimated_err.npz')):
+            self.avg_estimated_err = np.load(os.path.join(self.log_path,'avg_estimated_err.npz'))['avg_estimated_err']
+            self.avg_estimated_err_step = list(np.load(os.path.join(self.log_path,'avg_estimated_err.npz'))['avg_estimated_err_step'])
 
     def get_current_visuals(self, need_Uncomp=True,entire_batch=False):
         out_dict = OrderedDict()
