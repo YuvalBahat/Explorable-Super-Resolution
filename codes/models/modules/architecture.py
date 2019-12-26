@@ -53,7 +53,8 @@ class DnCNN(nn.Module):
         assert act_type=='leakyrelu'
         assert norm_type=='batch'
         assert latent_input is None and num_latent_channels is None
-
+        self.average_err_collection_counter = 0
+        self.average_abs_err_estimates = np.zeros([8,8])
         padding = kernel_size//2
         layers = []
 
@@ -70,7 +71,17 @@ class DnCNN(nn.Module):
 
     def forward(self, x):
         quantization_err_estimation = self.dncnn(x)-0.5
+        if not next(self.modules()).training:
+            self.average_err_collection_counter += 1
+            self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
+                                              quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
         return x+quantization_err_estimation
+
+    def return_collected_err_avg(self):
+        self.average_err_collection_counter = 0
+        natrix_2_return = 1*self.average_abs_err_estimates
+        self.average_abs_err_estimates = np.zeros([8,8])
+        return natrix_2_return
 
     def save_estimated_errors_fig(self,quantization_err_batch):
         import matplotlib.pyplot as plt
