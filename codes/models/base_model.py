@@ -49,12 +49,30 @@ class BaseModel():
             network = network.module
         s = str(network)
         n = sum(map(lambda x: x.numel(), network.parameters()))
+        # receptive_field = self.numeric_effective_field(network)
         if 'Discriminator' in str(network.__class__):
             kernel_size,strides = self.return_kernel_sizes_and_strides(network)
             receptive_field = self.calc_receptive_field(kernel_size,strides)
             return s,n,receptive_field
         else:
             return s, n
+    def numeric_effective_field(self,model):
+        INOUT_SIZE = 501
+        mid_index = INOUT_SIZE//2+1
+        zeros_input = torch.zeros(1,next(model.parameters()).shape[1],INOUT_SIZE,INOUT_SIZE).type(next(model.parameters()).dtype).to(next(model.parameters()).device)
+        delta_input = torch.zeros_like(zeros_input)
+        delta_input[0,:,mid_index,mid_index] = 1
+        model.eval()
+        diffs_image = (model(delta_input)-model(zeros_input)).abs().squeeze(0).data.cpu().numpy()
+        model.train()
+        for i_ind in [0,-1]:
+            for j_ind in [0,-1]:
+                if np.max(diffs_image[:,i_ind,j_ind])>0:
+                    return None
+        receptive_field = np.maximum(np.argwhere(np.sum(diffs_image,axis=(0,1)))[-1]-mid_index,mid_index-np.argwhere(np.sum(diffs_image,axis=(0,1)))[0])
+        receptive_field = 1+2*np.maximum(receptive_field,np.maximum(np.argwhere(np.sum(diffs_image,axis=(0,2)))[-1]-mid_index,mid_index-np.argwhere(np.sum(diffs_image,axis=(0,1)))[0]))
+        return receptive_field
+
 
     def return_kernel_sizes_and_strides(self,network):
         kernel_sizes,strides = [],[]
@@ -192,7 +210,7 @@ class BaseModel():
                 cur_legend_string = [key + ' (%.2e)' % (series_avg)]
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
-                    if (key+'_baseline') in self.log_dict.keys():
+                    if (key+'_baseline') in self.log_dict.keys() and len(self.log_dict[key+'_baseline'])>0:
                         plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[key+'_baseline'][0][1]])
                         cur_legend_string.append('baseline' + ' (%.2e)' % (self.log_dict[key+'_baseline'][0][1]))
                     plt.legend(cur_legend_string, loc='best')

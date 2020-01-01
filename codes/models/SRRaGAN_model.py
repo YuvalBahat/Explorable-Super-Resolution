@@ -13,7 +13,7 @@ import DTE.DTEnet as DTEnet
 import numpy as np
 from collections import deque
 from utils.util import Z_optimizer,SVD_2_LatentZ
-
+# from utils.receptive_field import receptive_field
 
 def Unit_Circle_rejection_Sampling(batch_size):
     cur_Z = torch.rand([batch_size,3,1,1])
@@ -691,6 +691,7 @@ class SRRaGANModel(BaseModel):
     def print_network(self):
         # Generator
         s, n = self.get_network_description(self.netG)
+        # a = receptive_field(self.netG.module, input_size=(3, 256, 256))
         print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
@@ -700,8 +701,8 @@ class SRRaGANModel(BaseModel):
                     f.write(message)
 
             # Discriminator
-            s, n,receptive_field = self.get_network_description(self.netD)
-            print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n,receptive_field))
+            s, n,receptive_field_D = self.get_network_description(self.netD)
+            print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n,receptive_field_D))
             message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
             if not self.opt['train']['resume']:
                 with open(network_path, 'a') as f:
