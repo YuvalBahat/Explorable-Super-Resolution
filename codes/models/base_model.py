@@ -192,7 +192,7 @@ class BaseModel():
                 cur_legend_string = [key + ' (%.2e)' % (series_avg)]
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
-                    if (key+'_baseline') in self.log_dict.keys():
+                    if (key+'_baseline') in self.log_dict.keys() and len(self.log_dict[key+'_baseline'])>0:
                         plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[key+'_baseline'][0][1]])
                         cur_legend_string.append('baseline' + ' (%.2e)' % (self.log_dict[key+'_baseline'][0][1]))
                     plt.legend(cur_legend_string, loc='best')

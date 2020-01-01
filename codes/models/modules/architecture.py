@@ -88,7 +88,7 @@ class DnCNN(nn.Module):
         plt.clf()
         plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
         plt.colorbar()
-        plt.savefig('Est_quantization_errors_0iters.png')
+        plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
 
     def _initialize_weights(self):
         for m in self.modules():
