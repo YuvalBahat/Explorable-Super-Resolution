@@ -85,6 +85,8 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
     opt['path']['models'] = os.path.join(experiments_root, 'models')
+    if 'latent_input' not in opt['network_G'].keys():
+        opt['network_G']['latent_input'] = 'None'
     if opt['network_G']['latent_input']=='None':
         opt['network_G']['latent_channels'] = 0
     if is_train:
@@ -93,6 +95,9 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         if batch_size_multiplier is not None:
             opt['datasets']['train']['batch_size'] *= batch_size_multiplier
             opt['datasets']['train']['n_workers'] *= batch_size_multiplier
+        if 'batch_size_4_grads_G' not in opt['datasets']['train'].keys():
+            opt['datasets']['train']['batch_size_4_grads_G'] = 1*opt['datasets']['train']['batch_size']
+            opt['datasets']['train']['batch_size_4_grads_D'] = 1*opt['datasets']['train']['batch_size']
         while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
                 np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
             opt['datasets']['train']['batch_size'] -= 1
@@ -103,10 +108,11 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         opt['train']['grad_accumulation_steps_G'] = opt['datasets']['train']['batch_size_4_grads_G']//opt['datasets']['train']['batch_size']
         opt['train']['grad_accumulation_steps_D'] = opt['datasets']['train']['batch_size_4_grads_D']//opt['datasets']['train']['batch_size']
         # assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
-        if opt['network_D']['which_model_D']=='PatchGAN':
-            assert opt['train']['gan_type'] in ['lsgan','wgan-gp']
-        else:
-            assert (opt['train']['gan_type']!='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
+        if 'network_D' in opt.keys():
+            if opt['network_D']['which_model_D']=='PatchGAN':
+                assert opt['train']['gan_type'] in ['lsgan','wgan-gp']
+            else:
+                assert (opt['train']['gan_type']!='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
     else:  # test
         results_root = os.path.join(opt['path']['root'], 'results', opt['name'])
         opt['path']['results_root'] = results_root
