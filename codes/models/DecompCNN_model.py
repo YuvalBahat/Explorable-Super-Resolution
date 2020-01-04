@@ -242,7 +242,7 @@ class DecompCNNModel(BaseModel):
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self):
-        self.gradient_step_num = self.step//self.max_accumulation_steps
+        # self.gradient_step_num = self.step//self.max_accumulation_steps
         first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
         last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
         first_grad_accumulation_step_D = self.step%self.grad_accumulation_steps_D==0

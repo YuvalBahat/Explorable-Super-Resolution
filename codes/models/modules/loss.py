@@ -237,6 +237,7 @@ def CreateRangeLoss(legit_range):
     dtype = torch.cuda.FloatTensor
     legit_range = torch.FloatTensor(legit_range).type(dtype)
     def RangeLoss(x):
+        # Returning the mean deviation from the legitimate range, across all channels and pixels:
         return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
     return RangeLoss
 

@@ -1,4 +1,4 @@
-MODEL_NAME = 'nf128nb8_QF10_MSEand10Dstrides2nf15_LR1e-4fromMSE'
+MODEL_NAME = 'nf160nb10_QF10_LR1e-4'
 UPSAMPLING_FACTOR = 30
 FPS = 10
 
@@ -6,8 +6,8 @@ import numpy as np
 import os
 import cv2
 import shutil
-
-model_dir = os.path.join('/home/tiras/ybahat/SRGAN/experiments/JPEG',MODEL_NAME)
+root_folder = '/home/tiras/ybahat' if 'tiras' in os.getcwd() else '/media/ybahat/data/projects'
+model_dir = os.path.join(root_folder,'SRGAN/experiments/JPEG',MODEL_NAME)
 err_arr = np.load(os.path.join(model_dir,'avg_estimated_err.npz'))['avg_estimated_err']
 frame_nums = np.load(os.path.join(model_dir,'avg_estimated_err.npz'))['avg_estimated_err_step']
 frames_dir = os.path.join(model_dir,'temp_frames_dir')
