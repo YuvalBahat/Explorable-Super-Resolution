@@ -1,5 +1,5 @@
 {
-  "name": "Feat_with_max" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "Feat_with_randomPool" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -14,10 +14,10 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 8
-      , "batch_size": 6
-      , "batch_size_4_grads_G": 48
-      , "batch_size_4_grads_D": 48
+      , "n_workers": 0
+      , "batch_size": 8
+      , "batch_size_4_grads_G": 16
+      , "batch_size_4_grads_D": 16
       , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -34,15 +34,15 @@
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-//    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 1
+    , "DTE_arch": 0
     , "sigmoid_range_limit": 0
-    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
     , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": null
@@ -87,6 +87,7 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
+    , "feature_pooling":"random"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
@@ -114,7 +115,8 @@
     , "manual_seed": 0
     , "niter": 510000 //23532 //500100 //5e5
     , "val_freq": 500 //5e3
-  }
+    , "val_save_freq": 1e4
+}
 
   , "logger": {
     "print_freq": 100 //200

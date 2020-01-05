@@ -114,7 +114,8 @@
     , "manual_seed": 0
     , "niter": 510000 //23532 //500100 //5e5
     , "val_freq": 500 //5e3
-  }
+    , "val_save_freq": 1e4
+}
 
   , "logger": {
     "print_freq": 100 //200

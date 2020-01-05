@@ -110,7 +110,8 @@ def main():
                 if len(recently_saved_models)>3:
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
-                    os.remove(model_2_delete.replace('_G.','_D.'))
+                    if model.D_exists:
+                        os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
 
             if model.step > total_iters:
@@ -142,7 +143,7 @@ def main():
                 if model.generator_changed:
                     print('---------- validation -------------')
                     start_time = time.time()
-                    if SAVE_IMAGE_COLLAGE:
+                    if False and SAVE_IMAGE_COLLAGE and model.gradient_step_num%opt['train']['val_save_freq'] == 0: #Saving training images:
                         GT_image_collage = []
                         cur_train_results = model.get_current_visuals(entire_batch=True)
                         train_psnrs = [
@@ -152,63 +153,17 @@ def main():
                         #Save latest training batch output:
                         save_img_path = os.path.join(os.path.join(opt['path']['val_images']),
                                                      '{:d}_Tr_PSNR{:.3f}.png'.format(gradient_step_num, np.mean(train_psnrs)))
-                        util.save_img(np.clip(np.concatenate(
-                            (np.concatenate(
-                                [util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255 for im_num in
-                                 range(len(cur_train_results['SR']))],
-                                0), np.concatenate(
-                                [util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
-                                 range(len(cur_train_results['SR']))],
-                                0)), 1), 0, 255).astype(np.uint8), save_img_path)
+                        util.save_img(np.clip(np.concatenate((np.concatenate([util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255 for im_num in
+                                 range(len(cur_train_results['SR']))],0), np.concatenate([util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
+                                 range(len(cur_train_results['SR']))],0)), 1), 0, 255).astype(np.uint8), save_img_path)
                     Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
                     print_rlt['psnr'] = 0
                     for cur_Z in Z_latent:
-                        avg_psnr = 0.0
-                        idx = 0
-                        image_collage = []
-                        for val_data in tqdm.tqdm(val_loader):
-                            if idx%val_images_collage_rows==0:  image_collage.append([]);   GT_image_collage.append([])
-                            idx += 1
-                            img_name = os.path.splitext(os.path.basename(val_data['LR_path'][0]))[0]
-                            val_data['Z'] = cur_Z
-                            model.feed_data(val_data)
-                            model.test()
-
-                            visuals = model.get_current_visuals()
-                            sr_img = util.tensor2img(visuals['SR'],out_type=np.float32)  # float32
-                            gt_img = util.tensor2img(visuals['HR'],out_type=np.float32)  # float32
-
-                            # calculate PSNR
-                            crop_size = opt['scale']
-                            gt_img *= 255.
-                            sr_img *= 255.
-                            # cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                            # cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size, :]
-                            # avg_psnr += util.calculate_psnr(cropped_sr_img, cropped_gt_img)
-                            avg_psnr += util.calculate_psnr(sr_img, gt_img)
-
-                            if SAVE_IMAGE_COLLAGE:
-                                margins2crop = ((np.array(sr_img.shape[:2])-per_image_saved_patch)/2).astype(np.int32)
-                                image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
-                                if save_GT_HR:#Save GT HR images
-                                    GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0],margins2crop[1]:-margins2crop[1],:],0,255).astype(np.uint8))
-                            else:
-                                # Save SR images for reference
-                                img_dir = os.path.join(opt['path']['val_images'], img_name)
-                                util.mkdir(img_dir)
-                                save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, gradient_step_num))
-                                util.save_img(np.clip(sr_img,0,255).astype(np.uint8), save_img_path)
-
-                        avg_psnr = avg_psnr / idx
-                        if SAVE_IMAGE_COLLAGE:
-                            save_img_path = os.path.join(os.path.join(opt['path']['val_images']), '{:d}_{}PSNR{:.3f}.png'.format(gradient_step_num,('Z'+str(cur_Z)) if opt['network_G']['latent_input'] else '',avg_psnr))
-                            util.save_img(np.concatenate([np.concatenate(col,0) for col in image_collage],1), save_img_path)
-                            if save_GT_HR:  # Save GT HR images
-                                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
-                                    os.path.join(os.path.join(opt['path']['val_images']), 'GT_HR.png'))
-                                save_GT_HR = False
-                        print_rlt['psnr'] += avg_psnr/len(Z_latent)
-                    model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']))
+                        model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,save_GT_HR=save_GT_HR,
+                                                 save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_HR)
+                        if save_GT_HR:  # Save GT Uncomp images
+                            save_GT_HR = False
+                    model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']/len(Z_latent)))
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
