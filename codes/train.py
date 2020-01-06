@@ -120,7 +120,9 @@ def main():
             # training
             model.feed_data(train_data)
             model.optimize_parameters()
-
+            if not model.D_exists:#Avoid using the naive MultiLR scheduler when using adversarial loss
+                for scheduler in model.schedulers:
+                    scheduler.step(model.gradient_step_num)
             time_elapsed = time.time() - start_time
             if not_within_batch:    start_time = time.time()
 
@@ -136,6 +138,7 @@ def main():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
                 logger.print_format_results('train', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
+                model.display_log_figure()
 
             # validation
             if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0: # and gradient_step_num>=opt['train']['D_init_iters']:

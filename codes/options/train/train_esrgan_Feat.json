@@ -1,7 +1,7 @@
 {
-  "name": "Feat_with_randomPool" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "Feat_with_randomPool_srResNet" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
-  , "model":"srragan"
+  , "model": "srragan" //"srgan"
   , "scale": 4
   , "gpu_ids": [0]
   , "range": [0,1]
@@ -34,12 +34,12 @@
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth"
+//    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
   , "network_G": {
-    "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
+    "which_model_G": "sr_resnet" // RRDB_net | sr_resnet
     , "DTE_arch": 0
     , "sigmoid_range_limit": 0
     , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
@@ -69,7 +69,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -82,7 +82,7 @@
     , "steps_4_loss_std": 500
     , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
-    , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
+    , "lr_steps": [40000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
