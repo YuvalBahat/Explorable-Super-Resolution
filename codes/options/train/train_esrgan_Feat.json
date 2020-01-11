@@ -1,7 +1,7 @@
 {
-  "name": "Feat_with_randomPool_srResNet" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "Feat_with_MaxPool_srResNet" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
   , "use_tb_logger": false
-  , "model": "srragan" //"srgan"
+  , "model":"srragan"
   , "scale": 4
   , "gpu_ids": [0]
   , "range": [0,1]
@@ -87,7 +87,7 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling":"random"
+//    , "feature_pooling":"random"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
