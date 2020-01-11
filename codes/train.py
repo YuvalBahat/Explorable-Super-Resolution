@@ -105,14 +105,14 @@ def main():
             if lr_too_low or saving_step:
                 recently_saved_models.append(model.save(gradient_step_num))
                 model.save_log()
-                if lr_too_low:
-                    break
                 if len(recently_saved_models)>3:
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
                     if model.D_exists:
                         os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
+                if lr_too_low:
+                    break
 
             if model.step > total_iters:
                 break

@@ -12,7 +12,8 @@ from torch.nn import Upsample
 import DTE.DTEnet as DTEnet
 import numpy as np
 from collections import deque
-from utils.util import Z_optimizer,SVD_2_LatentZ
+from utils.util import SVD_2_LatentZ
+from Z_optimization import Z_optimizer
 import tqdm
 from utils import util
 
@@ -53,12 +54,12 @@ class SRRaGANModel(BaseModel):
         self.DTE_net = None
         self.DTE_arch = opt['network_G']['DTE_arch']
         self.step = 0
-        if self.DTE_arch or (opt['is_train'] and opt['train']['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_ortho_2_NS()
+        if self.DTE_arch or (opt['is_train'] and train_opt['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_ortho_2_NS()
             DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
             DTE_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
             DTE_conf.input_range = np.array(opt['range'])
             if self.is_train:
-                assert self.opt['train']['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
+                assert train_opt['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
                 DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
             if opt['test'] is not None and opt['test']['kernel']=='estimated':
                 # Using a non-accurate estimated kernel increases the risk of insability when inverting hTh, so I take a higher lower bound:
@@ -76,19 +77,19 @@ class SRRaGANModel(BaseModel):
                 self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
                 self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
-                if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight']>0 or self.debug):
-                    self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
-            self.D_verification = opt['train']['D_verification']
+                if train_opt['optimalZ_loss_type'] is not None and (train_opt['optimalZ_loss_weight']>0 or self.debug):
+                    self.optimalZ_loss_type = train_opt['optimalZ_loss_type']
+            self.D_verification = train_opt['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past',None]
             if self.D_verification=='convergence':
                 self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
             self.add_quantization_noise = bool(opt['network_D']['add_quantization_noise'])
             self.min_accumulation_steps = min(
-                [opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
+                [train_opt['grad_accumulation_steps_G'], train_opt['grad_accumulation_steps_D']])
             self.max_accumulation_steps = accumulation_steps_per_batch
-            self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
-            self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
+            self.grad_accumulation_steps_G = train_opt['grad_accumulation_steps_G']
+            self.grad_accumulation_steps_D = train_opt['grad_accumulation_steps_D']
             self.decomposed_output = self.DTE_arch and bool(opt['network_D']['decomposed_input'])
             self.netG.train()
             self.l_gan_w = train_opt['gan_weight']
@@ -148,13 +149,21 @@ class SRRaGANModel(BaseModel):
                 print('Remove feature loss.')
                 self.cri_fea = None
             if self.cri_fea:  # load VGG perceptual loss
-                self.netF = networks.define_F(opt, use_bn=False).to(self.device)
-                if 'feature_pooling' in opt['train'] and opt['train']['feature_pooling']=='random':
-                    import sys
-                    sys.path.append(os.path.abspath('../../RandomPooling'))
-                    # sys.path.append('/home/tiras/ybahat/RandomPooling' if 'trias' in os.getcwd() else '/home/ybahat/PycharmProjects/RandomPooling')
-                    from RandomPooling import Modify_Model
-                    self.netF.module = Modify_Model(self.netF.module,'max_2_random_pool')
+                if 'feature_pooling' in train_opt or 'feature_model_arch' in train_opt:
+                    if 'feature_model_arch' in train_opt:
+                        self.netF = networks.define_F(opt, use_bn=False,
+                            state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None,
+                                arch=train_opt['feature_model_arch'],feature_layer=18).to(self.device)
+                    else:
+                        self.netF = networks.define_F(opt, use_bn=False,
+                            state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None).to(self.device)
+                    if 'feature_pooling' in train_opt and 'random' in train_opt['feature_pooling']:
+                        import sys
+                        sys.path.append(os.path.abspath('../../RandomPooling'))
+                        from RandomPooling import Modify_Model
+                        self.netF.module = Modify_Model(self.netF.module,'max_2_'+train_opt['feature_pooling']+'_pool')
+                else:
+                    self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
             # Range limiting loss:
             if train_opt['range_weight'] > 0 or self.debug:

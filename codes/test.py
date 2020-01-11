@@ -25,7 +25,7 @@ from models.modules.loss import Latent_channels_desc_2_num_channels
 SPECIFIC_DEBUG = False
 # Parameters:
 SAVE_IMAGE_COLLAGE = False
-TEST_LATENT_OUTPUT = 'stats'#'GIF','video',None,'stats'
+TEST_LATENT_OUTPUT = None#'GIF','video',None,'stats'
 # Parameters for GIF:
 LATENT_DISTRIBUTION = 'rand_Uniform'#'Uniform'#'rand_Uniform','Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_hist
 NUM_Z_ITERS = 250
@@ -157,7 +157,10 @@ for test_loader in test_loaders:
         for z_sample_num,cur_Z_raw in enumerate(Z_latent):
             if SAVE_IMAGE_COLLAGE:
                 image_collage, GT_image_collage = [], []
-            if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
+            if TEST_LATENT_OUTPUT is None:
+                cur_channel_cur_Z = 0
+                cur_Z = cur_Z_raw
+            elif LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
                 cur_Z_image = cur_Z_raw
             elif LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS+['UnitCircle','rand_Uniform'] and model.num_latent_channels > 1:
                 cur_Z = np.reshape(np.stack((model.num_latent_channels * [OTHER_CHANNELS_VAL])[:LATENT_CHANNEL_NUM] +
@@ -210,14 +213,14 @@ for test_loader in test_loaders:
             # calculate PSNR and SSIM
             if need_HR:
                 if z_sample_num==0:
+                    gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
                     if opt['network_G']['latent_channels']>0:
-                        gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
                         img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
                         gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
                         HR_STD = 255*np.std(gt_orthogonal_component,axis=(0,1)).mean()
-                        gt_img *= 255.
                     else:
                         HR_STD = 0
+                    gt_img *= 255.
                 if TEST_LATENT_OUTPUT=='stats':
                     if opt['network_G']['latent_channels']>0:
                         image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
@@ -263,18 +266,18 @@ for test_loader in test_loaders:
                 if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:
                     cur_collage = cv2.putText(cur_collage, '%.2f'%(cur_channel_cur_Z), (0, 50),cv2.FONT_HERSHEY_SCRIPT_COMPLEX, fontScale=2.0, color=(255, 255, 255))
                 frames.append(cur_collage)
-        if need_HR and ((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_OUTPUT):  # metrics
-            # Average PSNR/SSIM results
-            ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
-            ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
-            print('----Average PSNR/SSIM results for {}----\n\tPSNR: {:.6f} dB; SSIM: {:.6f}\n'\
-                    .format(test_set_name, ave_psnr, ave_ssim))
-            os.rename(dataset_dir,dataset_dir+'_PSNR{:.3f}'.format(ave_psnr))
-            if test_results['psnr_y'] and test_results['ssim_y']:
-                ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
-                ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
-                print('----Y channel, average PSNR/SSIM----\n\tPSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}\n'\
-                    .format(ave_psnr_y, ave_ssim_y))
+    if need_HR and ((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_OUTPUT):  # metrics
+        # Average PSNR/SSIM results
+        ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
+        ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
+        print('----Average PSNR/SSIM results for {}----\n\tPSNR: {:.6f} dB; SSIM: {:.6f}\n'\
+                .format(test_set_name, ave_psnr, ave_ssim))
+        os.rename(dataset_dir,dataset_dir+'_PSNR{:.3f}'.format(ave_psnr))
+        if test_results['psnr_y'] and test_results['ssim_y']:
+            ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
+            ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
+            print('----Y channel, average PSNR/SSIM----\n\tPSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}\n'\
+                .format(ave_psnr_y, ave_ssim_y))
     if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0:
         pixels_STDs = [v.reshape([-1,3]) for v in pixels_STDs]
         with open(os.path.join(dataset_dir,'stats.txt'),'w') as f:

@@ -15,6 +15,7 @@ import types
 from models import create_model
 import options.options as option
 import utils.util as util
+from Z_optimization import Z_optimizer,ReturnPatchExtractionMat
 from utils.logger import Logger
 import data.util as data_util
 import numpy as np
@@ -2076,7 +2077,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 for i in range(optimization_batch_size):
                     self.canvas.Z_optimizer_logger.append(Logger(self.canvas.DTE_opt,tb_logger_suffix='_%s%s'%(objective,'_%d'%(i) if self.multiple_inits else '')))
 
-            self.canvas.Z_optimizer = util.Z_optimizer(objective=objective,Z_size=[val*self.canvas.SR_model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.SR_model,
+            self.canvas.Z_optimizer = Z_optimizer(objective=objective,Z_size=[val*self.canvas.SR_model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.SR_model,
                 Z_range=self.max_SVD_Lambda,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=self.iters_per_round,
                 image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,auto_set_hist_temperature=self.auto_set_hist_temperature,
                 batch_size=optimization_batch_size,random_Z_inits=self.random_inits,initial_Z=initial_Z)
@@ -2354,7 +2355,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def Estimate_DerivedControlIndicator(self):
         PATCH_SIZE_4_ESTIMATION = 3
-        patch_extraction_map = util.ReturnPatchExtractionMat(self.canvas.Z_mask,PATCH_SIZE_4_ESTIMATION,device=self.cur_Z.device,patches_overlap=1)
+        patch_extraction_map = ReturnPatchExtractionMat(self.canvas.Z_mask,PATCH_SIZE_4_ESTIMATION,device=self.cur_Z.device,patches_overlap=1)
         STD_map = torch.sparse.mm(patch_extraction_map, self.cur_Z.mean(dim=1).view([-1, 1])).view([PATCH_SIZE_4_ESTIMATION ** 2, -1]).std(dim=0).view(
             [val-PATCH_SIZE_4_ESTIMATION+1 for val in list(self.cur_Z.size()[2:])])
         return np.pad((STD_map>0).data.cpu().numpy().astype(np.bool),pad_width=int(PATCH_SIZE_4_ESTIMATION//2),mode='edge')
