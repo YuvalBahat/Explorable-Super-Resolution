@@ -7,6 +7,7 @@ from . import block as B
 from . import spectral_norm as SN
 import functools
 import numpy as np
+import os
 
 ####################
 # Generator
@@ -539,12 +540,17 @@ class VGGFeatureExtractor(nn.Module):
                  feature_layer=34,
                  use_bn=False,
                  use_input_norm=True,
-                 device=torch.device('cpu'),state_dict=None,arch='vgg19'):
+                 device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config=''):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained=True)
         else:
             model = torchvision.models.__dict__[arch](pretrained=True)
+        if arch_config!='':
+            import sys
+            sys.path.append(os.path.abspath('../../RandomPooling'))
+            from RandomPooling import Modify_Model
+            model = Modify_Model(model,arch_config)
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
             model.load_state_dict(state_dict)

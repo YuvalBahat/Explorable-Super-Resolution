@@ -162,9 +162,9 @@ def define_F(opt, use_bn=False,**kwargs):
     gpu_ids = opt['gpu_ids']
     device = torch.device('cuda' if gpu_ids else 'cpu')
     # pytorch pretrained VGG19-54, before ReLU.
-    if 'feature_layer' in kwargs.keys():
-        feature_layer = kwargs['feature_layer']
-        kwargs.pop('feature_layer',None)
+    if 'arch' in kwargs.keys()and 'vgg11' in kwargs['arch']:
+        feature_layer = int(kwargs['arch'][len('vgg11_'):])
+        kwargs['arch'] = 'vgg11'
     else:
         if use_bn:
             feature_layer = 49

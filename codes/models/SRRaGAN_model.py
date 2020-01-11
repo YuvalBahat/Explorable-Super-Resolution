@@ -150,18 +150,22 @@ class SRRaGANModel(BaseModel):
                 self.cri_fea = None
             if self.cri_fea:  # load VGG perceptual loss
                 if 'feature_pooling' in train_opt or 'feature_model_arch' in train_opt:
-                    if 'feature_model_arch' in train_opt:
-                        self.netF = networks.define_F(opt, use_bn=False,
+                    if 'feature_model_arch' not in train_opt:
+                        train_opt['feature_model_arch'] = 'vgg19'
+                    elif 'feature_pooling' not in train_opt:
+                        train_opt['feature_pooling'] = ''
+                    # if 'feature_model_arch' in train_opt:
+                    self.netF = networks.define_F(opt, use_bn=False,
                             state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None,
-                                arch=train_opt['feature_model_arch'],feature_layer=18).to(self.device)
-                    else:
-                        self.netF = networks.define_F(opt, use_bn=False,
-                            state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None).to(self.device)
-                    if 'feature_pooling' in train_opt and 'random' in train_opt['feature_pooling']:
-                        import sys
-                        sys.path.append(os.path.abspath('../../RandomPooling'))
-                        from RandomPooling import Modify_Model
-                        self.netF.module = Modify_Model(self.netF.module,'max_2_'+train_opt['feature_pooling']+'_pool')
+                                arch=train_opt['feature_model_arch'],arch_config=train_opt['feature_pooling']).to(self.device)
+                    # else:
+                    #     self.netF = networks.define_F(opt, use_bn=False,
+                    #         state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None).to(self.device)
+                    # if 'feature_pooling' in train_opt:
+                    #     import sys
+                    #     sys.path.append(os.path.abspath('../../RandomPooling'))
+                    #     from RandomPooling import Modify_Model
+                    #     self.netF.module = Modify_Model(self.netF.module,train_opt['feature_pooling'])
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
