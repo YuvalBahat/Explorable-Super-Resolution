@@ -539,12 +539,15 @@ class VGGFeatureExtractor(nn.Module):
                  feature_layer=34,
                  use_bn=False,
                  use_input_norm=True,
-                 device=torch.device('cpu')):
+                 device=torch.device('cpu'),state_dict=None,arch='vgg19'):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:
-            model = torchvision.models.vgg19_bn(pretrained=True)
+            model = torchvision.models.__dict__[arch+'_bn'](pretrained=True)
         else:
-            model = torchvision.models.vgg19(pretrained=True)
+            model = torchvision.models.__dict__[arch](pretrained=True)
+        if state_dict is not None:
+            state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
+            model.load_state_dict(state_dict)
         self.use_input_norm = use_input_norm
         if self.use_input_norm:
             mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
