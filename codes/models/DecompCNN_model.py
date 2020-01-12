@@ -10,7 +10,8 @@ from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels
 import numpy as np
 from collections import deque
-from utils.util import Z_optimizer,SVD_2_LatentZ
+from Z_optimization import Z_optimizer
+from utils.util import SVD_2_LatentZ
 from JPEG_module.JPEG import JPEG
 import tqdm
 from utils import util
