@@ -550,7 +550,7 @@ class VGGFeatureExtractor(nn.Module):
             import sys
             sys.path.append(os.path.abspath('../../RandomPooling'))
             from RandomPooling import Modify_Model
-            model = Modify_Model(model,arch_config)
+            model = Modify_Model(model,arch_config,classification_mode=False)
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
             model.load_state_dict(state_dict)
