@@ -107,18 +107,20 @@ def main():
             if lr_too_low or saving_step:
                 model.save_log()
                 recently_saved_models.append(model.save(model.gradient_step_num))
-                if lr_too_low:
-                    break
                 if len(recently_saved_models)>3:
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
                     if model.D_exists:
                         os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),model.gradient_step_num))
+                if lr_too_low:
+                    break
 
             if model.step > total_iters:
                 break
 
+            time_elapsed = time.time() - start_time
+            if not_within_batch:    start_time = time.time()
             # log
             if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
                 logs = model.get_current_log()
@@ -176,8 +178,6 @@ def main():
             model.feed_data(train_data)
             model.optimize_parameters()
 
-            time_elapsed = time.time() - start_time
-            if not_within_batch:    start_time = time.time()
 
             # update learning rate
             if not_within_batch:

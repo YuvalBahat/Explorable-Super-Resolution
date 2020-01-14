@@ -67,7 +67,9 @@ class SRRaGANModel(BaseModel):
             self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=kwargs['kernel'] if 'kernel' in kwargs.keys() else None if opt['test'] is None else opt['test']['kernel'])
             if not self.DTE_arch:
                 self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
-        self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels).to(self.device)  # G
+        self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels)  # G
+        print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,3,256,256])))
+        self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_optimalZ']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
@@ -154,18 +156,9 @@ class SRRaGANModel(BaseModel):
                         train_opt['feature_model_arch'] = 'vgg19'
                     elif 'feature_pooling' not in train_opt:
                         train_opt['feature_pooling'] = ''
-                    # if 'feature_model_arch' in train_opt:
                     self.netF = networks.define_F(opt, use_bn=False,
                             state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None,
                                 arch=train_opt['feature_model_arch'],arch_config=train_opt['feature_pooling']).to(self.device)
-                    # else:
-                    #     self.netF = networks.define_F(opt, use_bn=False,
-                    #         state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None).to(self.device)
-                    # if 'feature_pooling' in train_opt:
-                    #     import sys
-                    #     sys.path.append(os.path.abspath('../../RandomPooling'))
-                    #     from RandomPooling import Modify_Model
-                    #     self.netF.module = Modify_Model(self.netF.module,train_opt['feature_pooling'])
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
@@ -710,8 +703,10 @@ class SRRaGANModel(BaseModel):
 
     def print_network(self):
         # Generator
+        # s, n, receptive_field = self.get_network_description(self.netG)
+        # print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
         s, n = self.get_network_description(self.netG)
-        # a = receptive_field(self.netG.module, input_size=(3, 256, 256))
+        # # a = receptive_field(self.netG.module, input_size=(3, 256, 256))
         print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
@@ -729,6 +724,8 @@ class SRRaGANModel(BaseModel):
                         f.write(message)
 
             if self.cri_fea:  # F, Perceptual Network
+                # s, n,receptive_field = self.get_network_description(self.netF)
+                # print('Number of parameters in F: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
                 s, n = self.get_network_description(self.netF)
                 print('Number of parameters in F: {:,d}'.format(n))
                 message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'

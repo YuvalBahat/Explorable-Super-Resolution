@@ -133,7 +133,7 @@ def define_D(opt,DTE=None):
         kwargs = {}
         if 'num_2_strides' in opt_net:
             kwargs['num_2_strides'] = opt_net['num_2_strides']
-        netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], \
+        netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], nb=opt_net['n_layers'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,**kwargs)
 
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
