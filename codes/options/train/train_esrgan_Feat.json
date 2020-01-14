@@ -1,5 +1,5 @@
 {
-  "name": "Feat_with_VGG11_13_pool2dilations_srResNet" //,"Feat_with_MaxPool_srResNet" //, "Feat_with_randomPoolperC_RetrainedEp8_srResNet"
+  "name": "Feat_with_VGG19Untrained_srResNet" //,"Feat_with_MaxPool_srResNet" //, "Feat_with_randomPoolperC_RetrainedEp8_srResNet"
   , "use_tb_logger": false
   , "model": "srragan" //"srgan"
   , "scale": 4
@@ -87,9 +87,9 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling": "max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
+    , "feature_pooling": "untrained" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
 //    , "netF_checkpoint": "../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
-    , "feature_model_arch": "vgg11_13"
+//    , "feature_model_arch": "vgg11_13"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"

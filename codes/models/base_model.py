@@ -5,6 +5,7 @@ import DTE.DTEnet as DTEnet
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
+from utils.util import compute_RF_numerical
 
 class BaseModel():
     def __init__(self, opt):
@@ -50,6 +51,9 @@ class BaseModel():
         s = str(network)
         n = sum(map(lambda x: x.numel(), network.parameters()))
         # receptive_field = self.numeric_effective_field(network)
+        # networks_device = next(network.parameters()).device
+        # receptive_field = compute_RF_numerical(network.cpu(),np.ones([1,3,256,256]))
+        # network.to(networks_device)
         if 'Discriminator' in str(network.__class__):
             kernel_size,strides = self.return_kernel_sizes_and_strides(network)
             receptive_field = self.calc_receptive_field(kernel_size,strides)

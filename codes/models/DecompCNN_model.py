@@ -46,6 +46,8 @@ class DecompCNNModel(BaseModel):
         self.jpeg_extractor = JPEG(compress=False).to(self.device)
 
         self.netG = networks.define_G(opt,num_latent_channels=self.num_latent_channels).to(self.device)  # G
+        print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,3,256,256])))
+        self.netG.to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_optimalZ']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
@@ -545,6 +547,7 @@ class DecompCNNModel(BaseModel):
         #The returned value is LR_too_low
         SLOPE_BASED = False
         LOSS_BASED = True
+        return False#DISABLING this learning rate decreasing mechanism for now.
         if SLOPE_BASED:
             std,slope = 0,0
             for key in ['l_d_real','l_d_fake','l_g_gan']:
@@ -639,8 +642,10 @@ class DecompCNNModel(BaseModel):
 
     def print_network(self):
         # Generator
-        s, n = self.get_network_description(self.netG)
-        print('Number of parameters in G: {:,d}'.format(n))
+        s, n, receptive_field = self.get_network_description(self.netG)
+        print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
+        # s, n = self.get_network_description(self.netG)
+        # print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
             network_path = os.path.join(self.save_dir, '../', 'network.txt')
@@ -651,15 +656,17 @@ class DecompCNNModel(BaseModel):
             # Discriminator
             if self.cri_gan:
                 s, n,receptive_field = self.get_network_description(self.netD)
-                print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n,receptive_field))
+                print('Number of parameters in D: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
                 message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:
                     with open(network_path, 'a') as f:
                         f.write(message)
 
             if self.cri_fea:  # F, Perceptual Network
-                s, n = self.get_network_description(self.netF)
-                print('Number of parameters in F: {:,d}'.format(n))
+                s, n,receptive_field = self.get_network_description(self.netF)
+                print('Number of parameters in F: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
+                # s, n = self.get_network_description(self.netF)
+                # print('Number of parameters in F: {:,d}'.format(n))
                 message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:
                     with open(network_path, 'a') as f:

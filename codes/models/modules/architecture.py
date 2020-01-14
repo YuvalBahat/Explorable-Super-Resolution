@@ -325,7 +325,7 @@ class PatchGAN_Discriminator(nn.Module):
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5):
+    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=9):
         super(Discriminator_VGG_128, self).__init__()
         assert num_2_strides<=5,'Can be modified by adding more stridable layers, if needed.'
         self.num_2_strides = 1*num_2_strides
@@ -366,8 +366,7 @@ class Discriminator_VGG_128(nn.Module):
         FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
         num_2_strides -= 1
         # 4, 512
-        self.features = B.sequential(conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,\
-            conv9)
+        self.features = B.sequential(*([conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,conv9][:nb]))
 
         self.last_FC_layers = self.num_2_strides==5 #Replacing the FC layers with convolutions, which means using a patch discriminator:
 
@@ -376,8 +375,10 @@ class Discriminator_VGG_128(nn.Module):
         if self.last_FC_layers:
             self.classifier = nn.Sequential(nn.Linear(base_nf*8 * int(FC_end_patch_size)**2, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
         else:
-            pseudo_FC_conv0 = B.conv_block(base_nf*8,100,kernel_size=8,stride=1,norm_type=norm_type,act_type=act_type, mode=mode,pad_type=None)
-            pseudo_FC_conv1 = B.conv_block(100,1,kernel_size=1,stride=1,norm_type=norm_type,act_type=act_type, mode=mode)
+            # num_feature_channels = base_nf*8
+            num_feature_channels = [l for l in self.features.children()][-2].num_features
+            pseudo_FC_conv0 = B.conv_block(num_feature_channels,min(100,num_feature_channels),kernel_size=8,stride=1,norm_type=norm_type,act_type=act_type, mode=mode,pad_type=None)
+            pseudo_FC_conv1 = B.conv_block(min(100,num_feature_channels),1,kernel_size=1,stride=1,norm_type=norm_type,act_type=act_type, mode=mode)
             self.classifier = nn.Sequential(pseudo_FC_conv0, nn.LeakyReLU(0.2, False),pseudo_FC_conv1) # Changed the LeakyRelu inplace arg to False here, because it caused a bug for some reason.
 
     def forward(self, x):
@@ -543,9 +544,10 @@ class VGGFeatureExtractor(nn.Module):
                  device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config=''):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:
-            model = torchvision.models.__dict__[arch+'_bn'](pretrained=True)
+            model = torchvision.models.__dict__[arch+'_bn'](pretrained=arch_config!='untrained')
         else:
-            model = torchvision.models.__dict__[arch](pretrained=True)
+            model = torchvision.models.__dict__[arch](pretrained=arch_config!='untrained')
+        arch_config = arch_config if arch_config!='untrained' else ''
         if arch_config!='':
             import sys
             sys.path.append(os.path.abspath('../../RandomPooling'))
