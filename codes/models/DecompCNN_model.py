@@ -46,7 +46,10 @@ class DecompCNNModel(BaseModel):
         self.jpeg_extractor = JPEG(compress=False).to(self.device)
 
         self.netG = networks.define_G(opt,num_latent_channels=self.num_latent_channels).to(self.device)  # G
-        print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,3,256,256])))
+        # print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,64,64,64])))
+        G_kernel_sizes = [l.kernel_size[0] for l in next(self.netG.module.children()) if isinstance(l,nn.Conv2d)]
+        G_receptive_filed = G_kernel_sizes[0]+sum([k-1 for k in G_kernel_sizes[1:]])
+        print('Receptive field of G: %d = 8*%d'%(8*G_receptive_filed,G_receptive_filed))
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
@@ -75,6 +78,11 @@ class DecompCNNModel(BaseModel):
             self.D_exists = self.l_gan_w>0 or self.debug
             if self.D_exists:
                 self.netD = networks.define_D(opt).to(self.device)  # D
+                if train_opt['gan_type'] == 'wgan-gp':
+                    input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
+                    self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
+                    self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
+                    self.netD.cuda()
                 self.netD.train()
             self.netG.train()
 
@@ -642,10 +650,10 @@ class DecompCNNModel(BaseModel):
 
     def print_network(self):
         # Generator
-        s, n, receptive_field = self.get_network_description(self.netG)
-        print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
-        # s, n = self.get_network_description(self.netG)
-        # print('Number of parameters in G: {:,d}'.format(n))
+        # s, n, receptive_field = self.get_network_description(self.netG)
+        # print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
+        s, n = self.get_network_description(self.netG)
+        print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
             network_path = os.path.join(self.save_dir, '../', 'network.txt')
@@ -656,7 +664,7 @@ class DecompCNNModel(BaseModel):
             # Discriminator
             if self.cri_gan:
                 s, n,receptive_field = self.get_network_description(self.netD)
-                print('Number of parameters in D: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
+                print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n, receptive_field))
                 message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:
                     with open(network_path, 'a') as f:
