@@ -325,7 +325,7 @@ class PatchGAN_Discriminator(nn.Module):
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=9):
+    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=10):
         super(Discriminator_VGG_128, self).__init__()
         assert num_2_strides<=5,'Can be modified by adding more stridable layers, if needed.'
         self.num_2_strides = 1*num_2_strides
@@ -544,14 +544,14 @@ class VGGFeatureExtractor(nn.Module):
                  device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config=''):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:
-            model = torchvision.models.__dict__[arch+'_bn'](pretrained=arch_config!='untrained')
+            model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:
-            model = torchvision.models.__dict__[arch](pretrained=arch_config!='untrained')
-        arch_config = arch_config if arch_config!='untrained' else ''
+            model = torchvision.models.__dict__[arch](pretrained='untrained' not in arch_config)
+        arch_config = arch_config.replace('untrained_','').replace('untrained','')
         if arch_config!='':
             import sys
             sys.path.append(os.path.abspath('../../RandomPooling'))
-            from RandomPooling import Modify_Model
+            from model_modification import Modify_Model
             model = Modify_Model(model,arch_config,classification_mode=False)
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))

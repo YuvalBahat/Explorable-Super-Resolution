@@ -182,7 +182,7 @@ class BaseModel():
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
         keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
-                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ']
+                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ','l_g_pix','l_g_highpass']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)

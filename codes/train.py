@@ -17,7 +17,7 @@ from utils.logger import Logger, PrintLogger
 import tqdm
 from datetime import datetime
 
-IGNORED_KEYS_LIST = ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD','l_g_pix']
+IGNORED_KEYS_LIST = ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD']#,'l_g_pix'
 
 def main():
     # options
