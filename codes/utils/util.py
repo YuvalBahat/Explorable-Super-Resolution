@@ -11,6 +11,7 @@ from scipy.signal import convolve2d
 # from scipy.ndimage.morphology import binary_opening
 # from sklearn.feature_extraction.image import extract_patches_2d
 import torch
+import torch.nn as nn
 # from models.modules.loss import GANLoss,FilterLoss
 # from skimage.color import rgb2hsv,hsv2rgb
 ####################
@@ -216,6 +217,20 @@ def calculate_ssim(img1, img2):
             return ssim(np.squeeze(img1), np.squeeze(img2))
     else:
         raise ValueError('Wrong input image dimensions.')
+
+def convert_batchNorm_2_layerNorm(model,input):
+    module_layers = []
+    for i,l in enumerate(model.children()):
+        if isinstance(l,nn.Sequential):
+            inner_module,input = convert_batchNorm_2_layerNorm(l,input=input)
+            module_layers.append(inner_module)
+        elif isinstance(l,nn.BatchNorm2d):
+            module_layers.append(nn.LayerNorm(normalized_shape=list(input.size())[1:]))
+        else:
+            module_layers.append(l)
+            input = l(input)
+    return nn.Sequential(*module_layers),input
+
 
 # import numpy as np
 # import torch
