@@ -8,10 +8,61 @@ from . import spectral_norm as SN
 import functools
 import numpy as np
 import os
+import models.modules.archs_util as arch_util
+import torch.nn.functional as F
 
 ####################
 # Generator
 ####################
+class MSRResNet(nn.Module):
+    ''' modified SRResNet'''
+
+    def __init__(self, in_nc=3, out_nc=3, nf=64, nb=16, upscale=4):
+        super(MSRResNet, self).__init__()
+        self.upscale = upscale
+
+        self.conv_first = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        basic_block = functools.partial(arch_util.ResidualBlock_noBN, nf=nf)
+        self.recon_trunk = arch_util.make_layer(basic_block, nb)
+
+        # upsampling
+        if self.upscale == 2:
+            self.upconv1 = nn.Conv2d(nf, nf * 4, 3, 1, 1, bias=True)
+            self.pixel_shuffle = nn.PixelShuffle(2)
+        elif self.upscale == 3:
+            self.upconv1 = nn.Conv2d(nf, nf * 9, 3, 1, 1, bias=True)
+            self.pixel_shuffle = nn.PixelShuffle(3)
+        elif self.upscale == 4:
+            self.upconv1 = nn.Conv2d(nf, nf * 4, 3, 1, 1, bias=True)
+            self.upconv2 = nn.Conv2d(nf, nf * 4, 3, 1, 1, bias=True)
+            self.pixel_shuffle = nn.PixelShuffle(2)
+
+        self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv_last = nn.Conv2d(nf, out_nc, 3, 1, 1, bias=True)
+
+        # activation function
+        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+
+        # initialization
+        arch_util.initialize_weights([self.conv_first, self.upconv1, self.HRconv, self.conv_last],
+                                     0.1)
+        if self.upscale == 4:
+            arch_util.initialize_weights(self.upconv2, 0.1)
+
+    def forward(self, x):
+        fea = self.lrelu(self.conv_first(x))
+        out = self.recon_trunk(fea)
+
+        if self.upscale == 4:
+            out = self.lrelu(self.pixel_shuffle(self.upconv1(out)))
+            out = self.lrelu(self.pixel_shuffle(self.upconv2(out)))
+        elif self.upscale == 3 or self.upscale == 2:
+            out = self.lrelu(self.pixel_shuffle(self.upconv1(out)))
+
+        out = self.conv_last(self.lrelu(self.HRconv(out)))
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        out += base
+        return out
 
 
 class SRResNet(nn.Module):
@@ -275,6 +326,61 @@ class PatchGAN_Discriminator(nn.Module):
                 input = seq(input)
         return input
 
+class Discriminator_VGG_128_nonModified(nn.Module):
+    def __init__(self, in_nc, nf):
+        super(Discriminator_VGG_128_nonModified, self).__init__()
+        # [64, 128, 128]
+        self.conv0_0 = nn.Conv2d(in_nc, nf, 3, 1, 1, bias=True)
+        self.conv0_1 = nn.Conv2d(nf, nf, 4, 2, 1, bias=False)
+        self.bn0_1 = nn.BatchNorm2d(nf, affine=True)
+        # [64, 64, 64]
+        self.conv1_0 = nn.Conv2d(nf, nf * 2, 3, 1, 1, bias=False)
+        self.bn1_0 = nn.BatchNorm2d(nf * 2, affine=True)
+        self.conv1_1 = nn.Conv2d(nf * 2, nf * 2, 4, 2, 1, bias=False)
+        self.bn1_1 = nn.BatchNorm2d(nf * 2, affine=True)
+        # [128, 32, 32]
+        self.conv2_0 = nn.Conv2d(nf * 2, nf * 4, 3, 1, 1, bias=False)
+        self.bn2_0 = nn.BatchNorm2d(nf * 4, affine=True)
+        self.conv2_1 = nn.Conv2d(nf * 4, nf * 4, 4, 2, 1, bias=False)
+        self.bn2_1 = nn.BatchNorm2d(nf * 4, affine=True)
+        # [256, 16, 16]
+        self.conv3_0 = nn.Conv2d(nf * 4, nf * 8, 3, 1, 1, bias=False)
+        self.bn3_0 = nn.BatchNorm2d(nf * 8, affine=True)
+        self.conv3_1 = nn.Conv2d(nf * 8, nf * 8, 4, 2, 1, bias=False)
+        self.bn3_1 = nn.BatchNorm2d(nf * 8, affine=True)
+        # [512, 8, 8]
+        self.conv4_0 = nn.Conv2d(nf * 8, nf * 8, 3, 1, 1, bias=False)
+        self.bn4_0 = nn.BatchNorm2d(nf * 8, affine=True)
+        self.conv4_1 = nn.Conv2d(nf * 8, nf * 8, 4, 2, 1, bias=False)
+        self.bn4_1 = nn.BatchNorm2d(nf * 8, affine=True)
+
+        self.linear1 = nn.Linear(512 * 4 * 4, 100)
+        self.linear2 = nn.Linear(100, 1)
+
+        # activation function
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+    def forward(self, x):
+        fea = self.lrelu(self.conv0_0(x))
+        fea = self.lrelu(self.bn0_1(self.conv0_1(fea)))
+
+        fea = self.lrelu(self.bn1_0(self.conv1_0(fea)))
+        fea = self.lrelu(self.bn1_1(self.conv1_1(fea)))
+
+        fea = self.lrelu(self.bn2_0(self.conv2_0(fea)))
+        fea = self.lrelu(self.bn2_1(self.conv2_1(fea)))
+
+        fea = self.lrelu(self.bn3_0(self.conv3_0(fea)))
+        fea = self.lrelu(self.bn3_1(self.conv3_1(fea)))
+
+        fea = self.lrelu(self.bn4_0(self.conv4_0(fea)))
+        fea = self.lrelu(self.bn4_1(self.conv4_1(fea)))
+
+        fea = fea.view(fea.size(0), -1)
+        fea = self.lrelu(self.linear1(fea))
+        out = self.linear2(fea)
+        return out
+
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
     def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=10):
@@ -493,7 +599,7 @@ class VGGFeatureExtractor(nn.Module):
                  feature_layer=34,
                  use_bn=False,
                  use_input_norm=True,
-                 device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config=''):
+                 device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config='',**kwargs):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
@@ -504,7 +610,8 @@ class VGGFeatureExtractor(nn.Module):
             import sys
             sys.path.append(os.path.abspath('../../RandomPooling'))
             from model_modification import Modify_Model
-            model = Modify_Model(model,arch_config,classification_mode=False)
+            saved_drawn_indexes = kwargs['saved_drawn_indexes'] if 'saved_drawn_indexes' in kwargs.keys() else None
+            model = Modify_Model(model,arch_config,classification_mode=False,saved_drawn_indexes=saved_drawn_indexes)
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
             model.load_state_dict(state_dict)
@@ -520,6 +627,19 @@ class VGGFeatureExtractor(nn.Module):
         # No need to BP to variable
         for k, v in self.features.named_parameters():
             v.requires_grad = False
+
+    def _initialize_weights(self):#This function was copied from the torchvision.models.vgg code:
+        for m in self.features.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         if self.use_input_norm:

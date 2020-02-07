@@ -106,17 +106,19 @@ def define_G(opt,DTE=None,num_latent_channels=None):
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=opt_net['in_nc'],out_nc=opt_net['out_nc'],norm_type=opt_net['norm_type'])
+    elif which_model == 'MSRResNet':  # SRResNet
+        netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
+                             nb=opt_net['nb'], upscale=opt_net['scale'])
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
     if opt_net['DTE_arch']:
         netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['patch_size'] if opt['is_train'] else None)
-    if opt['is_train']:# and which_model != 'DnCNN':
+    if opt['is_train'] and which_model != 'MSRResNet':# and which_model != 'DnCNN':
         init_weights(netG, init_type='kaiming', scale=0.1)
     if gpu_ids:
         assert torch.cuda.is_available()
         netG = nn.DataParallel(netG)
     return netG
-
 
 # Discriminator
 def define_D(opt,DTE=None):
@@ -135,7 +137,8 @@ def define_D(opt,DTE=None):
             kwargs['num_2_strides'] = opt_net['num_2_strides']
         netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], nb=opt_net['n_layers'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,**kwargs)
-
+    if which_model == 'discriminator_vgg_128_nonModified':
+        netD = arch.Discriminator_VGG_128_nonModified(in_nc=in_nc, nf=opt_net['nf'])
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
     elif which_model=='PatchGAN':

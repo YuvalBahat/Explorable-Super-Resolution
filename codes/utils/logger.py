@@ -38,7 +38,7 @@ class Logger(object):
         if self.use_tb_logger:# and 'debug' not in self.exp_name:
             from tensorboard_logger import Logger as TensorboardLogger
             logger_dir_num = 0
-            tb_logger_dir = self.log_dir.replace('results', 'logs')
+            tb_logger_dir = self.log_dir.replace('experiments', 'logs')
             if not os.path.isdir(tb_logger_dir):
                 os.mkdir(tb_logger_dir)
             existing_dirs = sorted([dir.split('_')[0] for dir in os.listdir(tb_logger_dir) if os.path.isdir(os.path.join(tb_logger_dir,dir))],key=lambda x:int(x.split('_')[0]))

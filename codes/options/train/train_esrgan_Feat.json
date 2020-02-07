@@ -1,6 +1,6 @@
 {
-  "name": "Feat_with_LinearVGG19Untrained" //,"MSE_srResNet" //, "HighPass_srResNet"
-  , "use_tb_logger": false
+  "name": "Feat_with_untrained_randomMaxSize" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
+  , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
   , "gpu_ids": [0]
@@ -69,7 +69,7 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":1
     ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,7 +87,7 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling": "untrained_linear" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
+    , "feature_pooling": "untrained_max_2_random_max_size_once" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
 //    , "netF_checkpoint": "../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
 //    , "feature_model_arch": "vgg11_13"
     , "feature_criterion": "l1"

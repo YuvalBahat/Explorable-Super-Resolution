@@ -36,10 +36,8 @@ def main():
             not key == 'pretrain_model_G' and not key == 'pretrain_model_D'))
     option.save(opt)
     opt = option.dict_to_nonedict(opt)  # Convert to NoneDict, which return None for missing key.
-
     # print to file and std_out simultaneously
     sys.stdout = PrintLogger(opt['path']['log'])
-
     # random seed
     seed = opt['train']['manual_seed']
     if seed is None:
@@ -73,7 +71,10 @@ def main():
             raise NotImplementedError('Phase [{:s}] is not recognized.'.format(phase))
     assert train_loader is not None
     # Create model
-    model = create_model(opt,max_accumulation_steps)
+    if max_accumulation_steps!=1:
+        model = create_model(opt,max_accumulation_steps)
+    else:
+        model = create_model(opt)
     # create logger
     logger = Logger(opt)
     # Save validation set results as image collage:
@@ -162,8 +163,11 @@ def main():
                     Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
                     print_rlt['psnr'] = 0
                     for cur_Z in Z_latent:
-                        model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,save_GT_HR=save_GT_HR,
+                        sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,save_GT_HR=save_GT_HR,
                                                  save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_HR)
+                        if logger.use_tb_logger:
+                            logger.tb_logger.log_images('validation_Z%.2f'%(cur_Z), [im[:,:,[2,1,0]] for im in sr_images], model.gradient_step_num)
+
                         if save_GT_HR:  # Save GT Uncomp images
                             save_GT_HR = False
                     model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']/len(Z_latent)))

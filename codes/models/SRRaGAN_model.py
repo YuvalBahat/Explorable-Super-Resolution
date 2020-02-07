@@ -27,7 +27,7 @@ def Unit_Circle_rejection_Sampling(batch_size):
     return cur_Z
 
 class SRRaGANModel(BaseModel):
-    def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None,**kwargs):
+    def __init__(self, opt,accumulation_steps_per_batch=1,init_Fnet=None,init_Dnet=None,**kwargs):
         super(SRRaGANModel, self).__init__(opt)
         train_opt = opt['train']
         self.log_path = opt['path']['log']
@@ -162,14 +162,19 @@ class SRRaGANModel(BaseModel):
                 print('Remove feature loss.')
                 self.cri_fea = None
             if self.cri_fea:  # load VGG perceptual loss
+                self.reshuffle_netF_weights = False
                 if 'feature_pooling' in train_opt or 'feature_model_arch' in train_opt:
                     if 'feature_model_arch' not in train_opt:
                         train_opt['feature_model_arch'] = 'vgg19'
                     elif 'feature_pooling' not in train_opt:
                         train_opt['feature_pooling'] = ''
+                    self.reshuffle_netF_weights = 'shuffled' in train_opt['feature_pooling']
+                    train_opt['feature_pooling'] = train_opt['feature_pooling'].replace('untrained_shuffled_','untrained_').replace('untrained_shuffled','untrained')
+                    saved_drawn_indexes = torch.load(os.path.join(opt['path']['models'],'random_indexes.pth')) if os.path.isfile(os.path.join(opt['path']['models'],'random_indexes.pth')) else None
                     self.netF = networks.define_F(opt, use_bn=False,
                             state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None,
-                                arch=train_opt['feature_model_arch'],arch_config=train_opt['feature_pooling']).to(self.device)
+                                arch=train_opt['feature_model_arch'],arch_config=train_opt['feature_pooling'],
+                                  saved_drawn_indexes=saved_drawn_indexes).to(self.device)
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
@@ -555,6 +560,14 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_g_highpass'].append((self.gradient_step_num,np.mean(self.l_g_highpass_grad_step)))
                     if self.cri_fea:
                         self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
+                        if self.reshuffle_netF_weights:
+                            self.netF.module._initialize_weights()
+                        if 'max_2_random_max_size_once' in self.opt['train']['feature_pooling'] and self.step==0:
+                            sys.path.append(os.path.abspath('../../RandomPooling'))
+                            from RandomMaxArea import RandomMaxArea
+                            torch.save([([ri._indices() for ri in l.random_indexes['pooling_mats']],l.random_indexes['max_areas']) for l in
+                                self.netF.module.features.children() if isinstance(l, RandomMaxArea)],
+                                                   os.path.join(self.opt['path']['models'],'random_indexes.pth'))
                     if self.cri_range:
                         self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
                     if self.cri_latent:
@@ -589,6 +602,7 @@ class SRRaGANModel(BaseModel):
                 val_images_collage_rows -= 1
             per_image_saved_patch = min([min(im['HR'].shape[1:]) for im in data_loader.dataset]) - 2
             GT_image_collage = []
+        sr_images = []
         for val_data in tqdm.tqdm(data_loader):
             if save_images:
                 if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);
@@ -599,6 +613,7 @@ class SRRaGANModel(BaseModel):
             self.test()
             visuals = self.get_current_visuals()
             sr_img = 255*util.tensor2img(visuals['SR'], out_type=np.float32)  # float32
+            sr_images.append(sr_img)
             gt_img = 255*util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
             avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
             if save_images:
@@ -622,6 +637,7 @@ class SRRaGANModel(BaseModel):
             if save_GT_HR:  # Save GT HR images
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_HR.png'))
         print_rlt['psnr'] += avg_psnr
+        return sr_images
 
     def update_learning_rate(self,cur_step=None):
         #The returned value is LR_too_low

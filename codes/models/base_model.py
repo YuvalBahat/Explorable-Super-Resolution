@@ -146,7 +146,7 @@ class BaseModel():
             if key!=current_key:
                 assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
                 modified_key_names_counter += 1
-            if self.latent_input is not None and \
+            if 'latent_input' in self.__dict__ and self.latent_input is not None and \
                 'weight' in key and loaded_state_dict[key].dim()>1 and \
                 current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
                 # In case we initialize a newly trained model that has latent input, with pre-trained model that doesn't have, add weights corresponding to
