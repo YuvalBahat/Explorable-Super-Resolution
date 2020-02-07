@@ -1,6 +1,6 @@
 {
-  "name": "Feat_with_LinearVGG19Untrained" //,"MSE_srResNet" //, "HighPass_srResNet"
-  , "use_tb_logger": false
+  "name": "Feat_with_untrained_first_max_size_5" //,"MSE_srResNet" //, "HighPass_srResNet"
+  , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
   , "gpu_ids": [0]
@@ -87,7 +87,7 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling": "untrained_linear" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
+    , "feature_pooling": "untrained_first_max_size_5"//"untrained_max_2_hat_random_stride_size_once" //,"untrained_linear" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
 //    , "netF_checkpoint": "../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
 //    , "feature_model_arch": "vgg11_13"
     , "feature_criterion": "l1"
