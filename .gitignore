@@ -30,7 +30,6 @@ data_samples/samples_byteimg
 data_samples/samples_colorimg
 data_samples/samples_segprob
 data_samples/samples_result
-/codes/icons/
 /pretrained_models/
 /codes/baboon.png
 /codes/face.png
