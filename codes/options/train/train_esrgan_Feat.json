@@ -69,7 +69,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,8 +87,8 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling": "max_2_avg"//"untrained_max_2_hat_random_stride_size_once" //,"untrained_linear" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
-    , "netF_checkpoint": "../pretrained_models/VGG19_max2avg.pth.tar" //,"../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
+    , "feature_pooling": "untrained_linear" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool"
+//    , "netF_checkpoint": "../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
 //    , "feature_model_arch": "vgg11_13"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
