@@ -595,10 +595,7 @@ class Discriminator_VGG_192(nn.Module):
 
 # Assume input range is [0, 1]
 class VGGFeatureExtractor(nn.Module):
-    def __init__(self,
-                 feature_layer=34,
-                 use_bn=False,
-                 use_input_norm=True,
+    def __init__(self,feature_layer=34,use_bn=False,use_input_norm=True,
                  device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config='',**kwargs):
         super(VGGFeatureExtractor, self).__init__()
         if use_bn:

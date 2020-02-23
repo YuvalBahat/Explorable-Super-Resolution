@@ -171,10 +171,11 @@ class SRRaGANModel(BaseModel):
                     self.reshuffle_netF_weights = 'shuffled' in train_opt['feature_pooling']
                     train_opt['feature_pooling'] = train_opt['feature_pooling'].replace('untrained_shuffled_','untrained_').replace('untrained_shuffled','untrained')
                     saved_drawn_indexes = torch.load(os.path.join(opt['path']['models'],'random_indexes.pth')) if os.path.isfile(os.path.join(opt['path']['models'],'random_indexes.pth')) else None
-                    self.netF = networks.define_F(opt, use_bn=False,
-                            state_dict=torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None,
-                                arch=train_opt['feature_model_arch'],arch_config=train_opt['feature_pooling'],
-                                  saved_drawn_indexes=saved_drawn_indexes).to(self.device)
+                    loaded_state_dict = torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None
+                    if loaded_state_dict is not None:
+                        print('Loaded state-dict for feature loss: ',train_opt['netF_checkpoint'])
+                    self.netF = networks.define_F(opt, use_bn=False,state_dict=loaded_state_dict,arch=train_opt['feature_model_arch'],
+                        arch_config=train_opt['feature_pooling'],saved_drawn_indexes=saved_drawn_indexes).to(self.device)
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 

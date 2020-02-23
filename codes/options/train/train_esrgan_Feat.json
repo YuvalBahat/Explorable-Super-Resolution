@@ -88,7 +88,7 @@
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
     , "feature_pooling": "untrained_max_2_random_max_size_once" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
-//    , "netF_checkpoint": "../pretrained_models/VGG19_RandomPoolingEp18.pth.tar"
+//    , "netF_checkpoint": "/home/tiras/ybahat/ImageNet_trainer/saved_models/vgg19_back2default/model_best.pth.tar"
 //    , "feature_model_arch": "vgg11_13"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
