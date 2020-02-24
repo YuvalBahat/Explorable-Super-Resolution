@@ -602,6 +602,11 @@ class VGGFeatureExtractor(nn.Module):
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:
             model = torchvision.models.__dict__[arch](pretrained='untrained' not in arch_config)
+        # I now remove all unnecessary layers before changing the model configuration, because this change may make alter the number of layers, thus necessitating changing the feature_layer parameter.
+        if state_dict is not None:
+            state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
+            model.load_state_dict(state_dict)
+        model.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
         arch_config = arch_config.replace('untrained_','').replace('untrained','')
         if arch_config!='':
             import sys
@@ -609,9 +614,6 @@ class VGGFeatureExtractor(nn.Module):
             from model_modification import Modify_Model
             saved_drawn_indexes = kwargs['saved_drawn_indexes'] if 'saved_drawn_indexes' in kwargs.keys() else None
             model = Modify_Model(model,arch_config,classification_mode=False,saved_drawn_indexes=saved_drawn_indexes)
-        if state_dict is not None:
-            state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
-            model.load_state_dict(state_dict)
         self.use_input_norm = use_input_norm
         if self.use_input_norm:
             mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
@@ -620,7 +622,9 @@ class VGGFeatureExtractor(nn.Module):
             # [0.229*2, 0.224*2, 0.225*2] if input in range [-1,1]
             self.register_buffer('mean', mean)
             self.register_buffer('std', std)
-        self.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
+        #     Moved the next line to appear earlier, before altering the number of layers in the model
+        # self.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
+        self.features = model.features
         # No need to BP to variable
         for k, v in self.features.named_parameters():
             v.requires_grad = False
