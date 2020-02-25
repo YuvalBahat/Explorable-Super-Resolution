@@ -25,7 +25,7 @@ from models.modules.loss import Latent_channels_desc_2_num_channels
 SPECIFIC_DEBUG = False
 # Parameters:
 SAVE_IMAGE_COLLAGE = False
-TEST_LATENT_OUTPUT = None#'GIF','video',None,'stats'
+TEST_TYPE = None#'GIF','video',None,'stats'
 # Parameters for GIF:
 LATENT_DISTRIBUTION = 'rand_Uniform'#'Uniform'#'rand_Uniform','Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_hist
 NUM_Z_ITERS = 250
@@ -71,11 +71,11 @@ if not opt['test']['kernel']=='estimated': #I don't want to create the model in 
         model = create_model(opt,init_Fnet=True)
     else:
         model = create_model(opt)
-# assert SAVE_IMAGE_COLLAGE or not TEST_LATENT_OUTPUT,'Must use image collage for creating GIF'
-# TEST_LATENT_OUTPUT = TEST_LATENT_OUTPUT if opt['network_G']['latent_input'] else None
-assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_LATENT_OUTPUT,'Use 1 image only for these Z input types'
+# assert SAVE_IMAGE_COLLAGE or not TEST_TYPE,'Must use image collage for creating GIF'
+# TEST_TYPE = TEST_TYPE if opt['network_G']['latent_input'] else None
+assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_TYPE,'Use 1 image only for these Z input types'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2 or not SAVE_IMAGE_COLLAGE,'Pick an odd number of samples'
-assert LATENT_DISTRIBUTION == 'rand_Uniform' or TEST_LATENT_OUTPUT!='stats','Why not using rand_uniform when collecting stats?'
+assert LATENT_DISTRIBUTION == 'rand_Uniform' or TEST_TYPE!='stats','Why not using rand_uniform when collecting stats?'
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
     print('\nTesting [{:s}]...'.format(test_set_name))
@@ -97,7 +97,7 @@ for test_loader in test_loaders:
     test_results['ssim'] = []
     test_results['psnr_y'] = []
     test_results['ssim_y'] = []
-    if TEST_LATENT_OUTPUT:
+    if TEST_TYPE:
         if LATENT_DISTRIBUTION=='Gaussian':#When I used Gaussian latent input, I set the range to cover LATENT_RANGE of the probability:
             optional_Zs = np.arange(start=-2,stop=0,step=0.001)
             optional_Zs = optional_Zs[int(np.argwhere(norm.cdf(optional_Zs)>=(1-LATENT_RANGE)/2)[0]):]
@@ -157,7 +157,7 @@ for test_loader in test_loaders:
         for z_sample_num,cur_Z_raw in enumerate(Z_latent):
             if SAVE_IMAGE_COLLAGE:
                 image_collage, GT_image_collage = [], []
-            if TEST_LATENT_OUTPUT is None:
+            if TEST_TYPE is None:
                 cur_channel_cur_Z = 0
                 cur_Z = cur_Z_raw
             elif LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
@@ -177,7 +177,7 @@ for test_loader in test_loaders:
             need_HR = False if test_loader.dataset.opt['dataroot_HR'] is None else True
             img_path = data['LR_path'][0]
             img_name = os.path.splitext(os.path.basename(img_path))[0]
-            if TEST_LATENT_OUTPUT:
+            if TEST_TYPE:
                 if LATENT_DISTRIBUTION == 'Input_Z_Im':
                     cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
                 elif 'Desired_Im' in LATENT_DISTRIBUTION:
@@ -200,7 +200,7 @@ for test_loader in test_loaders:
             # save images
             suffix = opt['suffix']
             if not SAVE_IMAGE_COLLAGE:
-                if TEST_LATENT_OUTPUT=='stats':
+                if TEST_TYPE=='stats':
                     save_img_path = os.path.join(dataset_dir, img_name + '_s%%0%dd'%(len(str(NUM_SAMPLES-1)))%(z_sample_num) + '.png')
                 elif suffix:
                     save_img_path = os.path.join(dataset_dir, img_name + suffix + '.png')
@@ -221,7 +221,7 @@ for test_loader in test_loaders:
                     else:
                         HR_STD = 0
                     gt_img *= 255.
-                if TEST_LATENT_OUTPUT=='stats':
+                if TEST_TYPE=='stats':
                     if opt['network_G']['latent_channels']>0:
                         image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
                     if z_sample_num==(len(Z_latent)-1):
@@ -262,11 +262,11 @@ for test_loader in test_loaders:
                 util.save_img(cur_collage, save_img_path%(''))
                 # Save GT HR images:
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),save_img_path%'_GT_HR')
-            if TEST_LATENT_OUTPUT:
+            if TEST_TYPE:
                 if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:
                     cur_collage = cv2.putText(cur_collage, '%.2f'%(cur_channel_cur_Z), (0, 50),cv2.FONT_HERSHEY_SCRIPT_COMPLEX, fontScale=2.0, color=(255, 255, 255))
                 frames.append(cur_collage)
-    if need_HR and ((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_OUTPUT):  # metrics
+    if need_HR and ((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_TYPE):  # metrics
         # Average PSNR/SSIM results
         ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
         ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
@@ -278,7 +278,7 @@ for test_loader in test_loaders:
             ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
             print('----Y channel, average PSNR/SSIM----\n\tPSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}\n'\
                 .format(ave_psnr_y, ave_ssim_y))
-    if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0:
+    if TEST_TYPE == 'stats' and opt['network_G']['latent_channels']>0:
         pixels_STDs = [v.reshape([-1,3]) for v in pixels_STDs]
         with open(os.path.join(dataset_dir,'stats.txt'),'w') as f:
             f.write('STD of per-image mean pixels STD: %.4f\n' % (np.std(np.stack([np.mean(v) for v in pixels_STDs]))))
@@ -286,17 +286,17 @@ for test_loader in test_loaders:
             f.write('Overall mean pixels STD: %.4f\n'%(pixels_STDs.mean()))
             f.write('Overall STD of pixels STD: %.4f\n' % (np.std(pixels_STDs,0).mean()))
 
-    if TEST_LATENT_OUTPUT in ['GIF','video']:
+    if TEST_TYPE in ['GIF','video']:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS else ''))
         if model.num_latent_channels>1 and LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:
             folder_name += '_Ch%d'%(LATENT_CHANNEL_NUM)
-        if TEST_LATENT_OUTPUT=='GIF':
+        if TEST_TYPE=='GIF':
             frames = [frame[:,:,::-1] for frame in frames]#Channels are originally ordered as BGR for cv2
-        elif TEST_LATENT_OUTPUT == 'video':
+        elif TEST_TYPE == 'video':
             video = cv2.VideoWriter(folder_name+'.avi',0,25,frames[0].shape[:2])
         if not os.path.isdir(folder_name):        os.mkdir(folder_name)
         for i,frame in enumerate(frames+(frames[-2:0:-1] if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS+['UnitCircle'] else [])):
-            if TEST_LATENT_OUTPUT == 'GIF':
+            if TEST_TYPE == 'GIF':
                 if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
                     im_name = ''
                     if Z_image_names[i] is not None:
@@ -309,9 +309,9 @@ for test_loader in test_loaders:
                 if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS and LATENT_DISTRIBUTION!='Input_Z_Im':
                     Z_2_save = cur_Z.data.cpu().numpy().transpose((2,3,1,0)).squeeze()
                     imageio.imsave(os.path.join(folder_name,'%s_Z.png'%(im_name)),((Z_2_save+LATENT_RANGE)/2*255/LATENT_RANGE).astype(np.uint8))
-            elif TEST_LATENT_OUTPUT=='video':
+            elif TEST_TYPE=='video':
                 video.write(frame)
-        if TEST_LATENT_OUTPUT == 'video':
+        if TEST_TYPE == 'video':
             cv2.destroyAllWindows()
             video.release()
         elif LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:
