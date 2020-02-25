@@ -10,6 +10,7 @@ import numpy as np
 import os
 import models.modules.archs_util as arch_util
 import torch.nn.functional as F
+import re
 
 ####################
 # Generator
@@ -591,13 +592,15 @@ class Discriminator_VGG_192(nn.Module):
 ####################
 # Perceptual Network
 ####################
-
+RETRAINING_OBLIGING_MODIFICATIONS = ['num_channel_factor_\d(\.\d)?$','patches_init_first']
 
 # Assume input range is [0, 1]
 class VGGFeatureExtractor(nn.Module):
     def __init__(self,feature_layer=34,use_bn=False,use_input_norm=True,
                  device=torch.device('cpu'),state_dict=None,arch='vgg19',arch_config='',**kwargs):
         super(VGGFeatureExtractor, self).__init__()
+        if arch_config!='':
+            assert all([re.search(pattern,arch_config) is None for pattern in RETRAINING_OBLIGING_MODIFICATIONS]) or 'untrained_' in arch_config
         if use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:
