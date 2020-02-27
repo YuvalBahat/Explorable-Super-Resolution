@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-
-# Form implementation generated from reading ui file 'mainwindow.ui'
-#
-# Created by: PyQt5 UI code generator 5.10
-#
-# WARNING! All changes made in this file will be lost!
-
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -186,6 +178,18 @@ class Ui_MainWindow(object):
             button.setMinimumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
             button.setMaximumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
 
+        def Define_Action_Button(button_name,tooltip,disabled=False,checkable=False,size=1):
+            setattr(self,button_name+'_action',QtWidgets.QToolButton(icon=QIcon(QPixmap('icons/'+button_name.replace('_action','_button')+'.png'))))
+            button = getattr(self,button_name+'_action')
+            button.setObjectName(button_name+'_action')
+            button.setEnabled(not disabled)
+            button.setToolTip(tooltip)
+            button.setCheckable(checkable)
+            if not isinstance(size,list):
+                size = [size,size]
+            button.setMinimumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
+            button.setMaximumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
+
         Define_Push_Button(button_name='CopyFromRandom',tooltip='Copy displayed random region to Z',disabled=True)
         Define_Push_Button(button_name='Copy2Random', tooltip='Copy region from Z to random images')
         Define_Push_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity', checkable=True)
@@ -305,20 +309,20 @@ class Ui_MainWindow(object):
         # MainWindow.addToolBar(QtCore.Qt.LeftToolBarArea if MainWindow.canvas.display_zoom_factor>1 else QtCore.Qt.BottomToolBarArea, self.ZToolbar2)
         MainWindow.addToolBar(QtCore.Qt.LeftToolBarArea, self.ZToolbar2)
 
-        Define_Push_Button(button_name='scribble_reset',tooltip='Erase scribble in region')
+        Define_Action_Button(button_name='scribble_reset',tooltip='Erase scribble in region')
         # icon_scribble_reset = QIcon()
         # icon_scribble_reset.addPixmap(QPixmap("icons/scribble_reset.png"), QIcon.Normal, QIcon.Off)
         # self.actionScribbleReset = QtWidgets.QAction(icon=icon_scribble_reset,parent=self.Scribble_Toolbar)
         # self.actionScribbleReset.setObjectName("actionScribbleReset")
         # self.actionScribbleReset.setEnabled(True)
 
-        Define_Push_Button(button_name='apply_scribble',tooltip='Perform a single scribble/imprinting application step',disabled=True)
+        Define_Action_Button(button_name='apply_scribble',tooltip='Perform a single scribble/imprinting application step',disabled=True)
         # icon_scribble_reset = QIcon()
         # icon_scribble_reset.addPixmap(QPixmap("icons/apply_scribble.png"), QIcon.Normal, QIcon.Off)
         # self.actionApplyScrible = QtWidgets.QAction(icon=icon_scribble_reset,parent=self.Scribble_Toolbar)
         # self.actionApplyScrible.setObjectName("actionApplyScrible")
 
-        Define_Push_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',disabled=True)
+        Define_Action_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',disabled=True)
         # icon_scribble_reset = QIcon()
         # icon_scribble_reset.addPixmap(QPixmap("icons/loop_apply_scribble.png"), QIcon.Normal, QIcon.Off)
         # self.actionLoopApplyScrible = QtWidgets.QAction(icon=icon_scribble_reset,parent=self.Scribble_Toolbar)
@@ -397,7 +401,7 @@ class Ui_MainWindow(object):
         # self.actionClearImage = QtWidgets.QAction(MainWindow)
         # self.actionClearImage.setObjectName("actionClearImage")
 
-        Define_Push_Button(button_name='open_image',tooltip='Load LR image')
+        Define_Action_Button(button_name='open_image',tooltip='Load LR image')
         # self.actionOpenImage = QtWidgets.QAction(MainWindow)
         # icon16 = QIcon()
         # icon16.addPixmap(QPixmap("icons/blue-folder-open-image.png"), QIcon.Normal, QIcon.Off)
@@ -405,7 +409,7 @@ class Ui_MainWindow(object):
         # self.actionOpenImage.setObjectName("actionOpenImage")
         # self.actionOpenImage.setToolTip('Load LR image')
 
-        Define_Push_Button(button_name='Z_load',tooltip='Load Z map')
+        Define_Action_Button(button_name='Z_load',tooltip='Load Z map')
         # self.actionLoad_Z = QtWidgets.QAction(MainWindow)
         # icon_load_Z = QIcon()
         # icon_load_Z.addPixmap(QPixmap("icons/Z_load.png"), QIcon.Normal, QIcon.Off)
@@ -413,7 +417,7 @@ class Ui_MainWindow(object):
         # self.actionLoad_Z.setObjectName("actionLoad_Z")
         # self.actionLoad_Z.setToolTip('Load Z map')
 
-        Define_Push_Button(button_name='Z_mask_load',tooltip='Load Z map to infer selection')
+        Define_Action_Button(button_name='Z_mask_load',tooltip='Load Z map to infer selection')
         # self.actionLoad_Z_mask = QtWidgets.QAction(MainWindow)
         # icon_load_Z_mask = QIcon()
         # icon_load_Z_mask.addPixmap(QPixmap("icons/Z_mask_load.png"), QIcon.Normal, QIcon.Off)
@@ -434,7 +438,7 @@ class Ui_MainWindow(object):
         # self.estimatedKenrel_button.setObjectName("desiredHistMode_button")
         # self.estimatedKenrel_button.setToolTip('Use estimated SR kernel')
 
-        Define_Push_Button('ProcessRandZ',tooltip='Produce random images')
+        Define_Action_Button('ProcessRandZ',tooltip='Produce random images')
         # self.actionProcessRandZ = QtWidgets.QAction(MainWindow)
         # # self.actionProcessRandZ.setText("Random Z")
         # icon_randomZ = QIcon()
@@ -443,7 +447,7 @@ class Ui_MainWindow(object):
         # self.actionProcessRandZ.setObjectName("actionProcessRandZ")
         # self.actionProcessRandZ.setToolTip('Produce random images')
 
-        Define_Push_Button('ProcessLimitedRandZ',tooltip='Produce random images close to current')
+        Define_Action_Button('ProcessLimitedRandZ',tooltip='Produce random images close to current')
         # self.actionProcessLimitedRandZ = QtWidgets.QAction(MainWindow)
         # icon_limited_randomZ = QIcon()
         # icon_limited_randomZ.addPixmap(QPixmap("icons/random_l1_limited.png"), QIcon.Normal, QIcon.Off)
@@ -501,7 +505,7 @@ class Ui_MainWindow(object):
         # self.special_behavior_button.setObjectName("special_behavior_button")
         # self.special_behavior_button.setToolTip('Toggle special behavior')
 
-        Define_Push_Button('IncreaseSTD',tooltip='Increase local STD (Magnitude)')
+        Define_Action_Button('IncreaseSTD',tooltip='Increase local STD (Magnitude)')
         # self.actionIncreaseSTD = QtWidgets.QAction(MainWindow)
         # # self.actionIncreaseSTD.setText("Increase STD")
         # self.actionIncreaseSTD.setObjectName("actionIncreaseSTD")
@@ -510,7 +514,7 @@ class Ui_MainWindow(object):
         # self.actionIncreaseSTD.setIcon(icon_sigmaUp)
         # self.actionIncreaseSTD.setToolTip('Increase local STD (Magnitude)')
 
-        Define_Push_Button('DecreaseSTD',tooltip='Decrease local STD (Magnitude)')
+        Define_Action_Button('DecreaseSTD',tooltip='Decrease local STD (Magnitude)')
         # self.actionDecreaseSTD = QtWidgets.QAction(MainWindow)
         # # self.actionDecreaseSTD.setText("Decrease STD")
         # self.actionDecreaseSTD.setObjectName("actionDecreaseSTD")
@@ -527,7 +531,7 @@ class Ui_MainWindow(object):
         self.STD_increment.setDecimals(2)
         self.STD_increment.setToolTip('STD/Brightness change')
 
-        Define_Push_Button('DecreaseTV',tooltip='Decrease TV')
+        Define_Action_Button('DecreaseTV',tooltip='Decrease TV')
         # self.actionDecreaseTV = QtWidgets.QAction(MainWindow)
         # self.actionDecreaseTV.setObjectName("actionDecreaseTV")
         # icon_TVdown = QIcon()
@@ -535,7 +539,7 @@ class Ui_MainWindow(object):
         # self.actionDecreaseTV.setIcon(icon_TVdown)
         # self.actionDecreaseTV.setToolTip('Decrease TV')
 
-        Define_Push_Button('ImitateHist',tooltip='Encourage desired histogram',disabled=True)
+        Define_Action_Button('ImitateHist',tooltip='Encourage desired histogram',disabled=True)
         # self.actionImitateHist = QtWidgets.QAction(MainWindow)
         # self.actionImitateHist.setObjectName("actionImitateHist")
         # icon_hist_imitation = QIcon()
@@ -544,7 +548,7 @@ class Ui_MainWindow(object):
         # self.actionImitateHist.setEnabled(False)
         # self.actionImitateHist.setToolTip('Encourage desired histogram')
 
-        Define_Push_Button('ImitatePatchHist',tooltip='Encourage desired mean-less (normalized) patches',disabled=True)
+        Define_Action_Button('ImitatePatchHist',tooltip='Encourage desired mean-less (normalized) patches',disabled=True)
         # self.actionImitatePatchHist = QtWidgets.QAction(MainWindow)
         # self.actionImitatePatchHist.setObjectName("actionImitatePatchHist")
         # icon_patch_hist_imitation = QIcon()
@@ -559,7 +563,7 @@ class Ui_MainWindow(object):
         # icon_match_sliders.addPixmap(QPixmap("icons/sliders_icon.png"), QIcon.Normal, QIcon.Off)
         # self.actionMatchSliders.setIcon(icon_match_sliders)
 
-        Define_Push_Button('FoolAdversary',tooltip='Fool discriminator')
+        Define_Action_Button('FoolAdversary',tooltip='Fool discriminator')
         # self.actionFoolAdversary = QtWidgets.QAction(MainWindow)
         # self.actionFoolAdversary.setObjectName("actionFoolAdversary")
         # icon_pixmap = QPixmap("icons/adversary.png")
@@ -570,7 +574,7 @@ class Ui_MainWindow(object):
         # self.actionFoolAdversary.setIcon(icon_adversary)
         # self.actionFoolAdversary.setToolTip('Fool discriminator')
 
-        Define_Push_Button('IncreasePeriodicity_2D',tooltip='Increase 2D periodicity',disabled=True)
+        Define_Action_Button('IncreasePeriodicity_2D',tooltip='Increase 2D periodicity',disabled=True)
         # self.actionIncreasePeriodicity = QtWidgets.QAction(MainWindow)
         # self.actionIncreasePeriodicity.setObjectName("actionIncreasePeriodicity")
         # icon_pixmap = QPixmap("icons/indicate_periodicity_2D.png")
@@ -580,7 +584,7 @@ class Ui_MainWindow(object):
         # self.actionIncreasePeriodicity.setEnabled(False)
         # self.actionIncreasePeriodicity.setToolTip('Increase 2D periodicity')
 
-        Define_Push_Button('IncreasePeriodicity_1D',tooltip='Increase 1D periodicity',disabled=True)
+        Define_Action_Button('IncreasePeriodicity_1D',tooltip='Increase 1D periodicity',disabled=True)
         # self.actionIncreasePeriodicity_1D = QtWidgets.QAction(MainWindow)
         # self.actionIncreasePeriodicity_1D.setObjectName("actionIncreasePeriodicity_1D")
         # icon_pixmap = QPixmap("icons/indicate_periodicity_1D.png")
@@ -590,7 +594,7 @@ class Ui_MainWindow(object):
         # self.actionIncreasePeriodicity_1D.setEnabled(False)
         # self.actionIncreasePeriodicity_1D.setToolTip('Increase 1D periodicity')
 
-        Define_Push_Button('SaveImageAndData',tooltip='Save image, Z and scribble data')
+        Define_Action_Button('SaveImageAndData',tooltip='Save image, Z and scribble data')
         # self.actionSaveImageAndData = QtWidgets.QAction(MainWindow)
         # icon17_0 = QIcon()
         # icon17_0.addPixmap(QPixmap("icons/Save-icon.png"), QIcon.Normal, QIcon.Off)
@@ -614,7 +618,7 @@ class Ui_MainWindow(object):
         # self.actionIncreaseDisplayZoom.setObjectName("actionIncreaseDisplayZoom")
         # self.actionIncreaseDisplayZoom.setToolTip('Save image, Z and scribble data')
 
-        Define_Push_Button('SaveImage',tooltip='Save image')
+        Define_Action_Button('SaveImage',tooltip='Save image')
         # self.actionSaveImage = QtWidgets.QAction(MainWindow)
         # icon17 = QIcon()
         # icon17.addPixmap(QPixmap("icons/disk.png"), QIcon.Normal, QIcon.Off)
@@ -626,7 +630,7 @@ class Ui_MainWindow(object):
         # self.actionFlipHorizontal.setObjectName("actionFlipHorizontal")
         # self.actionFlipVertical = QtWidgets.QAction(MainWindow)
         # self.actionFlipVertical.setObjectName("actionFlipVertical")
-        Define_Push_Button('open_HR_image',tooltip='Synthetically downscale an HR image')
+        Define_Action_Button('open_HR_image',tooltip='Synthetically downscale an HR image')
         # self.actionNewImage = QtWidgets.QAction(MainWindow)
         # icon18 = QIcon()
         # icon18.addPixmap(QPixmap("icons/document-image.png"), QIcon.Normal, QIcon.Off)
@@ -673,13 +677,13 @@ class Ui_MainWindow(object):
         # self.menuBar.addAction(self.menuEdit.menuAction())
         # self.menuBar.addAction(self.menuImage.menuAction())
         # self.menuBar.addAction(self.menuHelp.menuAction())
-        self.fileToolbar.addWidget(self.open_HR_image_button)
-        self.fileToolbar.addWidget(self.open_image_button)
+        self.fileToolbar.addWidget(self.open_HR_image_action)
+        self.fileToolbar.addWidget(self.open_image_action)
         self.fileToolbar.addWidget(self.estimatedKenrel_button)
-        self.fileToolbar.addWidget(self.Z_load_button)
-        self.fileToolbar.addWidget(self.Z_mask_load_button)
-        self.fileToolbar.addWidget(self.SaveImage_button)
-        self.fileToolbar.addWidget(self.SaveImageAndData_button)
+        self.fileToolbar.addWidget(self.Z_load_action)
+        self.fileToolbar.addWidget(self.Z_mask_load_action)
+        self.fileToolbar.addWidget(self.SaveImage_action)
+        self.fileToolbar.addWidget(self.SaveImageAndData_action)
         self.fileToolbar.addWidget(self.DecreaseDisplayZoom_button)
         self.fileToolbar.addWidget(self.IncreaseDisplayZoom_button)
 

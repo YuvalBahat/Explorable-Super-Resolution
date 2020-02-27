@@ -7,11 +7,10 @@
     <content url="file:///media/ybahat/data/projects/SRGAN">
       <excludeFolder url="file:///media/ybahat/data/projects/SRGAN" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.6 (python_3_6) (2)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.6 (python_3_6)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">
-    <option name="projectConfiguration" value="pytest" />
     <option name="PROJECT_TEST_RUNNER" value="pytest" />
   </component>
 </module>
