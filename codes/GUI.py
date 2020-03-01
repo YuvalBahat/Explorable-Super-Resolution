@@ -1343,7 +1343,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         available_GPUs = util.Assign_GPU()
         self.num_random_Zs = NUM_RANDOM_ZS
         self.canvas = Canvas()
-        self.setupUi(self)
+        # self.setupUi(self)
+        self.setupUi()
 
         # Editable SR:
         self.opt = option.parse('./options/test/GUI_esrgan.json', is_train=False)
@@ -2452,7 +2453,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DisplayedImageSelection_button.setCurrentIndex(self.cur_Z_im_index)
             # if ALTERNATIVE_HR_DISPLAYS_ON_SAME_CANVAS:
             self.no_Z_image = torch.from_numpy(np.transpose(2 * (resize(image=data_util.read_img(None,
-                                                                                                 'icons/old/X.png')[:, :, ::-1], output_shape=self.canvas.HR_size) - 0.5), (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+                                                                                                 'icons/X.png')[:, :, ::-1], output_shape=self.canvas.HR_size) - 0.5), (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             # else:
             #     self.canvas.HR_size = list(self.canvas.SR_model.fake_H.size()[2:])
             if 'current_scribble_mask' in self.canvas.__dict__.keys():
