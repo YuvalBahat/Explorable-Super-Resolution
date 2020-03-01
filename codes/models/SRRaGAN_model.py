@@ -16,7 +16,7 @@ from utils.util import SVD_2_LatentZ
 from Z_optimization import Z_optimizer
 import tqdm
 from utils import util
-
+import sys
 
 
 def Unit_Circle_rejection_Sampling(batch_size):
@@ -170,12 +170,12 @@ class SRRaGANModel(BaseModel):
                         train_opt['feature_pooling'] = ''
                     self.reshuffle_netF_weights = 'shuffled' in train_opt['feature_pooling']
                     train_opt['feature_pooling'] = train_opt['feature_pooling'].replace('untrained_shuffled_','untrained_').replace('untrained_shuffled','untrained')
-                    saved_drawn_indexes = torch.load(os.path.join(opt['path']['models'],'random_indexes.pth')) if os.path.isfile(os.path.join(opt['path']['models'],'random_indexes.pth')) else None
+                    saved_config_params = torch.load(os.path.join(opt['path']['models'],'F_config_params.pth')) if os.path.isfile(os.path.join(opt['path']['models'],'F_config_params.pth')) else None
                     loaded_state_dict = torch.load(train_opt['netF_checkpoint'])['state_dict'] if 'netF_checkpoint' in train_opt else None
                     if loaded_state_dict is not None:
                         print('Loaded state-dict for feature loss: ',train_opt['netF_checkpoint'])
                     self.netF = networks.define_F(opt, use_bn=False,state_dict=loaded_state_dict,arch=train_opt['feature_model_arch'],
-                        arch_config=train_opt['feature_pooling'],saved_drawn_indexes=saved_drawn_indexes).to(self.device)
+                        arch_config=train_opt['feature_pooling'],saved_config_params=saved_config_params).to(self.device)
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
@@ -563,12 +563,16 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
                         if self.reshuffle_netF_weights:
                             self.netF.module._initialize_weights()
-                        if 'max_2_random_max_size_once' in self.opt['train']['feature_pooling'] and self.step==0:
-                            sys.path.append(os.path.abspath('../../RandomPooling'))
-                            from RandomMaxArea import RandomMaxArea
-                            torch.save([([ri._indices() for ri in l.random_indexes['pooling_mats']],l.random_indexes['max_areas']) for l in
-                                self.netF.module.features.children() if isinstance(l, RandomMaxArea)],
-                                                   os.path.join(self.opt['path']['models'],'random_indexes.pth'))
+                        if self.step<=1:
+                            if 'max_2_random_max_size_once' in self.opt['train']['feature_pooling']:
+                                sys.path.append(os.path.abspath('../../RandomPooling'))
+                                from RandomMaxArea import RandomMaxArea
+                                torch.save([([ri._indices() for ri in l.random_indexes['pooling_mats']],l.random_indexes['max_areas']) for l in
+                                    self.netF.module.features.children() if isinstance(l, RandomMaxArea)],
+                                                       os.path.join(self.opt['path']['models'],'F_config_params.pth'))
+                            elif 'patches_init_first' in self.opt['train']['feature_pooling']:
+                                torch.save(next(self.netF.module.features.parameters()),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
+
                     if self.cri_range:
                         self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
                     if self.cri_latent:

@@ -615,8 +615,8 @@ class VGGFeatureExtractor(nn.Module):
             import sys
             sys.path.append(os.path.abspath('../../RandomPooling'))
             from model_modification import Modify_Model
-            saved_drawn_indexes = kwargs['saved_drawn_indexes'] if 'saved_drawn_indexes' in kwargs.keys() else None
-            model = Modify_Model(model,arch_config,classification_mode=False,saved_drawn_indexes=saved_drawn_indexes)
+            saved_config_params = kwargs['saved_config_params'] if 'saved_config_params' in kwargs.keys() else None
+            model = Modify_Model(model,arch_config,classification_mode=False,saved_config_params=saved_config_params)
         self.use_input_norm = use_input_norm
         if self.use_input_norm:
             mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
