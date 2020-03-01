@@ -89,8 +89,8 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         opt['network_G']['latent_input'] = 'None'
     if opt['network_G']['latent_input']=='None':
         opt['network_G']['latent_channels'] = 0
+    opt['path']['log'] = experiments_root
     if is_train:
-        opt['path']['log'] = experiments_root
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
         if batch_size_multiplier is not None:
             opt['datasets']['train']['batch_size'] *= batch_size_multiplier
@@ -116,7 +116,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     else:  # test
         results_root = os.path.join(opt['path']['root'], 'results', opt['name'])
         opt['path']['results_root'] = results_root
-        opt['path']['log'] = results_root
+        # opt['path']['log'] = results_root
 
     # network
     opt['network_G']['scale'] = scale
