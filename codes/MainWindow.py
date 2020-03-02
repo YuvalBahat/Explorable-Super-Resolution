@@ -31,28 +31,39 @@ class Ui_MainWindow(object):
         cum_locations[:,:,1] = np.maximum(cum_locations[:,:,1],np.max(cum_locations[:,:,1],0,keepdims=True))
         cum_locations = np.stack([np.concatenate([np.zeros([1, layout_cols]).astype(int), np.cumsum(cum_locations[:-1, :, 0], 0)], 0),
                                   np.concatenate([np.zeros([layout_rows, 1]).astype(int), np.cumsum(cum_locations[:, :-1, 1], 1)], 1)], -1)
-        toolbar = QToolBar(layout_name)
-        self.addToolBar(toolbar)
-        # self.addToolBarBreak()
-        toolbar.addWidget(QLabel(layout_name))
-        toolbar.setContentsMargins(0,0, 0 ,0)
-        # toolbar.setSpacing(15)
-        toolbar.setObjectName(layout_name)
-        # widget = QtWidgets.QWidget(self)
-        # title = QLabel(parent=widget)
-        # title.setText(layout_name.replace('_',' '))
-        # setattr(self, layout_name, QtWidgets.QGridLayout(widget))
-        # new_layout = getattr(self, layout_name)
-        # new_layout.setContentsMargins(0, title.height(), 0 ,0)
-        # new_layout.setSpacing(15)
-        # new_layout.setObjectName(layout_name)
+        # toolbar = QToolBar(layout_name)
+        # self.addToolBar(toolbar)
+        # # self.addToolBarBreak()
+        # toolbar.addWidget(QLabel(layout_name))
+        # toolbar.setContentsMargins(0,0, 0 ,0)
+        # # toolbar.setSpacing(15)
+        # toolbar.setObjectName(layout_name)
+        # gridLayout = QtWidgets.QGridLayout(toolbar)
+        # gridLayout.setContentsMargins(11, 11, 11, 11)
+        # gridLayout.setSpacing(15)
+        # gridLayout.setObjectName(layout_name+'_grid')
+
+        widget = QtWidgets.QWidget()
+        title = QLabel(parent=widget)
+        title.setText(layout_name.replace('_',' '))
+        setattr(self, layout_name, QtWidgets.QGridLayout(widget))
+        new_layout = getattr(self, layout_name)
+        new_layout.setContentsMargins(0, title.height(), 0 ,0)
+        new_layout.setSpacing(15)
+        new_layout.setObjectName(layout_name)
         for r in range(buttons_list.shape[0]):
             for c in range(buttons_list.shape[1]):
                 if (r+1)*(c+1)>num_buttons:
                     break
+                new_layout.addWidget(buttons_list[r,c,0],  cum_locations[r,c,0],cum_locations[r,c,1], buttons_list[r,c,1], buttons_list[r,c,2])
                 # new_layout.addWidget(buttons_list[r,c,0],  cum_locations[r,c,0],cum_locations[r,c,1], buttons_list[r,c,1], buttons_list[r,c,2])
-                toolbar.addWidget(buttons_list[r, c, 0])
+                # toolbar.addWidget(buttons_list[r, c, 0])
+        # box_layout = QtWidgets.QVBoxLayout(self)
+        # box_layout.setSpacing(6)
+        # box_layout.setContentsMargins(11, 11, 11, 11)
+        # box_layout.addWidget(widget)
         # parent.addWidget(widget)
+        return widget
 
     # def setupUi(self, MainWindow):
     def setupUi(self):
@@ -84,7 +95,6 @@ class Ui_MainWindow(object):
         self.widget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.widget.sizePolicy().hasHeightForWidth()))
         self.widget.setObjectName("widget")
         self.gridLayout = QtWidgets.QGridLayout(self.widget)
-        # self.gridLayout = QtWidgets.QGridLayout(QtWidgets.QWidget(self))
         self.gridLayout.setContentsMargins(11, 11, 11, 11)
         self.gridLayout.setSpacing(15)
         self.gridLayout.setObjectName("gridLayout")
@@ -207,12 +217,13 @@ class Ui_MainWindow(object):
         Define_Push_Button(button_name='Copy2Random', tooltip='Copy region from Z to random images')
         Define_Push_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity', checkable=True)
         if self.USE_LAYOUTS_METHOD:
-            self.Define_Grid_layout(layout_name='ZToolbar', parent=self.verticalLayout_2,
+            Z_tool_bar = self.Define_Grid_layout(layout_name='ZToolbar', parent=self.verticalLayout_2,
                                     buttons_list=[(self.canvas.sliderZ0,4,1), (self.canvas.sliderZ1,4,1),
                                                   (self.canvas.slider_third_channel,4,4), (self.CopyFromRandom_button, 1, 1),
                                                   (self.Copy2Random_button, 1, 1), (self.indicatePeriodicity_button, 1, 1),
                                                   (self.periodicity_mag_1,1,4), (self.periodicity_mag_2,1,4)],
                                     height_width_ratio=1)
+            self.verticalLayout_2.addWidget(Z_tool_bar)
             self.addToolBarBreak()
 
         Define_Push_Button('selectrect', tooltip='Rectangle selection', checkable=True)
@@ -364,18 +375,21 @@ class Ui_MainWindow(object):
         Define_Action_Button('open_HR_image',tooltip='Synthetically downscale an HR image')
         if self.USE_LAYOUTS_METHOD:
             self.fileToolbar = None
-            self.Define_Grid_layout(layout_name='Load & Save', parent=self.fileToolbar,
+            self.temp_layout = QtWidgets.QHBoxLayout()
+            load_and_save = self.Define_Grid_layout(layout_name='Load & Save', parent=self.fileToolbar,
                                     buttons_list=[(self.open_image_action,1,1),(self.open_HR_image_action,1,1),(self.Z_load_action,1,1),(self.SaveImageAndData_action,1,1)],
                                     height_width_ratio=0.25)
-            self.Define_Grid_layout(layout_name='Display',parent=self.fileToolbar,
+            self.temp_layout.addWidget(load_and_save)
+            display = self.Define_Grid_layout(layout_name='Display',parent=self.fileToolbar,
                                     buttons_list=[(self.Zdisplay_button,1,1),(self.IncreaseDisplayZoom_button,1,1),(self.DecreaseDisplayZoom_button,1,1),(self.DisplayedImageSelection_button,1,4)],
                                     height_width_ratio=1/4)
+            self.temp_layout.addWidget(display)
             self.addToolBarBreak()
-            self.Define_Grid_layout(layout_name='Temporary', parent=self.fileToolbar,
+            temporary = self.Define_Grid_layout(layout_name='Temporary', parent=self.fileToolbar,
                                     buttons_list=[(self.estimatedKenrel_button, 1, 1), (self.Z_mask_load_action, 1, 1),
-                                                  (self.SaveImage_action, 1, 1),],
-                                    height_width_ratio=1 / 3)
-
+                                                  (self.SaveImage_action, 1, 1),],height_width_ratio=1 / 3)
+            self.temp_layout.addWidget(temporary)
+            self.horizontalLayout.addLayout(self.temp_layout)
         else:
             self.fileToolbar.addWidget(self.open_HR_image_action)
             self.fileToolbar.addWidget(self.open_image_action)

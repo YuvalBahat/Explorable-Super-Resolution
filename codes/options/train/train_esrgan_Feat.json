@@ -1,5 +1,5 @@
 {
-  "name": "Shift_Inv_AvgPooling11" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
+  "name": "Shift_Inv_AvgPooling3" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
   , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
