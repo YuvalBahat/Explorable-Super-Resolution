@@ -80,13 +80,9 @@ FONT_SIZES = [7, 8, 9, 10, 11, 12, 13, 14, 18, 24, 36, 48, 64, 72, 96, 144, 288]
 
 SCRIBBLE_MODES = ['pencil','line', 'polygon','ellipse', 'rect','im_input','im_input_auto_location']
 MODES = [
-    'selectpoly', 'selectrect','indicatePeriodicity',
-    #'eraser', 'fill',
-    #'dropper', 'stamp',
+    # 'selectpoly', 'selectrect',
+    'indicatePeriodicity',
     'dropper',
-    #'spray', 'text',
-    #'line', #'rand_Z',#'polyline',
-    #'roundrect',
 ]+SCRIBBLE_MODES
 
 LOCAL_TV_MASK_IDENTIFIERS_RANGE = [3,50]
@@ -253,7 +249,7 @@ class Canvas(QLabel):
         # History scribble and scribble mask are saved for the entire image (ignoring Z_mask issues), in the original display dimensions. This means there is no downscaling and then upscaling back when undoing.
         self.scribble_history.append(qimage2ndarray.rgb_view(self.pixmap().toImage()))
         self.scribble_mask_history.append(qimage2ndarray.rgb_view(self.scribble_mask_canvas.pixmap().toImage())[:, :, 0])
-        self.undo_scribble_button.setEnabled(True)
+        self.undo_scribble_action.setEnabled(True)
 
     def Undo_scribble(self,add_2_redo_list=True):
         # Assigning saved scribble to scrible image:
@@ -267,7 +263,7 @@ class Canvas(QLabel):
                 self.SelectImage2Display(self.scribble_display_index)
             self.scribble_redo_list.append(qimage2ndarray.rgb_view(self.pixmap().toImage()))
             self.scribble_mask_redo_list.append(qimage2ndarray.rgb_view(self.scribble_mask_canvas.pixmap().toImage())[:, :, 0])
-            self.redo_scribble_button.setEnabled(True)
+            self.redo_scribble_action.setEnabled(True)
             if display_index_2_return_2!=self.scribble_display_index:
                 self.SelectImage2Display(display_index_2_return_2)
         # Assigning saved scribble mask canvas to scribble mask canvas itself:
@@ -279,7 +275,7 @@ class Canvas(QLabel):
         pixmap.convertFromImage(pixmap_image)
         self.scribble_mask_canvas.setPixmap(pixmap)
 
-        self.undo_scribble_button.setEnabled(len(self.scribble_history) > 0)
+        self.undo_scribble_action.setEnabled(len(self.scribble_history) > 0)
         self.Update_Image_Display()
 
     def Redo_scribble(self):
@@ -302,7 +298,7 @@ class Canvas(QLabel):
         pixmap_image = qimage2ndarray.array2qimage(saved_scribble_mask)
         pixmap.convertFromImage(pixmap_image)
         self.scribble_mask_canvas.setPixmap(pixmap)
-        self.redo_scribble_button.setEnabled(len(self.scribble_redo_list) > 0)
+        self.redo_scribble_action.setEnabled(len(self.scribble_redo_list) > 0)
         self.Update_Image_Display()
 
     # Mouse events.
@@ -400,7 +396,7 @@ class Canvas(QLabel):
         self.update_Z_mask_display_size()
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
-        self.selectpoly_button.setChecked(False)
+        self.selectpoly_action.setChecked(False)
         self.timer_cleanup()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
@@ -573,7 +569,7 @@ class Canvas(QLabel):
         self.update_Z_mask_display_size()
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
-        self.selectrect_button.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
+        self.selectrect_action.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
         self.timer_cleanup()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
@@ -1279,11 +1275,11 @@ class Canvas(QLabel):
 
     def scribble_undo_redo_enabling(self,enable):
         if enable:
-            self.undo_scribble_button.setEnabled(len(self.scribble_history) > 0)
-            self.redo_scribble_button.setEnabled(len(self.scribble_redo_list) > 0)
+            self.undo_scribble_action.setEnabled(len(self.scribble_history) > 0)
+            self.redo_scribble_action.setEnabled(len(self.scribble_redo_list) > 0)
         else:
             for button_name in ['undo','redo']:
-                getattr(self, button_name + '_scribble_button').setEnabled(enable)
+                getattr(self, button_name + '_scribble_action').setEnabled(enable)
 
     # Polygon events
 
@@ -1407,7 +1403,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_HR_image_action.clicked.connect(lambda x: self.open_file(HR_image=True))
         self.open_image_action.clicked.connect(lambda x: self.open_file(HR_image=False))
         self.Z_load_action.pressed.connect(self.Load_Z)
-        self.Z_mask_load_action.pressed.connect(self.Load_Z_mask)
+        self.Z_mask_load_action.clicked.connect(self.Load_Z_mask)
         self.estimatedKenrel_button.pressed.connect(self.Change_kernel_in_use)
 
 
@@ -1438,8 +1434,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # self.DisplayedImageSelectionButton.addItem('Scribble')
         # self.canvas.scribble_display_index = self.DisplayedImageSelectionButton.findText('Scribble')
 
-        self.CopyFromRandom_button.pressed.connect(self.CopyRandom2Default)
-        self.Copy2Random_button.pressed.connect(self.CopyDefault2Random)
+        self.CopyFromAlternative_action.pressed.connect(self.CopyRandom2Default)
+        self.Copy2Alternative_action.pressed.connect(self.CopyDefault2Random)
         self.IncreaseSTD_action.clicked.connect(lambda x:self.Optimize_Z('STD_increase' if RELATIVE_STD_OPT else 'max_STD'))
         self.DecreaseSTD_action.clicked.connect(lambda x:self.Optimize_Z('STD_decrease' if RELATIVE_STD_OPT else 'min_STD'))
         self.DecreaseTV_action.clicked.connect(lambda x:self.Optimize_Z('TV'))
@@ -1450,18 +1446,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.IncreasePeriodicity_1D_action.clicked.connect(lambda x:self.Optimize_Z('periodicity_1D'))
         # self.MatchSliders_button.clicked.connect(lambda x:self.Optimize_Z('desired_SVD'))
 
-        self.unselect_button.clicked.connect(self.Clear_Z_Mask)
-        self.invertSelection_button.clicked.connect(self.Invert_Z_Mask)
+        self.unselect_action.clicked.connect(self.Clear_Z_Mask)
+        self.invertSelection_action.clicked.connect(self.Invert_Z_Mask)
         self.uniformZ_button.clicked.connect(self.ApplyUniformZ)
         # self.special_behavior_button.clicked.connect(self.canvas.Z_optimizer_Reset)
         self.desiredAppearanceMode_button.clicked.connect(lambda checked: self.DesiredAppearanceMode(checked,another_image=False))
         self.Zdisplay_button.clicked.connect(self.ToggleDisplay_Z_Image)
-        self.undoZ_button.clicked.connect(self.Undo_Z)
-        self.canvas.undo_scribble_button = self.undo_scribble_button
-        self.canvas.undo_scribble_button.clicked.connect(lambda s:self.canvas.Undo_scribble(add_2_redo_list=True))
-        self.canvas.redo_scribble_button = self.redo_scribble_button
-        self.canvas.redo_scribble_button.clicked.connect(self.canvas.Redo_scribble)
-        self.redoZ_button.clicked.connect(self.Redo_Z)
+        self.undoZ_action.clicked.connect(self.Undo_Z)
+        self.canvas.undo_scribble_action = self.undo_scribble_action
+        self.canvas.undo_scribble_action.clicked.connect(lambda s:self.canvas.Undo_scribble(add_2_redo_list=True))
+        self.canvas.redo_scribble_action = self.redo_scribble_action
+        self.canvas.redo_scribble_action.clicked.connect(self.canvas.Redo_scribble)
+        self.redoZ_action.clicked.connect(self.Redo_Z)
         self.desiredExternalAppearanceMode_button.clicked.connect(lambda checked: self.DesiredAppearanceMode(checked,another_image=True))
         self.canvas.in_picking_desired_hist_mode = False
         if self.auto_hist_temperature_mode_Enabled:
@@ -1532,31 +1528,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.randomLimitingWeightBox_Enabled:
                 self.ZToolbar.addWidget(self.randomLimitingWeightBox,0,10,1,1)
             self.ZToolbar.addWidget(self.DisplayedImageSelection_button,0,0,1,1)
-            self.ZToolbar.addWidget(self.CopyFromRandom_button, 0, 1, 1, 1)
-            self.ZToolbar.addWidget(self.Copy2Random_button, 0, 2, 1, 1)
+            self.ZToolbar.addWidget(self.CopyFromAlternative_action, 0, 1, 1, 1)
+            self.ZToolbar.addWidget(self.Copy2Alternative_action, 0, 2, 1, 1)
             self.ZToolbar.addWidget(self.indicatePeriodicity_button, 0, 3, 1, 1)
             self.ZToolbar.addWidget(self.periodicity_mag_1,0,4,1,1)
             self.ZToolbar.addWidget(self.periodicity_mag_2,0,5,1,1)
-        self.ZToolbar2.addWidget(self.special_behavior_button)
-        self.ZToolbar2.addWidget(self.IncreaseSTD_action)
-        self.ZToolbar2.addWidget(self.DecreaseSTD_action)
-        self.ZToolbar2.addWidget(self.STD_increment)
-        self.ZToolbar2.addWidget(self.DecreaseTV_action)
-        self.ZToolbar2.addWidget(self.ImitateHist_action)
-        self.ZToolbar2.addWidget(self.ImitatePatchHist_action)
-        self.ZToolbar2.addWidget(self.FoolAdversary_action)
-        self.ZToolbar2.addWidget(self.IncreasePeriodicity_1D_action)
-        self.ZToolbar2.addWidget(self.IncreasePeriodicity_2D_action)
+            self.ZToolbar2.addWidget(self.special_behavior_button)
+            self.ZToolbar2.addWidget(self.IncreaseSTD_action)
+            self.ZToolbar2.addWidget(self.DecreaseSTD_action)
+            self.ZToolbar2.addWidget(self.STD_increment)
+            self.ZToolbar2.addWidget(self.DecreaseTV_action)
+            self.ZToolbar2.addWidget(self.ImitateHist_action)
+            self.ZToolbar2.addWidget(self.ImitatePatchHist_action)
+            self.ZToolbar2.addWidget(self.FoolAdversary_action)
+            self.ZToolbar2.addWidget(self.ProcessRandZ_action)
+            self.ZToolbar2.addWidget(self.ProcessLimitedRandZ_action)
+        # self.ZToolbar2.addWidget(self.IncreasePeriodicity_1D_action)
+        # self.ZToolbar2.addWidget(self.IncreasePeriodicity_2D_action)
         self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         # self.ZToolbar2.addWidget(self.MatchSliders)
-        self.ZToolbar2.addWidget(self.ProcessRandZ_action)
-        self.ZToolbar2.addWidget(self.ProcessLimitedRandZ_action)
 
         # Assigning handle to some buttons to canvas:
         self.canvas.special_behavior_button = self.special_behavior_button
         self.canvas.FoolAdversary_action = self.FoolAdversary_action
-        self.canvas.selectrect_button = self.selectrect_button
-        self.canvas.selectpoly_button = self.selectpoly_button
+        self.canvas.selectrect_action = self.selectrect_action
+        self.canvas.selectpoly_action = self.selectpoly_action
         self.canvas.actionIncreasePeriodicity_1D = self.IncreasePeriodicity_1D_action
         self.canvas.actionIncreasePeriodicity = self.IncreasePeriodicity_2D_action
         self.canvas.indicatePeriodicity_button = self.indicatePeriodicity_button
@@ -1591,28 +1587,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         #     setattr(self.canvas,'%s_imprinting_button'%(button),button)
         # # self.taller_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_im_input(modification='taller'))
 
-        #Scribble:
-        self.Scribble_Toolbar.addWidget(self.scribble_reset_action)
-        sizeicon = QLabel()
-        sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))
-        self.Scribble_Toolbar.addWidget(sizeicon)
-        self.sizeselect = QSlider()
-        self.sizeselect.setRange(1,20)
-        self.sizeselect.setOrientation(Qt.Horizontal)
-        self.sizeselect.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
-        self.Scribble_Toolbar.addWidget(self.sizeselect)
-
-        self.Scribble_Toolbar.addWidget(self.dropper_button)
-        self.Scribble_Toolbar.addWidget(self.pencil_button)
-        # self.Scribble_Toolbar.addWidget(self.brush_button)
-        self.Scribble_Toolbar.addWidget(self.line_button)
-        self.Scribble_Toolbar.addWidget(self.ellipse_button)
-        self.Scribble_Toolbar.addWidget(self.polygon_button)
-        self.Scribble_Toolbar.addWidget(self.rect_button)
-        self.Scribble_Toolbar.addWidget(self.im_input_button)
-        self.Scribble_Toolbar.addWidget(self.im_input_auto_location_button)
-        self.Scribble_Toolbar.addWidget(self.apply_scribble_action)
-        self.Scribble_Toolbar.addWidget(self.loop_apply_scribble_action)
         self.canvas.SelectImage2Display = self.SelectImage2Display
         self.canvas.DisplayedImageSelection_button = self.DisplayedImageSelection_button
         self.canvas.scribble_modes = SCRIBBLE_MODES
@@ -1620,28 +1594,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.scribble_mask_canvas = Canvas()
         self.canvas.scribble_mask_canvas.initialize()
         self.canvas.within_drawing = False # I add this to distinguish between first mouse press (initiating polygon drawing) and the rest of the presses. The motivation is to know when I BEGIN a scribble action.
-        # Active color display:
-        # self.canvas.secondaryButton = QtWidgets.QPushButton(self.Scribble_Toolbar)
-        # # self.canvas.secondaryButton.setGeometry(QtCore.QRect(30, 10, 40, 40))
-        # self.canvas.secondaryButton.setMinimumSize(QtCore.QSize(40, 40))
-        # self.canvas.secondaryButton.setMaximumSize(QtCore.QSize(40, 40))
-        # self.canvas.secondaryButton.setText("")
-        # self.canvas.secondaryButton.setObjectName("secondaryButton")
-        self.canvas.primary_button = QtWidgets.QPushButton(self.Scribble_Toolbar)
-        # self.canvas.primaryButton.setGeometry(QtCore.QRect(10, 0, 40, 40))
-        self.canvas.primary_button.setMinimumSize(QtCore.QSize(40, 40))
-        self.canvas.primary_button.setMaximumSize(QtCore.QSize(40, 40))
-        self.canvas.primary_button.setText("")
-        self.canvas.primary_button.setObjectName("primary_button")
-        self.Scribble_Toolbar.addWidget(self.canvas.primary_button)
         self.canvas.primary_button.pressed.connect(lambda: self.choose_color(self.canvas.set_primary_color))
         self.canvas.set_primary_color('#000000')
-        color_state_cycle_icon = QIcon()
-        color_state_cycle_icon.addPixmap(QPixmap("icons/color_state_cycle.png"), QIcon.Normal, QIcon.Off)
-        self.canvas.cycleColorState_button = QtWidgets.QPushButton(parent=self.Scribble_Toolbar,icon=color_state_cycle_icon)
-        self.canvas.cycleColorState_button.setCheckable(False)
         self.canvas.cycleColorState_button.pressed.connect(self.canvas.cycle_color_state)
-        self.Scribble_Toolbar.addWidget(self.canvas.cycleColorState_button)
         self.canvas.color_state = 0
         self.canvas.cyclic_color_shift = 0
         self.canvas.local_TV_identifier  = LOCAL_TV_MASK_IDENTIFIERS_RANGE[0]-1
@@ -1853,7 +1808,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Update_Image_Display()
         # if self.canvas.current_display_index==self.canvas.scribble_display_index:
         #     return
-        self.CopyFromRandom_button.setEnabled(self.canvas.current_display_index in self.random_display_indexes)
+        self.CopyFromAlternative_action.setEnabled(self.canvas.current_display_index in self.random_display_indexes)
         if self.canvas.current_display_index in [self.cur_Z_im_index,self.canvas.scribble_display_index]:
             self.canvas.SR_model.fake_H = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
             self.Z_2_display = self.cur_Z
@@ -2467,31 +2422,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def Add_Z_2_history(self,clear_redo_list=True):
         # History liss holds previous AND CURRENT Z
         self.Z_history.append(self.cur_Z.data.cpu().numpy())
-        self.undoZ_button.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
+        self.undoZ_action.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
         if clear_redo_list:
             self.Z_redo_list.clear()
-            self.redoZ_button.setEnabled(False)
+            self.redoZ_action.setEnabled(False)
 
     def Undo_Z(self):
         self.Z_redo_list.append(self.Z_history.pop())
         self.cur_Z = torch.from_numpy(self.Z_history[-1]).type(self.cur_Z.dtype).to(self.cur_Z.device)
         self.ReProcess(dont_update_undo_list=True)
-        self.undoZ_button.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
-        self.redoZ_button.setEnabled(True)
+        self.undoZ_action.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
+        self.redoZ_action.setEnabled(True)
 
     def Redo_Z(self):
         self.cur_Z = torch.from_numpy(self.Z_redo_list.pop()).type(self.cur_Z.dtype).to(self.cur_Z.device)
         self.ReProcess(dont_update_undo_list=True)
-        self.redoZ_button.setEnabled(len(self.Z_redo_list)>0)
+        self.redoZ_action.setEnabled(len(self.Z_redo_list)>0)
         self.Add_Z_2_history(clear_redo_list=False)
 
     def Z_undo_redo_enabling(self,enable):
         if enable:
-            self.undoZ_button.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
-            self.redoZ_button.setEnabled(len(self.Z_redo_list)>0)
+            self.undoZ_action.setEnabled(len(self.Z_history)>1) # Enabling undo only when list is longer than 1, because the last item in the list is the current Z
+            self.redoZ_action.setEnabled(len(self.Z_redo_list)>0)
         else:
             for button_name in ['undo','redo']:
-                getattr(self, button_name + 'Z_button').setEnabled(enable)
+                getattr(self, button_name + 'Z_action').setEnabled(enable)
 
     def save_file(self):
         """

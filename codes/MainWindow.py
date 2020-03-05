@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5 import QtCore, QtWidgets
 import numpy as np
+import os
 
 MAX_SVD_LAMBDA = 1.
 DISPLAY_ESRGAN_RESULTS = True
@@ -18,7 +19,7 @@ def ReturnSizePolicy(policy,hasHeightForWidth):
 
 class Ui_MainWindow(object):
 
-    def Define_Grid_layout(self, layout_name, parent, buttons_list, height_width_ratio, layout_cols=None):
+    def Define_Grid_layout(self, layout_name, buttons_list, height_width_ratio=None, layout_cols=None,parent=None):
         print('Adding toolbar %s'%(layout_name))
         num_buttons = len(buttons_list)
         if layout_cols is None:
@@ -31,18 +32,6 @@ class Ui_MainWindow(object):
         cum_locations[:,:,1] = np.maximum(cum_locations[:,:,1],np.max(cum_locations[:,:,1],0,keepdims=True))
         cum_locations = np.stack([np.concatenate([np.zeros([1, layout_cols]).astype(int), np.cumsum(cum_locations[:-1, :, 0], 0)], 0),
                                   np.concatenate([np.zeros([layout_rows, 1]).astype(int), np.cumsum(cum_locations[:, :-1, 1], 1)], 1)], -1)
-        # toolbar = QToolBar(layout_name)
-        # self.addToolBar(toolbar)
-        # # self.addToolBarBreak()
-        # toolbar.addWidget(QLabel(layout_name))
-        # toolbar.setContentsMargins(0,0, 0 ,0)
-        # # toolbar.setSpacing(15)
-        # toolbar.setObjectName(layout_name)
-        # gridLayout = QtWidgets.QGridLayout(toolbar)
-        # gridLayout.setContentsMargins(11, 11, 11, 11)
-        # gridLayout.setSpacing(15)
-        # gridLayout.setObjectName(layout_name+'_grid')
-
         widget = QtWidgets.QWidget()
         title = QLabel(parent=widget)
         title.setText(layout_name.replace('_',' '))
@@ -56,14 +45,18 @@ class Ui_MainWindow(object):
                 if (r+1)*(c+1)>num_buttons:
                     break
                 new_layout.addWidget(buttons_list[r,c,0],  cum_locations[r,c,0],cum_locations[r,c,1], buttons_list[r,c,1], buttons_list[r,c,2])
-                # new_layout.addWidget(buttons_list[r,c,0],  cum_locations[r,c,0],cum_locations[r,c,1], buttons_list[r,c,1], buttons_list[r,c,2])
-                # toolbar.addWidget(buttons_list[r, c, 0])
-        # box_layout = QtWidgets.QVBoxLayout(self)
-        # box_layout.setSpacing(6)
-        # box_layout.setContentsMargins(11, 11, 11, 11)
-        # box_layout.addWidget(widget)
-        # parent.addWidget(widget)
         return widget
+
+    def Define_Nesting_Layout(self,parent,horizontal,name):
+        if horizontal:
+            new_layout = QtWidgets.QHBoxLayout()
+        else:
+            new_layout = QtWidgets.QVBoxLayout()
+        new_layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+        new_layout.setSpacing(6)
+        new_layout.setObjectName(name)
+        parent.addLayout(new_layout)
+        return new_layout
 
     # def setupUi(self, MainWindow):
     def setupUi(self):
@@ -80,17 +73,22 @@ class Ui_MainWindow(object):
         self.centralWidget = QtWidgets.QWidget(MainWindow)
         self.centralWidget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.centralWidget.sizePolicy().hasHeightForWidth()))
         self.centralWidget.setObjectName("centralWidget")
-        self.verticalLayout = QtWidgets.QVBoxLayout(self.centralWidget)
-        self.verticalLayout.setContentsMargins(11, 11, 11, 11)
-        self.verticalLayout.setSpacing(6)
-        self.verticalLayout.setObjectName("verticalLayout")
-        self.horizontalLayout = QtWidgets.QHBoxLayout()
-        self.horizontalLayout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+        self.horizontalLayout = QtWidgets.QHBoxLayout(self.centralWidget)
+        # self.horizontalLayout.setContentsMargins(11, 11, 11, 11)
         self.horizontalLayout.setSpacing(6)
         self.horizontalLayout.setObjectName("horizontalLayout")
-        self.verticalLayout_2 = QtWidgets.QVBoxLayout()
-        self.verticalLayout_2.setSpacing(6)
-        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        # self.horizontalLayout = self.Define_Nesting_Layout(self.centralWidget,horizontal=True,name='horizontalLayout')
+        # self.verticalLayout_L = QtWidgets.QVBoxLayout()
+        # self.verticalLayout_L.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+        # self.verticalLayout_L.setSpacing(6)
+        # self.verticalLayout_L.setObjectName("verticalLayout_L")
+        # self.verticalLayout_R = QtWidgets.QVBoxLayout()
+        # self.verticalLayout_R.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+        # self.verticalLayout_R.setSpacing(6)
+        # self.verticalLayout_R.setObjectName("verticalLayout_R")
+        # self.verticalLayout_2 = QtWidgets.QVBoxLayout()
+        # self.verticalLayout_2.setSpacing(6)
+        # self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.widget = QtWidgets.QWidget(self.centralWidget)
         self.widget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.widget.sizePolicy().hasHeightForWidth()))
         self.widget.setObjectName("widget")
@@ -113,7 +111,7 @@ class Ui_MainWindow(object):
         self.canvas.sliderZ0.setRange(0, 100*self.max_SVD_Lambda)
         self.canvas.sliderZ0.setSliderPosition(100*self.max_SVD_Lambda/2)
         self.canvas.sliderZ0.setSingleStep(1)
-        self.canvas.sliderZ0.setOrientation(Qt.Vertical)
+        self.canvas.sliderZ0.setOrientation(Qt.Horizontal)
         self.canvas.sliderZ0.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=0,dont_update_undo_list=True))
         self.canvas.sliderZ0.sliderReleased.connect(lambda: self.SetZ_And_Display(value=self.canvas.sliderZ0.value() / 100, index=0))
         self.canvas.sliderZ0.setToolTip('Primary direction gradients magnitude')
@@ -124,7 +122,7 @@ class Ui_MainWindow(object):
         self.canvas.sliderZ1.setRange(0, 100*self.max_SVD_Lambda)
         self.canvas.sliderZ1.setSliderPosition(100*self.max_SVD_Lambda/2)
         self.canvas.sliderZ1.setSingleStep(1)
-        self.canvas.sliderZ1.setOrientation(Qt.Vertical)
+        self.canvas.sliderZ1.setOrientation(Qt.Horizontal)
         self.canvas.sliderZ1.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=1,dont_update_undo_list=True))
         self.canvas.sliderZ1.sliderReleased.connect(lambda: self.SetZ_And_Display(value=self.canvas.sliderZ1.value() / 100, index=1))
         self.canvas.sliderZ1.setToolTip('Secondary direction gradients magnitude')
@@ -213,73 +211,41 @@ class Ui_MainWindow(object):
             button.setMinimumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
             button.setMaximumSize(QtCore.QSize(size[0]*self.button_size,size[1]*self.button_size))
 
-        Define_Push_Button(button_name='CopyFromRandom',tooltip='Copy displayed random region to Z',disabled=True)
-        Define_Push_Button(button_name='Copy2Random', tooltip='Copy region from Z to random images')
-        Define_Push_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity', checkable=True)
-        if self.USE_LAYOUTS_METHOD:
-            Z_tool_bar = self.Define_Grid_layout(layout_name='ZToolbar', parent=self.verticalLayout_2,
-                                    buttons_list=[(self.canvas.sliderZ0,4,1), (self.canvas.sliderZ1,4,1),
-                                                  (self.canvas.slider_third_channel,4,4), (self.CopyFromRandom_button, 1, 1),
-                                                  (self.Copy2Random_button, 1, 1), (self.indicatePeriodicity_button, 1, 1),
-                                                  (self.periodicity_mag_1,1,4), (self.periodicity_mag_2,1,4)],
-                                    height_width_ratio=1)
-            self.verticalLayout_2.addWidget(Z_tool_bar)
-            self.addToolBarBreak()
+        # if self.USE_LAYOUTS_METHOD:
+        #     Z_tool_bar = self.Define_Grid_layout(layout_name='ZToolbar', parent=self.verticalLayout_2,
+        #                             buttons_list=[],
+        #                             height_width_ratio=1)
+        #     self.verticalLayout_2.addWidget(Z_tool_bar)
+        #     self.addToolBarBreak()
 
-        Define_Push_Button('selectrect', tooltip='Rectangle selection', checkable=True)
-        self.gridLayout.addWidget(self.selectrect_button, 0, 1, 1, 1)
-
-        Define_Push_Button('selectpoly', tooltip='Polygon selection', checkable=True)
-        self.gridLayout.addWidget(self.selectpoly_button, 0, 0, 1, 1)
-
-        Define_Push_Button('unselect', tooltip='De-select', disabled=False, checkable=False)
-        self.gridLayout.addWidget(self.unselect_button,0,2, 1, 1)
-
-        Define_Push_Button('invertSelection', tooltip='Invert selection', disabled=False, checkable=False)
-        self.gridLayout.addWidget(self.invertSelection_button,0,3, 1, 1)
 
         Define_Push_Button('uniformZ', tooltip='Spatially uniform Z', disabled=False, checkable=False)
-        self.gridLayout.addWidget(self.uniformZ_button,2,1, 1, 1)
-
-        Define_Push_Button('desiredExternalAppearanceMode', tooltip='Select external desired region', disabled=False, checkable=True)
-        self.gridLayout.addWidget(self.desiredExternalAppearanceMode_button, 1, 0, 1, 1)
-
-        Define_Push_Button('desiredAppearanceMode', tooltip='Select desired region within image', disabled=False, checkable=True)
-        self.gridLayout.addWidget(self.desiredAppearanceMode_button, 1,1, 1, 1)
+        # self.gridLayout.addWidget(self.uniformZ_button,2,1, 1, 1)
 
         Define_Push_Button('Zdisplay', tooltip='Toggle Z display', disabled=False, checkable=True)
         # self.gridLayout.addWidget(self.Zdisplay_button, 2,0, 1, 1)
 
-        Define_Push_Button('undo_scribble', tooltip='Undo scribble/imprint', disabled=True)
-        self.gridLayout.addWidget(self.undo_scribble_button, 3, 2, 1, 1)
-
-        Define_Push_Button('redo_scribble', tooltip='Redo scribble/imprint', disabled=True)
-        self.gridLayout.addWidget(self.redo_scribble_button, 3, 3, 1, 1)
 
         # Imprinting translation buttons:
-        for button_num,button in enumerate(['left','right','up','down']):
+        imprint_translations = ['left','right','up','down']
+        for button_num,button in enumerate(imprint_translations):
             Define_Push_Button(button+'_imprinting', tooltip='Move imprinting '+button, disabled=True)
             self.gridLayout.addWidget(getattr(self,button+'_imprinting_button'), 4, button_num, 1, 1)
         # Imprinting dimensions change buttons:
-        for button_num,button in enumerate(['narrower','wider','taller','shorter']):
+        imprint_stretches = ['narrower','wider','taller','shorter']
+        for button_num,button in enumerate(imprint_stretches):
             Define_Push_Button(button+'_imprinting', tooltip='Make imprinting '+button, disabled=True)
             self.gridLayout.addWidget(getattr(self,'%s_imprinting_button'%(button)), 5, button_num, 1, 1)
-
-        Define_Push_Button('undoZ', tooltip='Undo image manipulation', disabled=True)
-        self.gridLayout.addWidget(self.undoZ_button, 3, 0, 1, 1)
-
-        Define_Push_Button('redoZ', tooltip='Redo image manipulation', disabled=True)
-        self.gridLayout.addWidget(self.redoZ_button, 3, 1, 1, 1)
 
         self.auto_hist_temperature_mode_Enabled = False
         if self.auto_hist_temperature_mode_Enabled:
             Define_Push_Button('auto_hist_temperature_mode', tooltip='Automatic histogram temperature', checkable=True)
             self.gridLayout.addWidget(self.auto_hist_temperature_mode_button, 2, 2, 1, 1)
 
-        self.verticalLayout_2.addWidget(self.widget)
+        # self.verticalLayout_2.addWidget(self.widget)
         # spacerItem = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
         # self.verticalLayout_2.addItem(spacerItem)
-        self.horizontalLayout.addLayout(self.verticalLayout_2)
+        # self.horizontalLayout.addLayout(self.verticalLayout_2)
         # self.phisical_canvas = QtWidgets.QLabel(self.centralWidget)
         # sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.MinimumExpanding)
         # sizePolicy.setHorizontalStretch(0)
@@ -289,14 +255,15 @@ class Ui_MainWindow(object):
         # self.phisical_canvas.setText("")
         # self.phisical_canvas.setObjectName("phisical_canvas")
         # self.horizontalLayout.addWidget(self.phisical_canvas)
-        self.verticalLayout.addLayout(self.horizontalLayout)
+        # self.horizontalLayout.addLayout(self.verticalLayout_L)
+        # self.horizontalLayout.addLayout(self.verticalLayout_R)
         # self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
         # self.horizontalLayout_2.setSpacing(6)
         # self.horizontalLayout_2.setObjectName("horizontalLayout_2")
 
         # spacerItem1 = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         # self.horizontalLayout_2.addItem(spacerItem1)
-        # self.verticalLayout.addLayout(self.horizontalLayout_2)
+        # self.horizontalLayout.addLayout(self.horizontalLayout_2)
         MainWindow.setCentralWidget(self.centralWidget)
         self.menuBar = QtWidgets.QMenuBar(MainWindow)
         self.menuBar.setGeometry(QtCore.QRect(0, 0, 549, 22))
@@ -336,17 +303,10 @@ class Ui_MainWindow(object):
         Define_Action_Button(button_name='scribble_reset',tooltip='Erase scribble in region')
         Define_Action_Button(button_name='apply_scribble',tooltip='Perform a single scribble/imprinting application step',disabled=True)
         Define_Action_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',disabled=True)
-        Define_Push_Button(button_name='pencil',tooltip='Pencil',checkable=True)
-        Define_Push_Button(button_name='dropper',tooltip='Eyedropper',checkable=True)
-        Define_Push_Button(button_name='line',tooltip='Straight line drawing',checkable=True)
-        Define_Push_Button(button_name='polygon',tooltip='Polygon drawing',checkable=True)
-        Define_Push_Button(button_name='rect',tooltip='Rectangle drawing',checkable=True)
         Define_Push_Button(button_name='im_input',tooltip='Set imprinting rectangle (Using transparent color)',checkable=True,disabled=True)
         Define_Push_Button(button_name='im_input_auto_location',tooltip='Set boundaries for automatic imprinting location (Using transparent color)',checkable=True,disabled=True)
-        Define_Push_Button(button_name='ellipse',tooltip='Ellipse drawing',checkable=True)
         Define_Action_Button(button_name='open_image',tooltip='Load LR image')
         Define_Action_Button(button_name='Z_load',tooltip='Load Z map')
-        Define_Action_Button(button_name='Z_mask_load',tooltip='Load Z map to infer selection')
         Define_Push_Button('estimatedKenrel',tooltip='Use estimated SR kernel',checkable=True)
         Define_Action_Button('ProcessRandZ',tooltip='Produce random images')
         Define_Action_Button('ProcessLimitedRandZ',tooltip='Produce random images close to current')
@@ -368,29 +328,105 @@ class Ui_MainWindow(object):
         Define_Action_Button('FoolAdversary',tooltip='Fool discriminator')
         Define_Action_Button('IncreasePeriodicity_2D',tooltip='Increase 2D periodicity',disabled=True)
         Define_Action_Button('IncreasePeriodicity_1D',tooltip='Increase 1D periodicity',disabled=True)
+        Define_Push_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity', checkable=True)
         Define_Action_Button('SaveImageAndData',tooltip='Save image, Z and scribble data')
         Define_Push_Button('DecreaseDisplayZoom',tooltip='Decrease zoom')
         Define_Push_Button('IncreaseDisplayZoom',tooltip='Increase zoom')
         Define_Action_Button('SaveImage',tooltip='Save image')
         Define_Action_Button('open_HR_image',tooltip='Synthetically downscale an HR image')
+        Define_Action_Button('selectrect', tooltip='Rectangle selection', checkable=True)
+        Define_Action_Button('selectpoly', tooltip='Polygon selection', checkable=True)
+        Define_Action_Button('unselect', tooltip='De-select', disabled=False, checkable=False)
+        Define_Action_Button('invertSelection', tooltip='Invert selection', disabled=False, checkable=False)
+        Define_Action_Button(button_name='Z_mask_load',tooltip='Load Z map to infer selection')
+        Define_Push_Button('desiredExternalAppearanceMode', tooltip='Select external desired region', disabled=False, checkable=True)
+        Define_Push_Button('desiredAppearanceMode', tooltip='Select desired region within image', disabled=False, checkable=True)
+        Define_Action_Button('undoZ', tooltip='Undo image manipulation', disabled=True)
+        Define_Action_Button('redoZ', tooltip='Redo image manipulation', disabled=True)
+        Define_Action_Button(button_name='CopyFromAlternative',tooltip='Copy displayed random region to Z',disabled=True)
+        Define_Action_Button(button_name='Copy2Alternative', tooltip='Copy region from Z to random images')
+        Define_Push_Button(button_name='pencil',tooltip='Pencil',checkable=True)
+        Define_Push_Button(button_name='dropper',tooltip='Eyedropper',checkable=True)
+        Define_Push_Button(button_name='line',tooltip='Straight line drawing',checkable=True)
+        Define_Push_Button(button_name='polygon',tooltip='Polygon drawing',checkable=True)
+        Define_Push_Button(button_name='rect',tooltip='Rectangle drawing',checkable=True)
+        Define_Push_Button(button_name='ellipse',tooltip='Ellipse drawing',checkable=True)
+        self.canvas.primary_button = QtWidgets.QPushButton(self.Scribble_Toolbar)
+        self.canvas.primary_button.setMinimumSize(QtCore.QSize(40, 40))
+        self.canvas.primary_button.setMaximumSize(QtCore.QSize(40, 40))
+        self.canvas.primary_button.setText("")
+        self.canvas.primary_button.setObjectName("primary_button")
+        color_state_cycle_icon = QIcon()
+        color_state_cycle_icon.addPixmap(QPixmap("icons/color_state_cycle.png"), QIcon.Normal, QIcon.Off)
+        self.canvas.cycleColorState_button = QtWidgets.QPushButton(parent=self.Scribble_Toolbar,icon=color_state_cycle_icon)
+        self.canvas.cycleColorState_button.setCheckable(False)
+        sizeicon = QLabel()
+        sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))
+        self.sizeselect = QSlider()
+        self.sizeselect.setRange(1, 20)
+        self.sizeselect.setOrientation(Qt.Horizontal)
+        self.sizeselect.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
+        Define_Action_Button('undo_scribble', tooltip='Undo scribble/imprint', disabled=True)
+
+        Define_Action_Button('redo_scribble', tooltip='Redo scribble/imprint', disabled=True)
+
         if self.USE_LAYOUTS_METHOD:
             self.fileToolbar = None
-            self.temp_layout = QtWidgets.QHBoxLayout()
+            # self.temp_layout = QtWidgets.QHBoxLayout()
             load_and_save = self.Define_Grid_layout(layout_name='Load & Save', parent=self.fileToolbar,
                                     buttons_list=[(self.open_image_action,1,1),(self.open_HR_image_action,1,1),(self.Z_load_action,1,1),(self.SaveImageAndData_action,1,1)],
                                     height_width_ratio=0.25)
-            self.temp_layout.addWidget(load_and_save)
-            display = self.Define_Grid_layout(layout_name='Display',parent=self.fileToolbar,
-                                    buttons_list=[(self.Zdisplay_button,1,1),(self.IncreaseDisplayZoom_button,1,1),(self.DecreaseDisplayZoom_button,1,1),(self.DisplayedImageSelection_button,1,4)],
-                                    height_width_ratio=1/4)
-            self.temp_layout.addWidget(display)
-            self.addToolBarBreak()
+            display_TB = self.Define_Grid_layout(layout_name='Display',parent=self.fileToolbar,
+                                    buttons_list=[(self.Zdisplay_button,1,1),(self.IncreaseDisplayZoom_button,1,1),(self.DecreaseDisplayZoom_button,1,1),(self.DisplayedImageSelection_button,1,4),
+                                                  (self.CopyFromAlternative_action, 1, 1),(self.Copy2Alternative_action, 1, 1)],
+                                    layout_cols=4)
+            # self.addToolBarBreak()
+            uniform_Z_control_TB = self.Define_Grid_layout(layout_name='Uniform Z control',buttons_list=[(self.canvas.sliderZ0,1,4), (self.canvas.sliderZ1,1,4),
+                                                  (self.canvas.slider_third_channel,4,4),(self.uniformZ_button,1,1)],layout_cols=2)
+            region_selection_TB = self.Define_Grid_layout('Region selection',
+                buttons_list=[(self.selectrect_action, 1, 1),(self.invertSelection_action, 1, 1),(self.Z_mask_load_action, 1, 1),(self.selectpoly_action, 1, 1),(self.unselect_action, 1, 1)],layout_cols=3)
+            reference_region_TB = self.Define_Grid_layout('Reference region',buttons_list=[(self.desiredAppearanceMode_button,1,1),(self.desiredExternalAppearanceMode_button,1,1)],layout_cols=1)
+            periodicity_TB = self.Define_Grid_layout('Periodicity',buttons_list=[(self.periodicity_mag_1,1,4), (self.periodicity_mag_2,1,4),(self.indicatePeriodicity_button, 1, 1),
+                                                                              (self.IncreasePeriodicity_1D_action,1,1),(self.IncreasePeriodicity_2D_action,1,1)],layout_cols=2)
+            general_TB = self.Define_Grid_layout('General',
+                buttons_list=[(self.estimatedKenrel_button, 1, 1),(self.special_behavior_button, 1, 1),(self.undoZ_action, 1, 1),(self.redoZ_action, 1, 1)],layout_cols=2)
+            optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[(self.IncreaseSTD_action,1,1),(self.DecreaseSTD_action,1,1),(self.DecreaseTV_action,1,1),
+                (self.ImitateHist_action,1,1),(self.ImitatePatchHist_action,1,1),(self.FoolAdversary_action,1,1),(self.STD_increment,1,1),(self.ProcessRandZ_action,1,1),
+                                                                               (self.ProcessLimitedRandZ_action,1,1)],layout_cols=4)
+            scribble_A_TB = self.Define_Grid_layout('Scribbling',buttons_list=[(getattr(self,m+'_button'),1,1) for m in ['pencil','line', 'polygon','ellipse', 'rect']],layout_cols=1)
+            scribble_B_TB = self.Define_Grid_layout('Scribble B',buttons_list=[(self.dropper_button,1,1),(self.canvas.primary_button,1,1),(self.canvas.cycleColorState_button,1,1),
+                (sizeicon,1,1),(self.sizeselect,1,1),(self.scribble_reset_action,1,1),(self.apply_scribble_action,1,1),(self.loop_apply_scribble_action,1,1),
+                                           (self.undo_scribble_action,1,1),(self.redo_scribble_action,1,1)],layout_cols=1)
+            imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[(self.im_input_button,1,1),(self.im_input_auto_location_button,1,1)]+\
+                [(getattr(self,button+'_imprinting_button'),1,1) for button in (imprint_stretches+imprint_translations)],layout_cols=4)
             temporary = self.Define_Grid_layout(layout_name='Temporary', parent=self.fileToolbar,
-                                    buttons_list=[(self.estimatedKenrel_button, 1, 1), (self.Z_mask_load_action, 1, 1),
-                                                  (self.SaveImage_action, 1, 1),],height_width_ratio=1 / 3)
-            self.temp_layout.addWidget(temporary)
-            self.horizontalLayout.addLayout(self.temp_layout)
+                                    buttons_list=[(self.SaveImage_action, 1, 1),],height_width_ratio=1 / 3)
+
+            self.verticalLayout_L = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_L')
+            self.verticalLayout_C = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_C')
+            self.verticalLayout_R = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_R')
+            self.verticalLayout_L.addWidget(load_and_save)
+            self.verticalLayout_L.addWidget(display_TB)
+            self.verticalLayout_L.addWidget(temporary)
+            self.verticalLayout_L.addWidget(region_selection_TB)
+            self.verticalLayout_L.addWidget(general_TB)
+            self.verticalLayout_L.addWidget(reference_region_TB)
+            self.verticalLayout_L.addWidget(uniform_Z_control_TB)
+            self.verticalLayout_C.addWidget(scribble_A_TB)
+            self.verticalLayout_C.addWidget(scribble_B_TB)
+            self.verticalLayout_R.addWidget(periodicity_TB)
+            self.verticalLayout_R.addWidget(optimize_Z_TB)
+            self.verticalLayout_R.addWidget(imprinting_TB)
+            # self.verticalLayout_L.addLayout(self.temp_layout)
         else:
+            self.gridLayout.addWidget(self.redoZ_action, 3, 1, 1, 1)
+            self.gridLayout.addWidget(self.undoZ_action, 3, 0, 1, 1)
+            self.gridLayout.addWidget(self.selectpoly_action, 0, 0, 1, 1)
+            self.gridLayout.addWidget(self.selectrect_action, 0, 1, 1, 1)
+            self.gridLayout.addWidget(self.unselect_action, 0, 2, 1, 1)
+            self.gridLayout.addWidget(self.invertSelection_action, 0, 3, 1, 1)
+            self.gridLayout.addWidget(self.desiredExternalAppearanceMode_button, 1, 0, 1, 1)
+            self.gridLayout.addWidget(self.desiredAppearanceMode_button, 1, 1, 1, 1)
             self.fileToolbar.addWidget(self.open_HR_image_action)
             self.fileToolbar.addWidget(self.open_image_action)
             self.fileToolbar.addWidget(self.Z_load_action)
@@ -398,10 +434,30 @@ class Ui_MainWindow(object):
             self.fileToolbar.addWidget(self.DecreaseDisplayZoom_button)
             self.fileToolbar.addWidget(self.IncreaseDisplayZoom_button)
             self.gridLayout.addWidget(self.Zdisplay_button, 2,0, 1, 1)
+            self.gridLayout.addWidget(self.uniformZ_button, 2, 1, 1, 1)
 
             self.fileToolbar.addWidget(self.estimatedKenrel_button)
             self.fileToolbar.addWidget(self.Z_mask_load_action)
             self.fileToolbar.addWidget(self.SaveImage_action)
+            # Scribble:
+            self.Scribble_Toolbar.addWidget(self.scribble_reset_action)
+            self.Scribble_Toolbar.addWidget(sizeicon)
+            self.Scribble_Toolbar.addWidget(self.sizeselect)
+
+            self.Scribble_Toolbar.addWidget(self.im_input_button)
+            self.Scribble_Toolbar.addWidget(self.im_input_auto_location_button)
+            self.Scribble_Toolbar.addWidget(self.dropper_button)
+            self.Scribble_Toolbar.addWidget(self.pencil_button)
+            self.Scribble_Toolbar.addWidget(self.line_button)
+            self.Scribble_Toolbar.addWidget(self.ellipse_button)
+            self.Scribble_Toolbar.addWidget(self.polygon_button)
+            self.Scribble_Toolbar.addWidget(self.rect_button)
+            self.Scribble_Toolbar.addWidget(self.apply_scribble_action)
+            self.Scribble_Toolbar.addWidget(self.loop_apply_scribble_action)
+            self.Scribble_Toolbar.addWidget(self.canvas.cycleColorState_button)
+            self.Scribble_Toolbar.addWidget(self.canvas.primary_button)
+            self.gridLayout.addWidget(self.undo_scribble_action, 3, 2, 1, 1)
+            self.gridLayout.addWidget(self.redo_scribble_action, 3, 3, 1, 1)
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
