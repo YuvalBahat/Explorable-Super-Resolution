@@ -4,7 +4,7 @@ import os
 import cv2
 import matplotlib.pyplot as plt
 
-SHOW_RATIO = True
+SHOW_RATIO = False
 
 FOLDER_B = '/home/tiras/ybahat/SRGAN/results/MSE_srResNet/BSD100_cubic_PSNR23.667'
 FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_MaxPool_srResNet/BSD100_cubic_PSNR23.267'
@@ -13,7 +13,7 @@ FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_VGG19Untrained_srResNet/B
 # FOLDER_A = '/home/tiras/datasets/BSD100_test/BSD100_test_HRx4'
 # FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_HalfChannels/BSD100_cubic_PSNR22.785'
 # FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_TwiceChannels/BSD100_cubic_PSNR22.886'
-FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_patches_init_first/BSD100_cubic_PSNR21.796'
+FOLDER_A = '/media/ybahat/data/projects/SRGAN/results/Feat_with_untrained_noRelu/BSD100_cubic_PSNR22.513'
 
 files_list = os.listdir(FOLDER_A)
 FFT_ratios = []
@@ -21,10 +21,10 @@ max_dims = [0,0]
 im_names = [im.split('.')[0].split('_')[0] for im in files_list]
 ratio_range = [0,0]
 for im_num,im_name in tqdm(enumerate(im_names)):
-    file_name_B = [im for im in os.listdir(FOLDER_B) if im_name in im][0]
     image_A = np.array(cv2.imread(os.path.join(FOLDER_A,files_list[im_num]))).mean(2)/255
     FFT_A = np.fft.fft2(image_A)
     if SHOW_RATIO:
+        file_name_B = [im for im in os.listdir(FOLDER_B) if im_name in im][0]
         image_B = np.array(cv2.imread(os.path.join(FOLDER_B,file_name_B))).mean(2)/255
         FFT_B = np.fft.fft2(image_B)
         FFT_ratios.append(np.log(np.abs(FFT_A)/(np.finfo(FFT_A.dtype).eps+np.abs(FFT_B))))

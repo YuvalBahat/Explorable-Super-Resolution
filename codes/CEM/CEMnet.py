@@ -259,17 +259,17 @@ class CEM_PyTorch(nn.Module):
         upscale_antialiasing = CEMnet.ds_kernel*CEMnet.ds_factor**2
         pre_stride, post_stride = calc_strides(None, CEMnet.ds_factor)
         Upscale_Padder = lambda x: nn.functional.pad(x,(pre_stride[1],post_stride[1],0,0,pre_stride[0],post_stride[0]))
-        Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],CEMnet.ds_factor*x.size()[2],DTEnet.ds_factor*x.size()[3]])
-        antialiasing_padding = np.floor(np.array(DTEnet.ds_kernel.shape)/2).astype(np.int32)
+        Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],CEMnet.ds_factor*x.size()[2],CEMnet.ds_factor*x.size()[3]])
+        antialiasing_padding = np.floor(np.array(CEMnet.ds_kernel.shape)/2).astype(np.int32)
         antialiasing_Padder = nn.ReplicationPad2d((antialiasing_padding[1],antialiasing_padding[1],antialiasing_padding[0],antialiasing_padding[0]))
         self.Upscale_OP = Filter_Layer(upscale_antialiasing,pre_filter_func=lambda x:antialiasing_Padder(Aliased_Upscale_OP(x)))
         Reshaped_input = lambda x:x.view([x.size()[0],x.size()[1],int(x.size()[2]/self.ds_factor),self.ds_factor,int(x.size()[3]/self.ds_factor),self.ds_factor])
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
         self.DownscaleOP = Filter_Layer(downscale_antialiasing,pre_filter_func=antialiasing_Padder,post_filter_func=lambda x:Aliased_Downscale_OP(x))
-        self.LR_padder = DTEnet.LR_padder
-        self.HR_padder = DTEnet.HR_padder
-        self.HR_unpadder = DTEnet.HR_unpadder
-        self.LR_unpadder = DTEnet.LR_unpadder#Debugging tool
+        self.LR_padder = CEMnet.LR_padder
+        self.HR_padder = CEMnet.HR_padder
+        self.HR_unpadder = CEMnet.HR_unpadder
+        self.LR_unpadder = CEMnet.LR_unpadder#Debugging tool
         self.pre_pad = False #Using a variable as flag because I couldn't pass it as argument to forward function when using the DataParallel module with more than 1 GPU
         self.return_2_components = 'decomposed_output' in self.conf.__dict__ and self.conf.decomposed_output
 
@@ -297,7 +297,7 @@ class CEM_PyTorch(nn.Module):
         return self.HR_unpadder(output) if self.pre_pad else output
 
     def train(self,mode=True):
-        super(DTE_PyTorch,self).train(mode=mode)
+        super(CEM_PyTorch,self).train(mode=mode)
         self.pre_pad = not mode
 
     def Image_2_Sigmoid_Range_Converter(self,images,opposite_direction=False):
@@ -369,12 +369,12 @@ def Create_Tensor_Pad_OP(padding_size):
         return x
     return TF_Pad_OP
 
-def Get_DTE_Conf(sf):
+def Get_CEM_Conf(sf):
     class conf:
         scale_factor = sf
         avoid_skip_connections = False
         generate_HR_image = False
-        pseudo_DTE_supplement = False
+        pseudo_CEM_supplement = False
         desired_inv_hTh_energy_portion = 1 - 1e-6#1-1e-10
         filter_pertubation_limit = 0.999
         sigmoid_range_limit = False
@@ -382,7 +382,7 @@ def Get_DTE_Conf(sf):
     return conf
 
 def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
-    if all([('generated_image_model' in key or 'Filter' in key) for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using DTE_arch
+    if all([('generated_image_model' in key or 'Filter' in key) for key in current_state_dict.keys()]) and not any(['generated_image_model' in key for key in loaded_state_dict.keys()]):  # Using CEM_arch
         modified_names_dict = collections.OrderedDict()
         for key in loaded_state_dict:
             modified_names_dict['generated_image_model.' + key] = loaded_state_dict[key]
