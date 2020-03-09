@@ -40,7 +40,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 0
+    , "CEM_arch": 0
     , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
     , "latent_channels": 0 //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
@@ -81,7 +81,7 @@
     , "feature_criterion": "l1"
     , "gan_type": "vanilla"
     , "D_update_ratio": 1
-    , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
+    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 1e-2
     , "feature_weight": 1

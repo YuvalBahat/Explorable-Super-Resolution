@@ -9,7 +9,7 @@ import models.networks as networks
 from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels
 from torch.nn import Upsample
-import DTE.DTEnet as DTEnet
+import CEM.CEMnet as CEMnet
 import numpy as np
 from collections import deque
 from utils.util import SVD_2_LatentZ
@@ -51,23 +51,23 @@ class SRRaGANModel(BaseModel):
             else:
                 assert isinstance(opt['network_G']['latent_channels'],int)
         # define networks and load pretrained models
-        self.DTE_net = None
-        self.DTE_arch = opt['network_G']['DTE_arch']
+        self.CEM_net = None
+        self.CEM_arch = opt['network_G']['CEM_arch']
         self.step = 0
-        if self.DTE_arch or (opt['is_train'] and train_opt['DTE_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use DTE_net.Project_2_ortho_2_NS()
-            DTE_conf = DTEnet.Get_DTE_Conf(opt['scale'])
-            DTE_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
-            DTE_conf.input_range = np.array(opt['range'])
+        if self.CEM_arch or (opt['is_train'] and train_opt['CEM_exp']) or self.latent_input is not None: #The last option is for testing ESRGAN with latent input, so that I can use CEM_net.Project_2_ortho_2_NS()
+            CEM_conf = CEMnet.Get_CEM_Conf(opt['scale'])
+            CEM_conf.sigmoid_range_limit = bool(opt['network_G']['sigmoid_range_limit'])
+            CEM_conf.input_range = np.array(opt['range'])
             if self.is_train:
-                assert train_opt['pixel_domain']=='HR' or not self.DTE_arch,'Why should I use DTE_arch AND penalize MSE in the LR domain?'
-                DTE_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
+                assert train_opt['pixel_domain']=='HR' or not self.CEM_arch,'Why should I use CEM_arch AND penalize MSE in the LR domain?'
+                CEM_conf.decomposed_output = bool(opt['network_D']['decomposed_input'])
             if opt['test'] is not None and opt['test']['kernel']=='estimated':
                 # Using a non-accurate estimated kernel increases the risk of insability when inverting hTh, so I take a higher lower bound:
-                DTE_conf.lower_magnitude_bound = 0.1
-            self.DTE_net = DTEnet.DTEnet(DTE_conf,upscale_kernel=kwargs['kernel'] if 'kernel' in kwargs.keys() else None if opt['test'] is None else opt['test']['kernel'])
-            if not self.DTE_arch:
-                self.DTE_net.WrapArchitecture_PyTorch(only_padders=True)
-        self.netG = networks.define_G(opt,DTE=self.DTE_net,num_latent_channels=self.num_latent_channels)  # G
+                CEM_conf.lower_magnitude_bound = 0.1
+            self.CEM_net = CEMnet.CEMnet(CEM_conf,upscale_kernel=kwargs['kernel'] if 'kernel' in kwargs.keys() else None if opt['test'] is None else opt['test']['kernel'])
+            if not self.CEM_arch:
+                self.CEM_net.WrapArchitecture_PyTorch(only_padders=True)
+        self.netG = networks.define_G(opt,CEM=self.CEM_net,num_latent_channels=self.num_latent_channels)  # G
         # print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,3,256,256])))
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake','l_g_highpass','l_g_shift_invariant',
@@ -92,12 +92,12 @@ class SRRaGANModel(BaseModel):
             self.max_accumulation_steps = accumulation_steps_per_batch
             self.grad_accumulation_steps_G = train_opt['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = train_opt['grad_accumulation_steps_D']
-            self.decomposed_output = self.DTE_arch and bool(opt['network_D']['decomposed_input'])
+            self.decomposed_output = self.CEM_arch and bool(opt['network_D']['decomposed_input'])
             self.netG.train()
             self.l_gan_w = train_opt['gan_weight']
             self.D_exists = self.l_gan_w>0 or self.debug
             if self.D_exists:
-                self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)  # D
+                self.netD = networks.define_D(opt,CEM=self.CEM_net).to(self.device)  # D
                 self.netD.train()
             if self.using_encoder:
                 self.netE = networks.define_E(input_nc=opt['network_G']['out_nc'],output_nc=1,ndf=opt['network_D']['nf'],

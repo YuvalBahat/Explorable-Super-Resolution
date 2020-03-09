@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 import cv2
 from socket import gethostname
-from DTE.imresize_DTE import imresize
+from CEM.imresize_CEM import imresize
 from scripts.create_gaussian_upscale_kernel import create_Gaussian_Upscale_kernel
 
 dataset_root_path = '/media/ybahat/data/Datasets' if gethostname() == 'Yuval-Technion' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/home/ybahat/data/Databases'

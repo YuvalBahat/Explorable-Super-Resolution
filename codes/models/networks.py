@@ -5,7 +5,6 @@ from torch.nn import init
 
 import models.modules.architecture as arch
 import models.modules.sft_arch as sft_arch
-import DTE.DTEnet as DTEnet
 
 ####################
 # initialize
@@ -82,12 +81,12 @@ def init_weights(net, init_type='kaiming', scale=1, std=0.02):
 
 
 # Generator
-def define_G(opt,DTE=None,num_latent_channels=None):
+def define_G(opt,CEM=None,num_latent_channels=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
     opt_net['latent_input'] = opt_net['latent_input'] if opt_net['latent_input']!="None" else None
-    # if opt['network_G']['DTE_arch']:#Prevent a bug when using DTE, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
+    # if opt['network_G']['CEM_arch']:#Prevent a bug when using CEM, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
     #     import os
     #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -111,8 +110,8 @@ def define_G(opt,DTE=None,num_latent_channels=None):
                              nb=opt_net['nb'], upscale=opt_net['scale'])
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
-    if opt_net['DTE_arch']:
-        netG = DTE.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['patch_size'] if opt['is_train'] else None)
+    if opt_net['CEM_arch']:
+        netG = CEM.WrapArchitecture_PyTorch(netG,opt['datasets']['train']['patch_size'] if opt['is_train'] else None)
     if opt['is_train'] and which_model != 'MSRResNet':# and which_model != 'DnCNN':
         init_weights(netG, init_type='kaiming', scale=0.1)
     if gpu_ids:
@@ -121,7 +120,7 @@ def define_G(opt,DTE=None,num_latent_channels=None):
     return netG
 
 # Discriminator
-def define_D(opt,DTE=None):
+def define_D(opt,CEM=None):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_D']
     which_model = opt_net['which_model_D']
@@ -129,8 +128,8 @@ def define_D(opt,DTE=None):
     # in_nc = opt_net['in_nc']*(2 if opt['network_D']['decomposed_input'] else 1)
     in_nc = opt_net['in_nc']
     assert not ((opt_net['pre_clipping'] or opt_net['decomposed_input']) and which_model!='PatchGAN'),'Unsupported yet'
-    if DTE is not None:
-        input_patch_size -= 2*DTE.invalidity_margins_HR
+    if CEM is not None:
+        input_patch_size -= 2*CEM.invalidity_margins_HR
     if which_model == 'discriminator_vgg_128':
         kwargs = {}
         if 'num_2_strides' in opt_net:

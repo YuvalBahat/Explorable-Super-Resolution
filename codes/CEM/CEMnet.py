@@ -1,11 +1,11 @@
 from scipy.signal import convolve2d as conv2
 import numpy as np
 tf_loaded,pytorch_loaded = False,False
-try:
-    import tensorflow as tf
-    tf_loaded = True
-except:
-    pass
+# try:
+#     import tensorflow as tf
+#     tf_loaded = True
+# except:
+#     pass
 try:
     import torch
     import torch.nn as nn
@@ -13,10 +13,10 @@ try:
 except:
     pass
 import copy
-from DTE.imresize_DTE import imresize,calc_strides
+from CEM.imresize_CEM import imresize,calc_strides
 import collections
 
-class DTEnet:
+class CEMnet:
     NFFT_add = 36
 
     def __init__(self,conf,upscale_kernel=None):
@@ -64,7 +64,7 @@ class DTEnet:
         return Unpad_Image(HR_image,self.ds_factor*margin_size)
 
     def WrapArchitecture_PyTorch(self,generated_image=None,training_patch_size=None,only_padders=False):
-        assert pytorch_loaded,'Failed to load PyTorch - Necessary for this function of DTE'
+        assert pytorch_loaded,'Failed to load PyTorch - Necessary for this function of CEM'
         invalidity_margins_4_test_LR = self.invalidity_margins_LR
         invalidity_margins_4_test_HR = self.ds_factor*invalidity_margins_4_test_LR
         self.LR_padder = torch.nn.ReplicationPad2d((invalidity_margins_4_test_LR, invalidity_margins_4_test_LR,invalidity_margins_4_test_LR, invalidity_margins_4_test_LR))
@@ -82,7 +82,7 @@ class DTEnet:
         if only_padders:
             return
         else:
-            returnable =  DTE_PyTorch(self,generated_image)
+            returnable =  CEM_PyTorch(self,generated_image)
             self.OP_names = [m[0] for m in returnable.named_modules() if 'Filter_OP' in m[0]]
             return returnable
 
@@ -91,7 +91,7 @@ class DTEnet:
         return self.loss_mask*im1,self.loss_mask*im2
 
     def WrapArchitecture(self,model,unpadded_input_t,generated_image_t=None):
-        assert tf_loaded,'Failed to load TensorFlow - Necessary for this function of DTE'
+        assert tf_loaded,'Failed to load TensorFlow - Necessary for this function of CEM'
         assert not self.conf.sigmoid_range_limit,'Unsupported yet'
         PAD_GENRATED_TOO = True
         self.model = model
@@ -127,7 +127,7 @@ class DTEnet:
             self.ortho_2_NS_generated_component = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(self.DownscaleOP(self.generated_im)))
             self.NS_HR_component = self.generated_im-self.ortho_2_NS_generated_component
             if PAD_GENRATED_TOO:
-                output = tf.add(self.ortho_2_NS_HR_component,self.NS_HR_component,name='DTE_add_subspaces')
+                output = tf.add(self.ortho_2_NS_HR_component,self.NS_HR_component,name='CEM_add_subspaces')
             else:
                 output = self.ortho_2_NS_HR_component
             # Remove image padding for inference time or leaving as-is for training:
@@ -141,7 +141,7 @@ class DTEnet:
             if PAD_GENRATED_TOO:
                 return self.output_t
             else:
-                return tf.add(self.output_t,self.NS_HR_component,name='DTE_add_subspaces')
+                return tf.add(self.output_t,self.NS_HR_component,name='CEM_add_subspaces')
 
     def Enforce_DT_on_Image_Pair(self,LR_source,HR_input):
         same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
@@ -154,12 +154,12 @@ class DTEnet:
     def Project_2_ortho_2_NS(self,HR_input):
         return self.DT_Satisfying_Upscale(imresize(HR_input,scale_factor=[1/self.ds_factor]))
 
-    def Supplement_Pseudo_DTE(self,input_t):
+    def Supplement_Pseudo_CEM(self,input_t):
         return self.Learnable_Upscale_OP(self.Conv_LR_with_Learnable_OP(self.Learnable_DownscaleOP(input_t)))
 
     def create_im_generator(self):
         with self.model.as_default():
-            with tf.variable_scope('DTE_generator'):
+            with tf.variable_scope('CEM_generator'):
                 upscaling_filter_shape = self.conf.filter_shape[0][:-2]+[3,self.ds_factor**2]
                 self.conf.filter_shape[1] = copy.deepcopy(self.conf.filter_shape[1])
                 self.conf.filter_shape[1][2] = 3
@@ -203,7 +203,7 @@ class DTEnet:
     def compute_conv_with_inv_hTh_OP(self):
         self.inv_hTh_t = tf.constant(np.tile(np.expand_dims(np.expand_dims(self.inv_hTh,axis=2),axis=3),reps=[1,1,3,1]))
         self.Conv_LR_with_Inv_hTh_OP = lambda x:tf.nn.depthwise_conv2d(input=x,filter=self.inv_hTh_t,strides=[1,1,1,1],padding='SAME')
-        if self.conf.pseudo_DTE_supplement:
+        if self.conf.pseudo_CEM_supplement:
             with self.model.as_default():
                 with tf.variable_scope('Generator'):
                     self.Conv_LR_with_Learnable_OP = lambda x: tf.nn.depthwise_conv2d(input=x,
@@ -225,7 +225,7 @@ class DTEnet:
             shape=tf.stack([tf.shape(x)[0],tf.cast(tf.shape(x)[1]/self.ds_factor,dtype=tf.int32),self.ds_factor,tf.cast(tf.shape(x)[2]/self.ds_factor,dtype=tf.int32),self.ds_factor,tf.shape(x)[3]]))
         self.Aliased_Downscale_OP = lambda x:tf.squeeze(tf.slice(Reshaped_input(x),begin=[0,0,pre_stride[0],0,pre_stride[1],0],size=[-1,-1,1,-1,1,-1]),axis=[2,4])
         self.DownscaleOP = lambda x:self.Aliased_Downscale_OP(tf.nn.depthwise_conv2d(input=x,filter=downscale_antialiasing,strides=[1,1,1,1],padding='SAME'))
-        if self.conf.pseudo_DTE_supplement:
+        if self.conf.pseudo_CEM_supplement:
             with self.model.as_default():
                 with tf.variable_scope('Generator'):
                     self.Learnable_Upscale_OP = lambda x:tf.nn.depthwise_conv2d(input=self.Aliased_Upscale_OP(x),
@@ -246,20 +246,20 @@ class Filter_Layer(nn.Module):
     def forward(self, x):
         return self.post_filter_func(self.Filter_OP(self.pre_filter_func(x)))
 
-class DTE_PyTorch(nn.Module):
-    def __init__(self, DTEnet, generated_image):
-        super(DTE_PyTorch, self).__init__()
-        self.ds_factor = DTEnet.ds_factor
-        self.conf = DTEnet.conf
+class CEM_PyTorch(nn.Module):
+    def __init__(self, CEMnet, generated_image):
+        super(CEM_PyTorch, self).__init__()
+        self.ds_factor = CEMnet.ds_factor
+        self.conf = CEMnet.conf
         self.generated_image_model = generated_image
-        inv_hTh_padding = np.floor(np.array(DTEnet.inv_hTh.shape)/2).astype(np.int32)
+        inv_hTh_padding = np.floor(np.array(CEMnet.inv_hTh.shape)/2).astype(np.int32)
         Replication_Padder = nn.ReplicationPad2d((inv_hTh_padding[1],inv_hTh_padding[1],inv_hTh_padding[0],inv_hTh_padding[0]))
-        self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(DTEnet.inv_hTh,pre_filter_func=Replication_Padder)
-        downscale_antialiasing = np.rot90(DTEnet.ds_kernel,2)
-        upscale_antialiasing = DTEnet.ds_kernel*DTEnet.ds_factor**2
-        pre_stride, post_stride = calc_strides(None, DTEnet.ds_factor)
+        self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(CEMnet.inv_hTh,pre_filter_func=Replication_Padder)
+        downscale_antialiasing = np.rot90(CEMnet.ds_kernel,2)
+        upscale_antialiasing = CEMnet.ds_kernel*CEMnet.ds_factor**2
+        pre_stride, post_stride = calc_strides(None, CEMnet.ds_factor)
         Upscale_Padder = lambda x: nn.functional.pad(x,(pre_stride[1],post_stride[1],0,0,pre_stride[0],post_stride[0]))
-        Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],DTEnet.ds_factor*x.size()[2],DTEnet.ds_factor*x.size()[3]])
+        Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],CEMnet.ds_factor*x.size()[2],DTEnet.ds_factor*x.size()[3]])
         antialiasing_padding = np.floor(np.array(DTEnet.ds_kernel.shape)/2).astype(np.int32)
         antialiasing_Padder = nn.ReplicationPad2d((antialiasing_padding[1],antialiasing_padding[1],antialiasing_padding[0],antialiasing_padding[0]))
         self.Upscale_OP = Filter_Layer(upscale_antialiasing,pre_filter_func=lambda x:antialiasing_Padder(Aliased_Upscale_OP(x)))

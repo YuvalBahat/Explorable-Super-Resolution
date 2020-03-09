@@ -1,5 +1,5 @@
 {
-//  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W100_debug"
+//  "name": "0Dinit_V10Dupdate_ESRGAN_CEM_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W100_debug"
 //    "name": "no_Z_loss"
 //    "name": "RRDB_ESRGAN_x4_additional_training" //,"RRDB_ESRGAN_x4_additional_training" //"RRDB_ESRGAN_x4_latent_input"
     "name": "RRDB_ESRGAN_x4"
@@ -42,7 +42,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 1
+    , "CEM_arch": 1
     , "latent_input": "None" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
     , "latent_channels": 0

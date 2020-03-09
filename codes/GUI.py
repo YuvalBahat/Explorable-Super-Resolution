@@ -20,7 +20,7 @@ import imageio
 # import matplotlib
 from skimage.transform import resize
 from scipy.signal import find_peaks
-from DTE.imresize_DTE import imresize
+from CEM.imresize_CEM import imresize
 import time
 from collections import deque
 from KernelGAN import train as KernelGAN

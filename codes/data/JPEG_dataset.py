@@ -5,7 +5,7 @@ import cv2
 import torch
 import torch.utils.data as data
 import data.util as util
-from DTE.imresize_DTE import imresize
+from CEM.imresize_CEM import imresize
 
 
 class JpegDataset(data.Dataset):
@@ -104,7 +104,7 @@ class JpegDataset(data.Dataset):
             QF = self.per_index_QF[index]
 
         H, W, _ = img_Uncomp.shape
-        # # using DTE imresize:
+        # # using CEM imresize:
         # img_LR = imresize(img_HR,scale_factor=[1/float(scale)],kernel=self.kernel)
 
         if self.opt['phase'] == 'train':

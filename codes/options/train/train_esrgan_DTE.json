@@ -40,7 +40,7 @@
 
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "DTE_arch": 1
+    , "CEM_arch": 1
     , "sigmoid_range_limit": 0
     , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
@@ -96,7 +96,7 @@
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
-    , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
+    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 0 //1e-2
     , "feature_weight": 0 //1
