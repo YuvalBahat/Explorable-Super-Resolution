@@ -5,6 +5,7 @@ import DTE.DTEnet as DTEnet
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
+from torch.nn import Upsample
 from utils.util import compute_RF_numerical
 
 class BaseModel():
@@ -43,6 +44,10 @@ class BaseModel():
 
     def get_current_learning_rate(self):
         return self.optimizers[0].param_groups[0]['lr']
+
+    def Convert_2_LR(self,input,size):
+        return nn.functional.interpolate(input,size=size,mode='bilinear',align_corners=True)
+        # return Upsample(size=size,mode='bilinear')
 
     # helper printing function that can be used by subclasses
     def get_network_description(self, network):

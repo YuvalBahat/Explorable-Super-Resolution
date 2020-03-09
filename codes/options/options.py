@@ -68,7 +68,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
                 is_lmdb = True
         dataset['data_type'] = 'lmdb' if is_lmdb else 'img'
         if 'train' in opt.keys() and any([field in opt['train'] for field in ['pixel_domain','feature_domain']]):
-            assert opt['model']=='srragan','Unsupported'
+            assert opt['model'] in ['srragan','srgan'],'Unsupported'
         if phase == 'train' and 'subset_file' in dataset and dataset['subset_file'] is not None:
             dataset['subset_file'] = os.path.expanduser(dataset['subset_file'])
 

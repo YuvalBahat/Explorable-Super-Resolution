@@ -4,16 +4,17 @@ import os
 import cv2
 import matplotlib.pyplot as plt
 
-SHOW_RATIO = True
+SHOW_RATIO = False
 
-FOLDER_B = '/home/tiras/ybahat/SRGAN/results/MSE_srResNet/BSD100_cubic_PSNR23.667'
-FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_MaxPool_srResNet/BSD100_cubic_PSNR23.267'
+FOLDER_A = '/home/tiras/ybahat/SRGAN/results/MSE_srResNet/BSD100_cubic_PSNR23.667'
+FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_MaxPool_srResNet/BSD100_cubic_PSNR23.267'
 FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_VGG19Untrained_srResNet/BSD100_cubic_PSNR22.857'
 # FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_randomMaxSize/BSD100_cubic_PSNR23.122'
-# FOLDER_A = '/home/tiras/datasets/BSD100_test/BSD100_test_HRx4'
+FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_VGG19untrained_max_2_avg/BSD100_cubic_PSNR22.227'
 # FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_HalfChannels/BSD100_cubic_PSNR22.785'
 # FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_TwiceChannels/BSD100_cubic_PSNR22.886'
-FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_patches_init_first/BSD100_cubic_PSNR21.796'
+# FOLDER_A = '/home/tiras/ybahat/SRGAN/results/Feat_with_untrained_patches_init_first/BSD100_cubic_PSNR21.796'
+# FOLDER_B = '/home/tiras/ybahat/SRGAN/results/Shift_Inv_AvgPooling3/BSD100_cubic_PSNR22.671'
 
 files_list = os.listdir(FOLDER_A)
 FFT_ratios = []

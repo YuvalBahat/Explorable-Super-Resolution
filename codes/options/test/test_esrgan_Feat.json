@@ -2,7 +2,7 @@
 //  "name": "0Dinit_V10Dupdate_ESRGAN_DTE_batch48_LR1e-5_VGG_NonRel_NoLossLR_HR_allLayersU_StructTensor_SVDinSingleNormalizerOut57K_ZoptimizedL1W100_debug"
 //    "name": "no_Z_loss"
 //    "name": "RRDB_ESRGAN_x4_additional_training" //,"RRDB_ESRGAN_x4_additional_training" //"RRDB_ESRGAN_x4_latent_input"
-    "name": "Feat_with_untrained_patches_init_first" //,"Feat_with_MaxPool_srResNet" //,"Feat_with_randomPoolperC_RetrainedEp8_srResNet"
+    "name": "Feat_with_VGG19untrained_max_2_avg" //,"Feat_with_MaxPool_srResNet" //,"Feat_with_randomPoolperC_RetrainedEp8_srResNet"
   , "suffix": ""
   , "model": "srragan"
   , "scale": 4

@@ -8,7 +8,6 @@ import re
 import models.networks as networks
 from .base_model import BaseModel
 from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels
-from torch.nn import Upsample
 import DTE.DTEnet as DTEnet
 import numpy as np
 from collections import deque
@@ -323,9 +322,6 @@ class SRRaGANModel(BaseModel):
 
             input_ref = data['ref'] if 'ref' in data else data['HR']
             self.var_ref = input_ref.to(self.device)
-
-    def Convert_2_LR(self,size):
-        return Upsample(size=size,mode='bilinear')
 
     def optimize_parameters(self):
         self.gradient_step_num = self.step//self.max_accumulation_steps

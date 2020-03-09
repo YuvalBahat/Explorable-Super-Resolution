@@ -1,5 +1,5 @@
 {
-  "name": "Shift_Inv_AvgPooling11" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
+  "name": "Feat_with_VGG19_relu1" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
   , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
@@ -69,7 +69,7 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":1
     ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -89,7 +89,7 @@
     , "feature_domain": "HR"
     , "feature_pooling": "" // "untrained_num_channel_factor_4" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
 //    , "netF_checkpoint": "/home/tiras/ybahat/ImageNet_trainer/saved_models/vgg19_back2default/model_best.pth.tar"
-//    , "feature_model_arch": "vgg11_13"
+    , "feature_model_arch": "vgg19_1"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
@@ -102,9 +102,9 @@
     , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 0 //1e-2
-    , "feature_weight": 0 //1
+    , "feature_weight": 1
     , "highpass_weight": 0 //1e-2
-    , "shift_invariant_weight": 1
+    , "shift_invariant_weight": 0 //1
     , "gan_weight": 0
     , "latent_weight": 0 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
     , "optimalZ_loss_weight": 0 //100

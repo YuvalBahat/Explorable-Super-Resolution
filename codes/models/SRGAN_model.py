@@ -142,7 +142,12 @@ class SRGANModel(BaseModel):
         l_g_total = 0
         if self.step % self.D_update_ratio == 0 and self.step > self.D_init_iters:
             if self.cri_pix:  # pixel loss
-                l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
+                if 'pixel_domain' in self.opt['train'] and self.opt['train']['pixel_domain'] == 'LR':
+                    LR_size = list(self.var_L.size()[-2:])
+                    l_g_pix = self.cri_pix(self.Convert_2_LR(self.fake_H,LR_size),self.Convert_2_LR(self.var_H,LR_size))
+                else:
+                    l_g_pix = self.cri_pix(self.fake_H,self.var_H)
+                l_g_pix = self.l_pix_w * l_g_pix
                 l_g_total += l_g_pix
             if self.cri_fea:  # feature loss
                 real_fea = self.netF(self.var_H).detach()
@@ -279,7 +284,7 @@ class SRGANModel(BaseModel):
 
     def load_log(self,max_step=None):
         PREPEND_OLD_LOG = False
-        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
+        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'),allow_pickle=True)
         if PREPEND_OLD_LOG:
             old_log = np.load(os.path.join(self.log_path, 'old_logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
