@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-import DTE.DTEnet as DTEnet
+import CEM.CEMnet as CEMnet
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
@@ -131,9 +131,9 @@ class BaseModel():
             if optimizer is not None:# Not performed in the test case:
                 optimizer.load_state_dict(loaded_state_dict['optimizer_state_dict'])
             loaded_state_dict = loaded_state_dict['model_state_dict']
-        if self.opt['network_G']['DTE_arch']:
-            loaded_state_dict = DTEnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
-        # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['DTE_arch']))
+        if self.opt['network_G']['CEM_arch']:
+            loaded_state_dict = CEMnet.Adjust_State_Dict_Keys(loaded_state_dict,network.state_dict())
+        # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['CEM_arch']))
         loaded_state_dict = self.process_loaded_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 
@@ -162,8 +162,8 @@ class BaseModel():
                     current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),\
                                                               loaded_state_dict[key].cuda()],1)
                 self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
-            elif 'DTE_net' in self.__dict__ and self.DTE_arch and any([DTE_op in key for DTE_op in self.DTE_net.OP_names]):
-                continue # Not loading DTE module weights
+            elif 'CEM_net' in self.__dict__ and self.CEM_arch and any([CEM_op in key for CEM_op in self.CEM_net.OP_names]):
+                continue # Not loading CEM module weights
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]
         if modified_key_names_counter>0:

@@ -106,7 +106,7 @@ class DecompCNNModel(BaseModel):
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
-                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
+                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.CEM_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
                 elif self.optimalZ_loss_type == 'l1':

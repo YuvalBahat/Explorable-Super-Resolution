@@ -60,7 +60,7 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using DTE_imresize in the get_item routine.'
+    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
     test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE)
     test_loader = create_dataloader(test_set, dataset_opt)
     print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))

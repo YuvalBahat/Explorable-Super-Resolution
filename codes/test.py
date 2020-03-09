@@ -59,7 +59,7 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using DTE_imresize in the get_item routine.'
+    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
     test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE,kernel=None if opt['test'] is None else opt['test']['kernel'])
     test_loader = create_dataloader(test_set, dataset_opt)
     print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
@@ -215,8 +215,8 @@ for test_loader in test_loaders:
                 if z_sample_num==0:
                     gt_img = util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
                     if opt['network_G']['latent_channels']>0:
-                        img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
-                        gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
+                        img_projected_2_kernel_subspace = model.CEM_net.Project_2_ortho_2_NS(gt_img)
+                        gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.CEM_net.Return_Orthogonal_Component(gt_img)
                         HR_STD = 255*np.std(gt_orthogonal_component,axis=(0,1)).mean()
                     else:
                         HR_STD = 0

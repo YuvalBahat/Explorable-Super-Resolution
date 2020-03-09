@@ -5,7 +5,7 @@ import cv2
 import torch
 import torch.utils.data as data
 import data.util as util
-from DTE.imresize_DTE import imresize
+from CEM.imresize_CEM import imresize
 
 
 class LRHRDataset(data.Dataset):
@@ -83,7 +83,7 @@ class LRHRDataset(data.Dataset):
                     img_HR = cv2.cvtColor(img_HR, cv2.COLOR_GRAY2BGR)
 
             H, W, _ = img_HR.shape
-            # using DTE imresize:
+            # using CEM imresize:
             img_LR = imresize(img_HR,scale_factor=[1/float(scale)],kernel=self.kernel)
             # # using matlab imresize
             # img_LR = util.imresize_np(img_HR, 1 / scale, True)

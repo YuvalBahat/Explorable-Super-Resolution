@@ -93,7 +93,7 @@
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
-    , "DTE_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
+    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 1e-3
     , "feature_weight": 0 //1
