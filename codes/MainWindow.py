@@ -45,10 +45,11 @@ class Ui_MainWindow(object):
         occupancy_map = np.zeros([max_button_height,layout_cols]).astype(np.bool)
         for button_num in range(num_buttons):
             cur_row,cur_col = self.Greedily_Find_Location(occupancy_map=occupancy_map, button_size=button_sizes[button_num])
-            new_layout.addWidget(buttons_list[button_num],cur_row,cur_col,button_sizes[button_num,0], button_sizes[button_num,1])
             occupancy_map[cur_row:cur_row+button_sizes[button_num,0],cur_col:cur_col+button_sizes[button_num,1]] = True
             lowest_partially_occupied_row = np.argwhere(np.any(occupancy_map,1))[-1][0]
             occupancy_map = np.concatenate([occupancy_map[:lowest_partially_occupied_row+1,:],np.zeros([max_button_height,layout_cols]).astype(np.bool)],0)
+            if buttons_list[button_num] is not None:
+                new_layout.addWidget(buttons_list[button_num], cur_row, cur_col, button_sizes[button_num, 0],button_sizes[button_num, 1])
         return widget
 
     def Define_Nesting_Layout(self,parent,horizontal,name,title=None):
@@ -140,8 +141,8 @@ class Ui_MainWindow(object):
         self.Define_Button(button_name='scribble_reset',tooltip='Erase scribble in region',action_not_push=True)
         self.Define_Button(button_name='apply_scribble',tooltip='Perform a single scribble/imprinting application step',action_not_push=True,disabled=True)
         self.Define_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',action_not_push=True,disabled=True)
-        self.Define_Button(button_name='im_input',tooltip='Set imprinting rectangle (Using transparent color)',action_not_push=False,checkable=True,disabled=True)
-        self.Define_Button(button_name='im_input_auto_location',tooltip='Set boundaries for automatic imprinting location (Using transparent color)',action_not_push=False,checkable=True,disabled=True)
+        self.Define_Button(button_name='imprinting',tooltip='Set imprinting rectangle (Using transparent color)',action_not_push=False,checkable=True,disabled=True)
+        self.Define_Button(button_name='imprinting_auto_location',tooltip='Set boundaries for automatic imprinting location (Using transparent color)',action_not_push=False,checkable=True,disabled=True)
         self.Define_Button(button_name='open_image',tooltip='Load LR image',action_not_push=True)
         self.Define_Button(button_name='Z_load',tooltip='Load Z map',action_not_push=True)
         self.Define_Button('estimatedKenrel',tooltip='Use estimated SR kernel',action_not_push=False,checkable=True)
@@ -160,7 +161,7 @@ class Ui_MainWindow(object):
         self.Define_Button('SaveImageAndData',tooltip='Save image, Z and scribble data',action_not_push=True)
         self.Define_Button('DecreaseDisplayZoom',tooltip='Decrease zoom',action_not_push=False)
         self.Define_Button('IncreaseDisplayZoom',tooltip='Increase zoom',action_not_push=False)
-        self.Define_Button('SaveImage',tooltip='Save image',action_not_push=True)
+        # self.Define_Button('SaveImage',tooltip='Save image',action_not_push=True)
         self.Define_Button('open_HR_image',tooltip='Synthetically downscale an HR image',action_not_push=True)
         self.Define_Button('selectrect', tooltip='Rectangle selection',action_not_push=True, checkable=True)
         self.Define_Button('selectpoly', tooltip='Polygon selection',action_not_push=True, checkable=True)
@@ -184,12 +185,11 @@ class Ui_MainWindow(object):
         self.Define_Button('undo_scribble', tooltip='Undo scribble/imprint',action_not_push=True, disabled=True)
         self.Define_Button('redo_scribble', tooltip='Redo scribble/imprint',action_not_push=True, disabled=True)
 
-
-        self.sizeselect_slider.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
         # Imprinting translation buttons:
         imprint_translations = ['left','right','up','down']
         for button_num,button in enumerate(imprint_translations):
             self.Define_Button(button+'_imprinting', tooltip='Move imprinting '+button,action_not_push=False, disabled=True)
+
         # Imprinting dimensions change buttons:
         imprint_stretches = ['narrower','wider','taller','shorter']
         for button_num,button in enumerate(imprint_stretches):
@@ -201,14 +201,8 @@ class Ui_MainWindow(object):
 
         # Define uniform Z control and other sliders:
         self.Define_Slider('Z0',tooltip='Primary direction gradients magnitude',range=[0, 100*self.max_SVD_Lambda],position=100*self.max_SVD_Lambda/2,size=3,parent=self.canvas,horizontal=False)
-        self.canvas.Z0_slider.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=0,dont_update_undo_list=True))
-        self.canvas.Z0_slider.sliderReleased.connect(lambda: self.SetZ_And_Display(value=self.canvas.Z0_slider.value() / 100, index=0))
         self.Define_Slider('Z1',tooltip='Secondary direction gradients magnitude',range=[0, 100*self.max_SVD_Lambda],position=100*self.max_SVD_Lambda/2,size=3,parent=self.canvas,horizontal=False)
-        self.canvas.Z1_slider.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=1,dont_update_undo_list=True))
-        self.canvas.Z1_slider.sliderReleased.connect(lambda: self.SetZ_And_Display(value=self.canvas.Z1_slider.value() / 100, index=1))
         self.Define_Slider('third_channel',tooltip='Graidents direction',range=[-100*np.pi, 100*np.pi],position=0,size=3,parent=self.canvas,dial=True)
-        self.canvas.third_channel_slider.sliderMoved.connect(lambda s: self.SetZ_And_Display(value=s / 100, index=2,dont_update_undo_list=True))
-        self.canvas.third_channel_slider.sliderReleased.connect(lambda: self.SetZ_And_Display(value=self.canvas.third_channel_slider.value() / 100, index=2))
         self.Define_Slider('sizeselect',tooltip='Set line width',range=[1,20],size=2,horizontal=True)
 
         # Define button controlling displayed image version:
@@ -229,7 +223,6 @@ class Ui_MainWindow(object):
         self.DisplayedImageSelection_button.addItem('Z')
         self.cur_Z_im_index = self.DisplayedImageSelection_button.findText('Z')
         self.canvas.cur_Z_im_index = self.cur_Z_im_index
-        self.canvas.current_display_index = 1*self.cur_Z_im_index
         self.DisplayedImageSelection_button.addItems([str(i+1) for i in range(self.num_random_Zs)])
         self.random_display_indexes = [self.DisplayedImageSelection_button.findText(str(i+1)) for i in range(self.num_random_Zs)]
         self.DisplayedImageSelection_button.addItem('Scribble')
@@ -246,22 +239,22 @@ class Ui_MainWindow(object):
             self.randomLimitingWeightBox.setToolTip('Random images limitation weight')
 
         # Periodicity related input boxes:
-        self.periodicity_mag_1 = QtWidgets.QDoubleSpinBox()
-        self.periodicity_mag_1.setObjectName("periodicity_mag_1")
-        self.periodicity_mag_1.setValue(1.)
-        self.periodicity_mag_1.setMaximum(200)
-        self.periodicity_mag_1.setSingleStep(0.1)
-        self.periodicity_mag_1.setDecimals(1)
-        self.periodicity_mag_1.setToolTip('Primary period length')
-        self.Set_Button_Size(self.periodicity_mag_1,[2,1])
-        self.periodicity_mag_2 = QtWidgets.QDoubleSpinBox()
-        self.periodicity_mag_2.setObjectName("periodicity_mag_2")
-        self.periodicity_mag_2.setValue(1.)
-        self.periodicity_mag_2.setMaximum(200)
-        self.periodicity_mag_2.setSingleStep(0.1)
-        self.periodicity_mag_2.setDecimals(1)
-        self.periodicity_mag_2.setToolTip('Secondary period length')
-        self.Set_Button_Size(self.periodicity_mag_2,[2,1])
+        self.periodicity_mag_1_button = QtWidgets.QDoubleSpinBox()
+        self.periodicity_mag_1_button.setObjectName("periodicity_mag_1_button")
+        self.periodicity_mag_1_button.setValue(1.)
+        self.periodicity_mag_1_button.setMaximum(200)
+        self.periodicity_mag_1_button.setSingleStep(0.1)
+        self.periodicity_mag_1_button.setDecimals(1)
+        self.periodicity_mag_1_button.setToolTip('Primary period length')
+        self.Set_Button_Size(self.periodicity_mag_1_button,[2,1])
+        self.periodicity_mag_2_button = QtWidgets.QDoubleSpinBox()
+        self.periodicity_mag_2_button.setObjectName("periodicity_mag_2_button")
+        self.periodicity_mag_2_button.setValue(1.)
+        self.periodicity_mag_2_button.setMaximum(200)
+        self.periodicity_mag_2_button.setSingleStep(0.1)
+        self.periodicity_mag_2_button.setDecimals(1)
+        self.periodicity_mag_2_button.setToolTip('Secondary period length')
+        self.Set_Button_Size(self.periodicity_mag_2_button,[2,1])
 
         # STD modification degree input box:
         self.STD_increment = QtWidgets.QDoubleSpinBox()
@@ -278,16 +271,13 @@ class Ui_MainWindow(object):
         load_and_save = self.Define_Grid_layout(layout_name='Load & Save',buttons_list=[self.open_image_button,self.open_HR_image_button,self.Z_load_button,self.SaveImageAndData_button],layout_cols=4)
         display_TB = self.Define_Grid_layout(layout_name='Display',buttons_list=[self.Zdisplay_button,self.IncreaseDisplayZoom_button,self.DecreaseDisplayZoom_button,
             self.DisplayedImageSelection_button,self.CopyFromAlternative_button,self.Copy2Alternative_button],layout_cols=4)
-        # self.addToolBarBreak()
         uniform_Z_control_TB = self.Define_Grid_layout(layout_name='Uniform Z control',buttons_list=[self.canvas.Z0_slider,self.canvas.third_channel_slider, self.canvas.Z1_slider,
                                               self.uniformZ_button],layout_cols=6)
         region_selection_TB = self.Define_Grid_layout('Region selection',
             buttons_list=[self.selectrect_button,self.invertSelection_button,self.Z_mask_load_button,self.selectpoly_button,self.unselect_button],layout_cols=3)
-        # reference_image_buttons = []
-        # reference_region_TB = self.Define_Grid_layout('Reference region',buttons_list=,layout_cols=1)
-        periodicity_TB = self.Define_Grid_layout('Periodicity',buttons_list=[self.IncreasePeriodicity_1D_button,self.periodicity_mag_1,
-              self.IncreasePeriodicity_2D_button, self.periodicity_mag_2,self.indicatePeriodicity_button],layout_cols=6)
-        general_TB = self.Define_Grid_layout('General and Reference',
+        periodicity_TB = self.Define_Grid_layout('Periodicity',buttons_list=[self.IncreasePeriodicity_1D_button,self.periodicity_mag_1_button,
+              self.IncreasePeriodicity_2D_button, self.periodicity_mag_2_button,self.indicatePeriodicity_button],layout_cols=6)
+        general_TB = self.Define_Grid_layout('Reference & General',
             buttons_list=[self.desiredAppearanceMode_button,self.undoZ_button,self.special_behavior_button,self.desiredExternalAppearanceMode_button,self.redoZ_button,self.estimatedKenrel_button],layout_cols=3)
         optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[self.IncreaseSTD_button,self.DecreaseSTD_button,self.DecreaseTV_button,
             self.ImitateHist_button,self.ImitatePatchHist_button,self.FoolAdversary_button,self.STD_increment,self.ProcessRandZ_button,
@@ -298,26 +288,23 @@ class Ui_MainWindow(object):
         scribble_A_TB = self.Define_Grid_layout('Scribbling',buttons_list=[sizeicon,self.sizeselect_slider]+scribbling_tool_buttons,layout_cols=4)
         scribble_B_TB = self.Define_Grid_layout('Manage scribble',buttons_list=[self.dropper_button,self.scribble_reset_button,self.undo_scribble_button,self.canvas.color_button,
             self.apply_scribble_button,self.redo_scribble_button,self.canvas.cycleColorState_button,self.loop_apply_scribble_button],layout_cols=3)
-        imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[self.im_input_button,self.im_input_auto_location_button,None,None]+\
+        imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[self.imprinting_button,self.imprinting_auto_location_button,None,None]+\
             [getattr(self,button+'_imprinting_button') for button in (imprint_stretches+imprint_translations)],layout_cols=4)
-        # temporary = self.Define_Grid_layout(layout_name='Temporary',buttons_list=[self.SaveImage_button],height_width_ratio=1 / 3)
 
+
+        #### Assemble layouts together to form GUI:
         self.verticalLayout_L = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_L')
         self.verticalLayout_C = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_C')
         self.verticalLayout_R = self.Define_Nesting_Layout(self.horizontalLayout, horizontal=False,name='verticalLayout_R')
         self.verticalLayout_L.addWidget(load_and_save)
         self.verticalLayout_L.addWidget(display_TB)
-        # self.verticalLayout_L.addWidget(temporary)
         self.verticalLayout_L.addWidget(region_selection_TB)
         self.verticalLayout_L.addWidget(general_TB)
-        # self.verticalLayout_L.addWidget(reference_region_TB)
-        # self.verticalLayout_L.addWidget(uniform_Z_control_TB)
         self.verticalLayout_C.addWidget(scribble_A_TB)
         self.verticalLayout_C.addWidget(scribble_B_TB)
         self.verticalLayout_R.addWidget(optimize_Z_TB)
         self.verticalLayout_C.addWidget(imprinting_TB)
         self.verticalLayout_R.addWidget(periodicity_TB)
-        # self.verticalLayout_L.addLayout(self.temp_layout)
         self.verticalLayout_R.addWidget(uniform_Z_control_TB)
 
 
@@ -340,12 +327,10 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        # MainWindow.setWindowTitle(_translate("MainWindow", "Explorable SR"+(' (x%d)'%(self.display_zoom_factor) if self.display_zoom_factor>1 else '')))
         self.menuFIle.setTitle(_translate("MainWindow", "FIle"))
         self.menuEdit.setTitle(_translate("MainWindow", "Edit"))
         self.menuImage.setTitle(_translate("MainWindow", "Image"))
         self.menuHelp.setTitle(_translate("MainWindow", "Help"))
-        # self.fileToolbar.setWindowTitle(_translate("MainWindow", "toolBar"))
 
         # self.drawingToolbar.setWindowTitle(_translate("MainWindow", "toolBar"))
         # self.fontToolbar.setWindowTitle(_translate("MainWindow", "toolBar"))
