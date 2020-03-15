@@ -608,7 +608,7 @@ class VGGFeatureExtractor(nn.Module):
         # I now remove all unnecessary layers before changing the model configuration, because this change may make alter the number of layers, thus necessitating changing the feature_layer parameter.
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict,strict=False)
         model.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
         arch_config = arch_config.replace('untrained_','').replace('untrained','')
         if arch_config!='':

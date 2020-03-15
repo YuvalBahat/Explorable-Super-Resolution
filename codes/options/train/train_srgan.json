@@ -1,5 +1,5 @@
 {
-  "name": "SRGAN_from_MSE_LR_MSE_W40" //  please remove "debug_" during training
+  "name": "SRGAN_from_MSE_HR_MSE_W25" //  please remove "debug_" during training
   , "use_tb_logger": true
   , "model":"srgan"
   , "scale": 4
@@ -75,7 +75,7 @@
     , "steps_4_loss_std": 500
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
     , "lr_gamma": 0.5
-    , "pixel_domain": "LR"
+    , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
     , "feature_criterion": "l1"
@@ -84,7 +84,7 @@
     , "D_update_ratio": 1
     , "DTE_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 40 //1e-2
+    , "pixel_weight": 25
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3
     , "range_weight": 0 //1

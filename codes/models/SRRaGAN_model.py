@@ -144,7 +144,7 @@ class SRRaGANModel(BaseModel):
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
-                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.DTE_net.HR_unpadder)
+                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.CEM_net.HR_unpadder)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
                 elif self.optimalZ_loss_type == 'l1':
@@ -261,7 +261,7 @@ class SRRaGANModel(BaseModel):
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
                 self.netF.eval()
             if init_Dnet:
-                self.netD = networks.define_D(opt,DTE=self.DTE_net).to(self.device)
+                self.netD = networks.define_D(opt,CEM=self.CEM_net).to(self.device)
                 self.netD.eval()
         self.load()
 
@@ -355,8 +355,8 @@ class SRRaGANModel(BaseModel):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
             first_dual_batch_step = possible_dual_step_num==0
             last_dual_batch_step = possible_dual_step_num==(actual_dual_step_steps-1)
-            if self.DTE_net is not None and first_dual_batch_step:
-                self.var_H, self.var_ref = self.DTE_net.HR_unpadder(self.var_H), self.DTE_net.HR_unpadder(self.var_ref)
+            if self.CEM_net is not None and first_dual_batch_step:
+                self.var_H, self.var_ref = self.CEM_net.HR_unpadder(self.var_H), self.CEM_net.HR_unpadder(self.var_ref)
             if first_dual_batch_step:
                 static_Z = self.GetLatent()
             if optimized_Z_step:
@@ -365,11 +365,11 @@ class SRRaGANModel(BaseModel):
             else:
                 self.ConcatLatent(LR_image=self.var_L, latent_input=static_Z)
                 self.fake_H = self.netG(self.model_input)
-            if self.DTE_net is not None:
+            if self.CEM_net is not None:
                 if self.decomposed_output:
-                    self.fake_H = [self.DTE_net.HR_unpadder(self.fake_H[0]),self.DTE_net.HR_unpadder(self.fake_H[1])]
+                    self.fake_H = [self.CEM_net.HR_unpadder(self.fake_H[0]),self.CEM_net.HR_unpadder(self.fake_H[1])]
                 else:
-                    self.fake_H = self.DTE_net.HR_unpadder(self.fake_H)
+                    self.fake_H = self.CEM_net.HR_unpadder(self.fake_H)
 
             # D (and E, if exists)
             l_d_total = 0
@@ -585,6 +585,8 @@ class SRRaGANModel(BaseModel):
                                                        os.path.join(self.opt['path']['models'],'F_config_params.pth'))
                             elif 'patches_init_first' in self.opt['train']['feature_pooling']:
                                 torch.save(next(self.netF.module.features.parameters()),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
+                            # elif 'patches_init_all' in self.opt['train']['feature_pooling']:
+                            #     torch.save(self.netF.state_dict(),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
 
                     if self.cri_range:
                         self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
