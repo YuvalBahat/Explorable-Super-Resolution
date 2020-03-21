@@ -63,7 +63,7 @@ LOCAL_TV_MASK_IDENTIFIERS_RANGE = [3,50]
 IMPRINT_SIZE_CHANGES = ['narrower','wider','taller','shorter']
 IMPRINT_LOCATION_CHANGES = ['left','right','up','down']
 CANVAS_DIMENSIONS = 600, 400
-SELECTION_PEN = QPen(QColor(0xff, 0xff, 0xff), 1, Qt.DashLine)
+SELECTION_PEN = QPen(QColor(0xff, 0x00, 0x00), 3, Qt.DashLine)
 PREVIEW_PEN = QPen(QColor(0xff, 0xff, 0xff), 1, Qt.SolidLine)
 
 class Canvas(QLabel):
@@ -84,6 +84,8 @@ class Canvas(QLabel):
     active_color = None
     preview_pen = None
     timer_event = None
+    existing_selection_timer_event = None
+    selection_display = None
 
     def initialize(self):
         self.background_color = QColor(self.secondary_color) if self.secondary_color else QColor(Qt.white)
@@ -146,6 +148,8 @@ class Canvas(QLabel):
     def set_mode(self, mode):
         # Clean up active timer animations.
         self.timer_cleanup()
+        if mode in ['selectpoly','selectrect']:
+            self.selection_display_timer_cleanup(clear_data=True)
         # Reset mode-specific vars (all)
         self.active_shape_fn = None
         self.active_shape_args = ()
@@ -169,13 +173,54 @@ class Canvas(QLabel):
     def on_timer(self):
         if self.timer_event:
             self.timer_event()
+        if self.existing_selection_timer_event:
+            self.existing_selection_timer_event()
 
-    def timer_cleanup(self):
+    def timer_cleanup(self,display_selection=False):
         if self.timer_event:
             # Stop the timer, then trigger cleanup.
             timer_event = self.timer_event
             self.timer_event = None
             timer_event(final=True)
+            if display_selection:
+                self.selection_display = self.active_shape_fn+''
+                self.selection_display_timer_creation()
+
+    def selection_display_timer_cleanup(self,clear_data=False):
+        if self.existing_selection_timer_event:
+            timer_event = self.existing_selection_timer_event
+            self.existing_selection_timer_event = None
+            timer_event(only_erase_exisitng=True)
+        if clear_data:
+            self.selection_display = None
+
+    def selection_display_timer_creation(self):
+        def to_rescaled_Qpoint(input):
+            return QPoint(*[np.round(self.display_zoom_factor*self.CEM_opt['scale']*v).astype(int) for v in input])
+
+        if self.selection_display == 'drawRect':
+            selection_fn_arg = [QRect(to_rescaled_Qpoint(self.LR_mask_vertices[0]),to_rescaled_Qpoint(self.LR_mask_vertices[1]))]
+        else: #Drawing a polygon:
+            selection_fn_arg = [to_rescaled_Qpoint(p) for p in self.LR_mask_vertices]
+        self.existing_selection_timer_event =\
+            lambda only_erase_exisitng=False: self.selection_display_timerEvent(selection_display_fn=self.selection_display,
+                selection_fn_arg=selection_fn_arg, only_erase_exisitng=only_erase_exisitng)
+        self.existing_selection_timer_event(only_erase_exisitng=True)
+
+    def selection_display_timerEvent(self,selection_display_fn,selection_fn_arg,only_erase_exisitng):
+        p = QPainter(self.pixmap())
+        p.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+        pen = self.preview_pen
+        pen.setDashOffset(self.dash_offset)
+        p.setPen(pen)
+        #This cleans the exisitng selection rectangle because it performs XOR with it:
+        getattr(p, selection_display_fn)(*selection_fn_arg)
+        if not only_erase_exisitng: #This repaints the selection rectangle while selection process is not done:
+            self.dash_offset -= 1
+            pen.setDashOffset(self.dash_offset)
+            p.setPen(pen)
+            getattr(p, selection_display_fn)(*selection_fn_arg)
+        self.update()
 
     def Add_scribble_2_Undo_list(self):
         # History scribble and scribble mask are saved for the entire image (ignoring Z_mask issues), in the original display dimensions. This means there is no downscaling and then upscaling back when undoing.
@@ -307,7 +352,7 @@ class Canvas(QLabel):
         self.current_pos = e.pos()
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
-        self.LR_mask_vertices = [(int(np.round(p.x()/self.CEM_opt['scale']/self.display_zoom_factor)),int(np.round(p.y()/self.CEM_opt['scale']/self.display_zoom_factor))) for p in (self.history_pos + [self.current_pos])]
+        self.LR_mask_vertices = [(p.x()/self.CEM_opt['scale']/self.display_zoom_factor,p.y()/self.CEM_opt['scale']/self.display_zoom_factor) for p in (self.history_pos + [self.current_pos])]
         if not self.in_picking_desired_hist_mode:
             self.update_mask_bounding_rect()
         # I used to use HR mask that is pixel-algined in the LR domain, now changed to make sure it is pixel-aligned only in the HR domain (avoiding subpixel shifts due to self.display_zoom_factor):
@@ -318,20 +363,20 @@ class Canvas(QLabel):
         if self.HR_Z:
             self.Z_mask = cv2.fillPoly(self.Z_mask, [np.array(self.HR_mask_vertices)], (1, 1, 1))
         else:
-            self.Z_mask = cv2.fillPoly(self.Z_mask,[np.array(self.LR_mask_vertices)],(1,1,1))
+            self.Z_mask = cv2.fillPoly(self.Z_mask,[np.round(np.array(self.LR_mask_vertices)).astype(int)],(1,1,1))
         self.update_Z_mask_display_size()
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
         self.selectpoly_button.setChecked(False)
-        self.timer_cleanup()
+        self.timer_cleanup(display_selection=True)
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
             self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
             self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
 
     def update_Z_mask_display_size(self):
-        self.Z_mask_display_size = \
-            util.ResizeCategorialImage(self.Z_mask.astype(np.int16),dsize=tuple([self.display_zoom_factor*val for val in self.HR_size])).astype(self.Z_mask.dtype)
+        self.Z_mask_display_size = util.ResizeCategorialImage(self.Z_mask.astype(np.int16),
+            dsize=tuple([self.display_zoom_factor*val for val in self.HR_size])).astype(self.Z_mask.dtype)
 
     def indicatePeriodicity_mousePressEvent(self, e):
         if not self.locked or e.button == Qt.RightButton:
@@ -430,7 +475,7 @@ class Canvas(QLabel):
             self.current_pos = e.pos()
 
     def update_mask_bounding_rect(self):
-        self.mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.LR_mask_vertices], 1).transpose()))
+        self.mask_bounding_rect = np.array(cv2.boundingRect(np.stack([np.round(np.array(p)).astype(int) for p in self.LR_mask_vertices], 1).transpose()))
         self.FoolAdversary_button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.mask_bounding_rect[2:]]))
         self.contained_Z_mask = True
 
@@ -438,7 +483,7 @@ class Canvas(QLabel):
         self.current_pos = e.pos()
         self.locked = True
         self.HR_selected_mask = np.zeros(self.HR_size)
-        self.LR_mask_vertices = [(int(np.round(p.x()/self.CEM_opt['scale']/self.display_zoom_factor)),int(np.round(p.y()/self.CEM_opt['scale']/self.display_zoom_factor))) for p in [self.origin_pos, self.current_pos]]
+        self.LR_mask_vertices = [(p.x()/self.CEM_opt['scale']/self.display_zoom_factor,p.y()/self.CEM_opt['scale']/self.display_zoom_factor) for p in [self.origin_pos, self.current_pos]]
         if not self.in_picking_desired_hist_mode:
             self.update_mask_bounding_rect()
         # I used to use HR mask that is pixel-algined in the LR domain, now changed to make sure it is pixel-aligned only in the HR domain (avoiding subpixel shifts due to self.display_zoom_factor):
@@ -449,12 +494,13 @@ class Canvas(QLabel):
         if self.HR_Z:
             self.Z_mask = cv2.rectangle(self.Z_mask, self.HR_mask_vertices[0], self.HR_mask_vertices[1], (1, 1, 1),cv2.FILLED)
         else:
-            self.Z_mask = cv2.rectangle(self.Z_mask,self.LR_mask_vertices[0],self.LR_mask_vertices[1],(1,1,1),cv2.FILLED)
+            self.Z_mask = cv2.rectangle(self.Z_mask,np.round(np.array(self.LR_mask_vertices[0])).astype(int),np.round(np.array(self.LR_mask_vertices[1])).astype(int),(1,1,1),cv2.FILLED)
         self.update_Z_mask_display_size()
         self.Update_Z_Sliders()
         self.Z_optimizer_Reset()
         self.selectrect_button.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
-        self.timer_cleanup()
+        self.timer_cleanup(display_selection=True)
+        # self.reset_mode()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
             self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
@@ -527,10 +573,10 @@ class Canvas(QLabel):
         pen = self.preview_pen
         pen.setDashOffset(self.dash_offset)
         p.setPen(pen)
-        if self.last_pos:
+        if self.last_pos: #This cleans the exisitng selection rectangle because it performs XOR with it:
             getattr(p, self.active_shape_fn)(QRect(self.origin_pos, self.last_pos), *self.active_shape_args)
 
-        if not final:
+        if not final: #This repaints the selection rectangle while selection process is not done:
             self.dash_offset -= 1
             pen.setDashOffset(self.dash_offset)
             p.setPen(pen)
@@ -568,7 +614,8 @@ class Canvas(QLabel):
     def line_mousePressEvent(self, e):
         self.origin_pos = e.pos()
         self.current_pos = e.pos()
-        self.preview_pen = PREVIEW_PEN
+        self.preview_pen = QPen(PREVIEW_PEN)
+        self.preview_pen.setWidth(self.config['size']*self.display_zoom_factor)
         self.timer_event = self.line_timerEvent
 
     def line_timerEvent(self, final=False):
@@ -683,7 +730,7 @@ class Canvas(QLabel):
     def rect_mousePressEvent(self, e):
         self.active_shape_fn = 'drawRect'
         self.active_shape_args = ()
-        self.preview_pen = PREVIEW_PEN
+        self.preview_pen = QPen(PREVIEW_PEN)
         self.generic_shape_mousePressEvent(e)
 
     def rect_timerEvent(self, final=False):
@@ -700,7 +747,7 @@ class Canvas(QLabel):
     def imprinting_mousePressEvent(self, e):
         self.active_shape_fn = 'drawRect'
         self.active_shape_args = ()
-        self.preview_pen = PREVIEW_PEN
+        self.preview_pen = SELECTION_PEN
         self.generic_shape_mousePressEvent(e)
 
     def imprinting_auto_location_mousePressEvent(self, e):
@@ -952,7 +999,7 @@ class Canvas(QLabel):
 
     def polygon_mousePressEvent(self, e):
         self.active_shape_fn = 'drawPolygon'
-        self.preview_pen = PREVIEW_PEN
+        self.preview_pen = QPen(PREVIEW_PEN)
         self.generic_poly_mousePressEvent(e)
 
     def polygon_timerEvent(self, final=False):
@@ -969,7 +1016,7 @@ class Canvas(QLabel):
     def ellipse_mousePressEvent(self, e):
         self.active_shape_fn = 'drawEllipse'
         self.active_shape_args = ()
-        self.preview_pen = PREVIEW_PEN
+        self.preview_pen = QPen(PREVIEW_PEN)
         self.generic_shape_mousePressEvent(e)
 
     def ellipse_timerEvent(self, final=False):
@@ -1542,13 +1589,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.stored_masked_zs = 1 * self.cur_Z # Storing previous Z for two reasons: To recover the big picture Z when optimizing_region, and to recover previous Z if loss did not decrease
             try:
-                self.statusBar.showMessage('Optimizing for %s'%(objective))
+                self.statusBar.showMessage('Optimizing for %s...'%(objective))
                 optimization_failed =True
                 self.cur_Z = self.canvas.Z_optimizer.optimize()
                 optimization_failed = False
             except Exception as e:
                 self.statusBar.showMessage('%s optimization failed: %s' % (objective,e), ERR_MESSAGE_DURATION)
-                # print('Optimization failed: ',e)
+                print('Optimization failed: ',e)
                 if 'loss' in self.canvas.Z_optimizer.__dict__.keys() and 'bins' in self.canvas.Z_optimizer.loss.__dict__.keys():
                     print('# desired hist images: %d'%(len(self.canvas.desired_image)))
                     print('# Bins: %d, # Image patches: %d'%(self.canvas.Z_optimizer.loss.bins.size(-1),self.canvas.Z_optimizer.loss.patch_extraction_mat.size(1)))
@@ -1628,6 +1675,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.update_mask_bounding_rect()
         self.canvas.Update_Z_Sliders()
         self.canvas.Z_optimizer_Reset()
+        self.canvas.selection_display_timer_cleanup(clear_data=True)
 
     def Invert_Z_Mask(self):
         self.canvas.Z_mask = 1-self.canvas.Z_mask
@@ -1713,6 +1761,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.show()
 
     def Update_Image_Display(self):
+        self.canvas.selection_display_timer_cleanup() #Removing selection painting before changing the pixmap, as it cannot be removed (using XOR) afterwords.
         pixmap = QPixmap()
         if self.Zdisplay_button.isChecked():
             im_2_display = 255/2/self.max_SVD_Lambda*(self.max_SVD_Lambda+self.Z_2_display[0].data.cpu().numpy().transpose(1,2,0)).copy()
@@ -1726,6 +1775,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             im_2_display = imresize(im_2_display,self.canvas.display_zoom_factor)
         pixmap.convertFromImage(qimage2ndarray.array2qimage(im_2_display))
         self.canvas.setPixmap(pixmap)
+        if self.canvas.selection_display and self.canvas.current_display_index!=self.canvas.scribble_display_index:
+            # Recreating the selection painting if a selection is in place. Not showing the selection when in scribble mode, as it will be added to the scribble wherever it crosses the selection painting.
+            self.canvas.selection_display_timer_creation()
         if DISPLAY_INDUCED_LR:
             self.Update_LR_Display()
 

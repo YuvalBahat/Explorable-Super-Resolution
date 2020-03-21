@@ -659,7 +659,7 @@ class Z_optimizer():
         return image[:, :, y_range[0]:y_range[1], x_range[0]:x_range[1]]
 
     def Return_Interpolated_SubImage(self,image, grid):
-        return torch.nn.functional.grid_sample(image, grid)
+        return torch.nn.functional.grid_sample(image, grid.repeat([image.size(0),1,1,1]))
 
     def PeriodicityLoss(self):
         loss = 0 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE else (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean()
