@@ -40,7 +40,8 @@ def weights_init_kaiming(m, scale=1):
         m.weight.data *= scale
         if m.bias is not None:
             m.bias.data.zero_()
-    elif classname.find('BatchNorm2d') != -1:
+    # elif any([norm_type in classname for norm_type in ['BatchNorm2d','LayerNorm']]):
+    elif any([norm_type in classname for norm_type in ['BatchNorm2d']]):
         init.constant_(m.weight.data, 1.0)
         init.constant_(m.bias.data, 0.0)
 
@@ -134,9 +135,9 @@ def define_D(opt,CEM=None):
         kwargs = {}
         if 'num_2_strides' in opt_net:
             kwargs['num_2_strides'] = opt_net['num_2_strides']
-        netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], nb=opt_net['n_layers'], \
+        netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], nb=opt_net['n_layers'],
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,**kwargs)
-    if which_model == 'discriminator_vgg_128_nonModified':
+    elif which_model == 'discriminator_vgg_128_nonModified':
         netD = arch.Discriminator_VGG_128_nonModified(in_nc=in_nc, nf=opt_net['nf'])
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
@@ -151,6 +152,12 @@ def define_D(opt,CEM=None):
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
     elif which_model == 'discriminator_vgg_128_SN':
         netD = arch.Discriminator_VGG_128_SN()
+    elif which_model=='DnCNN_D':
+        opt_net_G = opt['network_G']
+        assert opt_net['DCT_D']==1
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=opt_net_G['out_nc'],
+            norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
+                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//8)
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

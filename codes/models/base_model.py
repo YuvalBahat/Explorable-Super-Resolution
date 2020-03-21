@@ -53,18 +53,20 @@ class BaseModel():
     def get_network_description(self, network):
         if isinstance(network, nn.DataParallel):
             network = network.module
-        s = str(network)
-        n = sum(map(lambda x: x.numel(), network.parameters()))
+        output = {}
+        output['s'] = str(network)
+        output['n'] = sum(map(lambda x: x.numel(), network.parameters()))
         # receptive_field = self.numeric_effective_field(network)
         # networks_device = next(network.parameters()).device
         # receptive_field = compute_RF_numerical(network.cpu(),np.ones([1,3,256,256]))
         # network.to(networks_device)
-        if 'Discriminator' in str(network.__class__):
+        if any([token in str(network.__class__) for token in ['Discriminator','DnCNN','Sequential']]):
             kernel_size,strides = self.return_kernel_sizes_and_strides(network)
-            receptive_field = self.calc_receptive_field(kernel_size,strides)
-            return s,n,receptive_field
-        else:
-            return s, n
+            output['receptive_field'] = self.calc_receptive_field(kernel_size,strides)
+        return output
+        #     return s,n,receptive_field
+        # else:
+        #     return s, n
     def numeric_effective_field(self,model):
         INOUT_SIZE = 501
         mid_index = INOUT_SIZE//2+1
@@ -187,7 +189,7 @@ class BaseModel():
     def display_log_figure(self):
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
         keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
-                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ','l_g_pix','l_g_highpass','l_g_shift_invariant']
+                          'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ','l_g_pix','l_g_highpass','l_g_shift_invariant','D_update_ratio']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)

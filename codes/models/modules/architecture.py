@@ -99,36 +99,59 @@ class SRResNet(nn.Module):
         x = self.model(x)
         return x
 
+class Flatten(nn.Module):
+    def forward(self, input):
+        return input.view(input.size(0), -1)
+
 class DnCNN(nn.Module):
-    def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',latent_input=None,num_latent_channels=None):
+    def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None):
         super(DnCNN, self).__init__()
         assert in_nc==64 and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
-        assert norm_type=='batch'
+        assert norm_type in ['batch','instance','layer',None]
         assert latent_input is None and num_latent_channels is None
         self.average_err_collection_counter = 0
         self.average_abs_err_estimates = np.zeros([8,8])
-        padding = kernel_size//2
+        self.discriminator_net = discriminator
+        padding = 0 if self.discriminator_net else kernel_size//2
         layers = []
 
         layers.append(nn.Conv2d(in_channels=in_nc, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
+        if self.discriminator_net:
+            expected_input_size -= (kernel_size - 1)
         layers.append(nn.ReLU(inplace=True))
         for _ in range(depth - 2):
             layers.append(nn.Conv2d(in_channels=n_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
-            layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
+            if self.discriminator_net:
+                expected_input_size -= (kernel_size-1)
+            if norm_type=='batch':
+                layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
+            elif norm_type=='layer':
+                layers.append(nn.LayerNorm(normalized_shape=[n_channels,expected_input_size,expected_input_size],elementwise_affine=False))
+            elif norm_type=='instance':
+                layers.append(nn.InstanceNorm2d(n_channels))
             layers.append(nn.LeakyReLU(inplace=True))
         layers.append(nn.Conv2d(in_channels=n_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        if self.discriminator_net:
+            expected_input_size -= (kernel_size - 1)
+            layers.append(Flatten())
+            layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
+            # layers.append(nn.Linear(in_features=64, out_features=1))
         layers.append(nn.Sigmoid())
         self.dncnn = nn.Sequential(*layers)
         # self._initialize_weights()
 
     def forward(self, x):
-        quantization_err_estimation = self.dncnn(x)-0.5
-        if not next(self.modules()).training:
-            self.average_err_collection_counter += 1
-            self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
-                                              quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
-        return x+quantization_err_estimation
+        if self.discriminator_net:
+            return self.dncnn(x)
+        else:
+            quantization_err_estimation = self.dncnn(x)-0.5
+            if not next(self.modules()).training:
+                self.average_err_collection_counter += 1
+                self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
+                    quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
+            return x+quantization_err_estimation
 
     def return_collected_err_avg(self):
         self.average_err_collection_counter = 0
@@ -601,7 +624,17 @@ class VGGFeatureExtractor(nn.Module):
         super(VGGFeatureExtractor, self).__init__()
         if arch_config!='':
             assert all([re.search(pattern,arch_config) is None for pattern in RETRAINING_OBLIGING_MODIFICATIONS]) or 'untrained_' in arch_config
-        if use_bn:
+            # assert (re.search('patches_init_(first|all)',arch_config) is None) or 'untrained' not in arch_config,'Relying on trained weights statistics when setting model weights'
+        if arch=='SegNetAE':
+            from models.modules import SegNet
+            model = nn.DataParallel(SegNet.SegNet(3,encode_only=True))
+            loaded_state_dict = torch.load('/home/tiras/ybahat/Autoencoder/models/BEST_checkpoint.tar')['model']
+            modified_state_dict = {}
+            for key in model.state_dict().keys():
+                modified_state_dict[key] = loaded_state_dict[key.replace('.features.0','.down1').replace('.features.1','.down2').replace('.features.2','.down3').replace('.features.3','.down4').replace('.features.4','.down5')]
+            model.load_state_dict(modified_state_dict)
+            model = model.module
+        elif use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:
             model = torchvision.models.__dict__[arch](pretrained='untrained' not in arch_config)

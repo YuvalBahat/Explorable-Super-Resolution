@@ -648,7 +648,8 @@ class SRRaGANModel(BaseModel):
                     util.mkdir(img_dir)
                     save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, self.gradient_step_num))
                     util.save_img(np.clip(sr_img, 0, 255).astype(np.uint8), save_img_path)
-
+        if save_images:
+            self.generator_changed = False
         avg_psnr = 1 * np.mean(avg_psnr)
         if SAVE_IMAGE_COLLAGE and save_images:
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
@@ -760,7 +761,8 @@ class SRRaGANModel(BaseModel):
         # Generator
         # s, n, receptive_field = self.get_network_description(self.netG)
         # print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
-        s, n = self.get_network_description(self.netG)
+        net_desc = self.get_network_description(self.netG)
+        s,n = net_desc['s'],net_desc['n']
         # # a = receptive_field(self.netG.module, input_size=(3, 256, 256))
         print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
@@ -781,7 +783,9 @@ class SRRaGANModel(BaseModel):
             if self.cri_fea:  # F, Perceptual Network
                 # s, n,receptive_field = self.get_network_description(self.netF)
                 # print('Number of parameters in F: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
-                s, n = self.get_network_description(self.netF)
+                net_desc = self.get_network_description(self.netF)
+                s, n = net_desc['s'], net_desc['n']
+                # receptive_field = net_desc['receptive_field']
                 print('Number of parameters in F: {:,d}'.format(n))
                 message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:

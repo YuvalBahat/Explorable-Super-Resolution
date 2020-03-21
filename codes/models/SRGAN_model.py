@@ -250,7 +250,8 @@ class SRGANModel(BaseModel):
                     util.mkdir(img_dir)
                     save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, self.step))
                     util.save_img(np.clip(sr_img, 0, 255).astype(np.uint8), save_img_path)
-
+        if save_images:
+            self.generator_changed = False
         avg_psnr = 1 * np.mean(avg_psnr)
         if SAVE_IMAGE_COLLAGE and save_images:
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.step,

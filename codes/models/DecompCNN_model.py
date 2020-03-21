@@ -42,6 +42,8 @@ class DecompCNNModel(BaseModel):
                 assert isinstance(opt['network_G']['latent_channels'],int)
         # define networks and load pretrained models
         self.step = 0
+        self.D_steps_since_G = 0
+        self.G_steps_since_D = 0
         self.jpeg_compressor = JPEG(compress=True, quantize=True).to(self.device)
         self.jpeg_extractor = JPEG(compress=False).to(self.device)
 
@@ -50,6 +52,9 @@ class DecompCNNModel(BaseModel):
         G_kernel_sizes = [l.kernel_size[0] for l in next(self.netG.module.children()) if isinstance(l,nn.Conv2d)]
         G_receptive_filed = G_kernel_sizes[0]+sum([k-1 for k in G_kernel_sizes[1:]])
         print('Receptive field of G: %d = 8*%d'%(8*G_receptive_filed,G_receptive_filed))
+        # if train_opt['gan_type'] == 'wgan-gp':
+        #     input = torch.zeros([1, self.opt['network_G']['in_nc']] + 2 * [opt['datasets']['train']['patch_size']]).to(next(self.netG.parameters()).device)
+        #     self.netG.module.dncnn,_ = util.convert_batchNorm_2_layerNorm(self.netG.module.dncnn,input=input)
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
@@ -78,8 +83,17 @@ class DecompCNNModel(BaseModel):
             self.D_exists = self.l_gan_w>0 or self.debug
             if self.D_exists:
                 self.netD = networks.define_D(opt).to(self.device)  # D
-                if train_opt['gan_type'] == 'wgan-gp':
+                self.DCT_discriminator = self.opt['network_D']['DCT_D']
+                if self.DCT_discriminator:
+                    self.jpeg_non_quantized_compressor = JPEG(compress=True, quantize=False).to(self.device)
+                if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
+                    # if self.DCT_discriminator:
+                    #     input = torch.zeros([1, 64] + 2 * [opt['datasets']['train']['patch_size'] // 8]).to(next(self.netD.parameters()).device)
+                    # else:
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
+                    # if 'DnCNN' in str(self.netD.module.__class__):
+                    #     self.netD.module,_ = util.convert_batchNorm_2_layerNorm(self.netD.module,input=input)
+                    # else:
                     self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
                     self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
                     self.netD.cuda()
@@ -225,6 +239,8 @@ class DecompCNNModel(BaseModel):
         self.QF = data['QF']
         self.jpeg_compressor.Set_QF(self.QF)
         self.jpeg_extractor.Set_QF(self.QF)
+        if self.DCT_discriminator:
+            self.jpeg_non_quantized_compressor.Set_QF(self.QF)
         self.var_Comp = self.jpeg_compressor(data['Uncomp'].to(self.device))
         if self.latent_input is not None:
             if 'Z' in data.keys():
@@ -250,6 +266,8 @@ class DecompCNNModel(BaseModel):
         if need_Uncomp:  # train or val
             self.var_Uncomp = data['Uncomp'].to(self.device)
             input_ref = data['ref'] if 'ref' in data else data['Uncomp']
+            if self.DCT_discriminator:
+                input_ref = self.jpeg_non_quantized_compressor(input_ref)
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self):
@@ -295,7 +313,10 @@ class DecompCNNModel(BaseModel):
                 self.Z_optimizer.optimize()
             else:
                 self.ConcatLatent(Comp_image=self.var_Comp, latent_input=static_Z)
-                self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
+                self.fake_H_4_D = self.netG(self.model_input)
+                self.fake_H = self.jpeg_extractor(self.fake_H_4_D)
+                if not self.DCT_discriminator:
+                    self.fake_H_4_D = self.fake_H
 
             # D
             l_d_total = 0
@@ -303,6 +324,11 @@ class DecompCNNModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
                 if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num > -self.D_init_iters:
+                    if self.G_steps_since_D>0:
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1/self.G_steps_since_D))
+                    else:
+                        self.D_steps_since_G += 1
+                    self.G_steps_since_D = 0
                     for p in self.netD.parameters():
                         p.requires_grad = True
                     for p in self.netG.parameters():
@@ -312,7 +338,7 @@ class DecompCNNModel(BaseModel):
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
                     if first_dual_batch_step:
                         pred_d_real = self.netD(self.var_ref)
-                    pred_d_fake = self.netD(self.fake_H.detach())  # detach to avoid BP to G
+                    pred_d_fake = self.netD(self.fake_H_4_D.detach())  # detach to avoid BP to G
                     if self.relativistic_D:
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
                         l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
@@ -328,7 +354,7 @@ class DecompCNNModel(BaseModel):
                         if self.random_pt.size(0) != batch_size:
                             self.random_pt.resize_(batch_size, 1, 1, 1)
                         self.random_pt.uniform_()  # Draw random interpolation points
-                        interp = self.random_pt * self.fake_H.detach() + (1 - self.random_pt) * self.var_ref
+                        interp = self.random_pt * self.fake_H_4_D.detach() + (1 - self.random_pt) * self.var_ref
                         interp.requires_grad = True
                         interp_crit = self.netD(interp).mean(-1).mean(-1)
                         l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
@@ -364,7 +390,7 @@ class DecompCNNModel(BaseModel):
                         self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                             and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
                     if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
-                            self.fake_H = self.fake_H.detach()
+                            self.fake_H_4_D = self.fake_H_4_D.detach()
                     l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
                     l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
 
@@ -382,12 +408,17 @@ class DecompCNNModel(BaseModel):
                             self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
                             self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
                             self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
-                            self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
+                            # self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
             # G step:
             l_g_total = 0
             if self.generator_step:
                 self.generator_started_learning = True
+                if self.D_steps_since_G > 0:
+                    self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
+                else:
+                    self.G_steps_since_D += 1
+                self.D_steps_since_G = 0
                 if self.D_exists:
                     for p in self.netD.parameters():
                         p.requires_grad = False
@@ -423,7 +454,7 @@ class DecompCNNModel(BaseModel):
                 if not self.D_exists:
                     l_g_gan = 0
                 else:
-                    pred_g_fake = self.netD(self.fake_H)
+                    pred_g_fake = self.netD(self.fake_H_4_D)
 
                     if self.relativistic_D:
                         pred_d_real = self.netD(self.var_ref).detach()
@@ -529,6 +560,8 @@ class DecompCNNModel(BaseModel):
             if GT_and_quantized:
                 self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0] = \
                     (0,((QF_images_counter[QF]-1)*self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1] + avg_quantized_psnr[-1])/QF_images_counter[QF])
+        if save_images:
+            self.generator_changed = False
 
         if collect_avg_err_est:
             self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.netG.module.return_collected_err_avg(),-1)],-1)
@@ -652,7 +685,8 @@ class DecompCNNModel(BaseModel):
         # Generator
         # s, n, receptive_field = self.get_network_description(self.netG)
         # print('Number of parameters in G: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
-        s, n = self.get_network_description(self.netG)
+        net_desc = self.get_network_description(self.netG)
+        s,n = net_desc['s'],net_desc['n']
         print('Number of parameters in G: {:,d}'.format(n))
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
@@ -663,7 +697,9 @@ class DecompCNNModel(BaseModel):
 
             # Discriminator
             if self.cri_gan:
-                s, n,receptive_field = self.get_network_description(self.netD)
+                net_desc = self.get_network_description(self.netD)
+                s, n = net_desc['s'], net_desc['n']
+                receptive_field = net_desc['receptive_field']
                 print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n, receptive_field))
                 message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:

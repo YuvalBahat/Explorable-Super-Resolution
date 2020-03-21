@@ -180,7 +180,7 @@ def main():
                 print_rlt['iters'] = gradient_step_num
                 print_rlt['time'] = time_elapsed
                 model.display_log_figure()
-                model.generator_changed = False
+                # model.generator_changed = False
                 logger.print_format_results('val', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
                 print('-----------------------------------')
 

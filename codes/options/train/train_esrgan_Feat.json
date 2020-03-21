@@ -1,5 +1,5 @@
 {
-  "name": "Feat_with_untrained_patches_init_all_CS_W0_005" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
+  "name": "Feat_with_patches_init_all_CS_useStats2_fromTVGG" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
   , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
@@ -33,6 +33,7 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
+    , "pretrain_model_G": "../experiments/Feat_with_MaxPool_srResNet/models/200001_G.pth"
     //, "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_G": "../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
@@ -69,7 +70,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,9 +88,9 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-    , "feature_pooling": "untrained" // "untrained_num_channel_factor_4" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
-    , "netF_checkpoint": "/home/tiras/ybahat/SRGAN/pretrained_models/patches_initiated_Fnet.pth"
-    , "feature_model_arch": "vgg19"
+    , "feature_pooling": "patches_init_all_CS_useStats" //"patches_init_all_CS_useStats" // "untrained_num_channel_factor_4" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
+//    , "netF_checkpoint": "/home/tiras/ybahat/SRGAN/pretrained_models/patches_initiated_orgStats_Fnet.pth"
+    , "feature_model_arch": "vgg19" //"SegNetAE" //"vgg19"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
@@ -102,7 +103,7 @@
     , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 0 //1e-2
-    , "feature_weight": 0.005 //1
+    , "feature_weight": 1
     , "highpass_weight": 0 //1e-2
     , "shift_invariant_weight": 0 //1
     , "gan_weight": 0
