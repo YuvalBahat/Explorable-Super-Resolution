@@ -648,8 +648,9 @@ class DecompCNNModel(BaseModel):
         return dict_2_return
 
     def save_log(self):
-        self.log_dict['D_verified'] = self.D_verified
-        np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
+        dict_2_save = self.log_dict.copy()
+        dict_2_save['D_verified'] = self.D_verified
+        np.savez(os.path.join(self.log_path,'logs.npz'), ** dict_2_save)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
         if 'avg_estimated_err' in self.__dir__():
