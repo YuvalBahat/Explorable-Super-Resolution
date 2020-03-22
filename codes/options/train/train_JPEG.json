@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF10_SymmetricVanillaGAN_DinitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_SymmetricWGAN_DinputConcat_NewInitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
   , "scale": 4
@@ -32,9 +32,9 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-//    , "pretrain_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricVanillaGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/249939_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_D": "../experiments/JPEG/nf160nb10_QF10_SymmetricVanillaGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/249939_D.pth" //,"../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+//    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_D": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_D.pth" //,"../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
   , "network_G": {
@@ -54,7 +54,7 @@
   , "network_D": {
     "which_model_D": "DnCNN_D" //"discriminator_vgg_128_nonModified" //,"discriminator_vgg_128" //,"PatchGAN"
     , "relativistic": 0
-    , "decomposed_input": 0
+    , "concat_input": 1
     , "DCT_D": 1
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":1
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,13 +87,13 @@
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "gan_type": "vanilla" //,"vanilla","lsgan","wgan-gp"
+    , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-//    , "D_verification": "past" //'current', 'convergence', 'past'
+    , "D_verification": "initial" //'current', 'convergence', 'past','initial'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 1 //10 //0
+    , "D_update_ratio": 10 //10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 

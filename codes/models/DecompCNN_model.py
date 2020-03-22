@@ -69,7 +69,8 @@ class DecompCNNModel(BaseModel):
                 if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight']>0 or self.debug):
                     self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
-            assert self.D_verification in ['current', 'convergence', 'past',None]
+            assert self.D_verification in ['current', 'convergence', 'past','initial',None]
+            self.D_verified = False
             if self.D_verification=='convergence':
                 self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
@@ -84,6 +85,7 @@ class DecompCNNModel(BaseModel):
             if self.D_exists:
                 self.netD = networks.define_D(opt).to(self.device)  # D
                 self.DCT_discriminator = self.opt['network_D']['DCT_D']
+                self.concatenated_D_input = self.opt['network_D']['concat_input']
                 if self.DCT_discriminator:
                     self.jpeg_non_quantized_compressor = JPEG(compress=True, quantize=False).to(self.device)
                 if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
@@ -268,6 +270,8 @@ class DecompCNNModel(BaseModel):
             input_ref = data['ref'] if 'ref' in data else data['Uncomp']
             if self.DCT_discriminator:
                 input_ref = self.jpeg_non_quantized_compressor(input_ref)
+            if self.concatenated_D_input:
+                input_ref = torch.cat([self.var_Comp,input_ref],1)
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self):
@@ -317,6 +321,8 @@ class DecompCNNModel(BaseModel):
                 self.fake_H = self.jpeg_extractor(self.fake_H_4_D)
                 if not self.DCT_discriminator:
                     self.fake_H_4_D = self.fake_H
+                if self.concatenated_D_input:
+                    self.fake_H_4_D = torch.cat([self.var_Comp, self.fake_H_4_D], 1)
 
             # D
             l_d_total = 0
@@ -371,10 +377,14 @@ class DecompCNNModel(BaseModel):
                         self.generator_step = self.generator_step and self.step % \
                                               self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
                         if self.generator_step:
-                            if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
-                                self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
-                                    all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
-                                    all([val[1] > self.opt['train']['min_mean_D_correct'] for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                            if self.D_verification in ['past','initial'] and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
+                                if not self.D_verified:
+                                    self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
+                                        all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
+                                        all([val[1] > self.opt['train']['min_mean_D_correct'] for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                                    if self.D_verification=='initial' and self.generator_step:
+                                        self.D_verified = True
+                                        self.save(self.gradient_step_num,first_verified_D=True)
                             elif self.D_verification=='convergence':
                                 if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
                                     std, slope = 0, 0
@@ -638,6 +648,7 @@ class DecompCNNModel(BaseModel):
         return dict_2_return
 
     def save_log(self):
+        self.log_dict['D_verified'] = self.D_verified
         np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
@@ -653,6 +664,9 @@ class DecompCNNModel(BaseModel):
         for key in loaded_log.files:
             if key=='psnr_val':
                 self.log_dict[key] = ([tuple(val) for val in old_log[key]] if PREPEND_OLD_LOG else [])+[tuple(val) for val in loaded_log[key]]
+            elif key=='D_verified':
+                self.D_verified = bool(loaded_log[key])
+                continue
             else:
                 self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
                 if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
@@ -753,9 +767,12 @@ class DecompCNNModel(BaseModel):
                 print('loading model for D [{:s}] ...'.format(load_path_D))
                 self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
 
-    def save(self, iter_label):
-        saving_path = self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
+    def save(self, iter_label,first_verified_D=False):
+        if first_verified_D:
+            self.save_network(self.save_dir, self.netD, 'D_verified', iter_label, self.optimizer_D)
+            return
         if self.D_exists:
             self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
+        saving_path = self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
         return saving_path
 

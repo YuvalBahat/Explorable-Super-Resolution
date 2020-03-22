@@ -155,7 +155,7 @@ def define_D(opt,CEM=None):
     elif which_model=='DnCNN_D':
         opt_net_G = opt['network_G']
         assert opt_net['DCT_D']==1
-        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=opt_net_G['out_nc'],
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=opt_net_G['out_nc']*(2 if opt_net['concat_input'] else 1),
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
                           discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//8)
     else:

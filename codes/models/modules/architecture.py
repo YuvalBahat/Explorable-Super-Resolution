@@ -107,7 +107,7 @@ class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None):
         super(DnCNN, self).__init__()
-        assert in_nc==64 and out_nc==64,'Currently only supporting 64 DCT channels'
+        assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
         assert latent_input is None and num_latent_channels is None
