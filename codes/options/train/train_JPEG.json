@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_initializedInputConcatD_noRefLoss_DCT_noRangeLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
   , "scale": 4
@@ -33,8 +33,8 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_D": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_D.pth" //,"../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
+    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -102,7 +102,7 @@
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
     , "optimalZ_loss_weight": 0 //100
-    , "range_weight": 1 //0 //5000
+    , "range_weight": 0 //1 //0 //5000
 
     //for wgan-gp
     // , "D_update_ratio": 1
