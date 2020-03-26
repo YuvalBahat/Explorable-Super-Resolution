@@ -40,10 +40,12 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             line = line.split('//')[0] + '\n'
             json_str += line
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-
+    if name=='JPEG':
+        opt['name'] = os.path.join('JPEG', opt['name'])
+        opt['scale'] = 8
+    scale = opt['scale']
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
-    scale = opt['scale']
     dataset_root_path =  '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets' if running_on_Technion else '/home/ybahat/data/Databases'
     if 'root' not in opt['path']:
         opt['path']['root'] = '/media/ybahat/data/projects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
@@ -78,8 +80,6 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             opt['path'][key] = os.path.expanduser(path)
     if 'tiras' in os.getcwd():
         opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
-    if name=='JPEG':
-        opt['name'] = os.path.join('JPEG', opt['name'])
     elif name is not None:
         opt['name'] = os.path.join(name)
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])

@@ -12,7 +12,7 @@ def create_dataloader(dataset, dataset_opt):
         shuffle = False
         num_workers = 0#1 ybahat changed num_workers to prevent job falling, following https://github.com/pytorch/pytorch/issues/1355
     return torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+        dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True,drop_last=(phase=='train'))#Setting drop_last to True for training phase to avoid different size batches
 
 
 def create_dataset(dataset_opt,**kwargs):

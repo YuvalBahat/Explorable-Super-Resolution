@@ -76,8 +76,8 @@ class SRRaGANModel(BaseModel):
         if self.is_train:
             if self.latent_input:
                 self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
-                self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
-                self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
+                # self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
+                # self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
                 if train_opt['optimalZ_loss_type'] is not None and (train_opt['optimalZ_loss_weight']>0 or self.debug):
                     self.optimalZ_loss_type = train_opt['optimalZ_loss_type']
             self.D_verification = train_opt['D_verification']
@@ -119,18 +119,18 @@ class SRRaGANModel(BaseModel):
                 print('Remove pixel loss.')
                 self.cri_pix = None
 
-            if train_opt['highpass_weight'] > 0 or self.debug:
-                import sys
-                sys.path.append(os.path.abspath('../../RandomPooling'))
-                from highpassed_loss import HighPass_Loss
-                filter = np.load('/media/ybahat/data/projects/SRGAN/experiments/MSE_srResNet/highpass_filter_Square.npz')['filter']
-                self.cri_highpass = HighPass_Loss(high_pass_filter=filter).to(self.device)
-                self.l_highpass_w = train_opt['highpass_weight']
-            else:
-                print('Remove highpass loss.')
-                self.cri_highpass = None
+            # if train_opt['highpass_weight'] > 0 or self.debug:
+            #     import sys
+            #     sys.path.append(os.path.abspath('../../RandomPooling'))
+            #     from highpassed_loss import HighPass_Loss
+            #     filter = np.load('/media/ybahat/data/projects/SRGAN/experiments/MSE_srResNet/highpass_filter_Square.npz')['filter']
+            #     self.cri_highpass = HighPass_Loss(high_pass_filter=filter).to(self.device)
+            #     self.l_highpass_w = train_opt['highpass_weight']
+            # else:
+            #     print('Remove highpass loss.')
+            #     self.cri_highpass = None
 
-            if train_opt['shift_invariant_weight'] > 0 or self.debug:
+            if train_opt['shift_invariant_weight'] is not None and train_opt['shift_invariant_weight'] > 0 or self.debug:
                 import sys
                 sys.path.append(os.path.abspath('../../RandomPooling'))
                 from shift_invariant_loss import ShiftInvariant_Loss
@@ -288,7 +288,7 @@ class SRRaGANModel(BaseModel):
             latent = latent.view([latent.size(0)]+[self.num_latent_channels]+[self.opt['scale']*val for val in list(latent.size()[2:])])
         return latent
 
-    def feed_data(self, data, need_HR=True):
+    def feed_data(self, data, need_GT=True):
         # LR
         self.var_L = data['LR'].to(self.device)
         if self.latent_input is not None:
@@ -315,7 +315,7 @@ class SRRaGANModel(BaseModel):
         else:
             cur_Z = None
         self.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
-        if need_HR:  # train or val
+        if need_GT:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
             self.var_H = data['HR'].to(self.device)
@@ -500,9 +500,9 @@ class SRRaGANModel(BaseModel):
                     else:
                         l_g_pix = self.cri_pix((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H, self.var_H)
                     l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_highpass:  # pixel loss
-                    l_g_highpass = self.cri_highpass(self.fake_H, self.var_H)
-                    l_g_total += self.l_highpass_w * l_g_highpass/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                # if self.cri_highpass:  # pixel loss
+                #     l_g_highpass = self.cri_highpass(self.fake_H, self.var_H)
+                #     l_g_total += self.l_highpass_w * l_g_highpass/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                 if self.cri_shift_invariant:  # Shift invariant loss
                     l_g_shift_invariant = self.cri_shift_invariant(self.fake_H, self.var_H)
                     l_g_total += self.l_shift_invariant_w * l_g_shift_invariant/(self.grad_accumulation_steps_G*actual_dual_step_steps)
@@ -548,8 +548,8 @@ class SRRaGANModel(BaseModel):
                 l_g_total.backward()
                 if self.cri_pix:
                     self.l_g_pix_grad_step.append(l_g_pix.item())
-                if self.cri_highpass:
-                    self.l_g_highpass_grad_step.append(l_g_highpass.item())
+                # if self.cri_highpass:
+                #     self.l_g_highpass_grad_step.append(l_g_highpass.item())
                 if self.cri_shift_invariant:
                     self.l_g_shift_invariant_grad_step.append(l_g_shift_invariant.item())
                 if self.cri_fea:
@@ -559,17 +559,17 @@ class SRRaGANModel(BaseModel):
                 if self.cri_range: #range loss
                     self.l_g_range_grad_step.append(l_g_range.item())
                 if last_grad_accumulation_step_G and last_dual_batch_step:
-                    if self.latent_input and self.latent_grads_multiplier!=1:
-                        for p_num,p in enumerate(self.netG.parameters()):
-                            for channel_num in self.channels_idx_4_grad_amplification[p_num]:
-                                p.grad[:,channel_num,...] *= self.latent_grads_multiplier
+                    # if self.latent_input and self.latent_grads_multiplier!=1:
+                    #     for p_num,p in enumerate(self.netG.parameters()):
+                    #         for channel_num in self.channels_idx_4_grad_amplification[p_num]:
+                    #             p.grad[:,channel_num,...] *= self.latent_grads_multiplier
                     self.optimizer_G.step()
                     self.generator_changed = True
                     # set log
                     if self.cri_pix:
                         self.log_dict['l_g_pix'].append((self.gradient_step_num,np.mean(self.l_g_pix_grad_step)))
-                    if self.cri_highpass:
-                        self.log_dict['l_g_highpass'].append((self.gradient_step_num,np.mean(self.l_g_highpass_grad_step)))
+                    # if self.cri_highpass:
+                    #     self.log_dict['l_g_highpass'].append((self.gradient_step_num,np.mean(self.l_g_highpass_grad_step)))
                     if self.cri_shift_invariant:
                         self.log_dict['l_g_shift_invariant'].append((self.gradient_step_num,np.mean(self.l_g_shift_invariant_grad_step)))
                     if self.cri_fea:
@@ -773,7 +773,10 @@ class SRRaGANModel(BaseModel):
                     f.write(message)
             if self.D_exists:
                 # Discriminator
-                s, n,receptive_field_D = self.get_network_description(self.netD)
+                net_desc = self.get_network_description(self.netD)
+                s, n = net_desc['s'], net_desc['n']
+                receptive_field_D = net_desc['receptive_field']
+                # # a = receptive_field(self.netG.module, input_size=(3, 256, 256))
                 print('Number of parameters in D: {:,d}. Receptive field size: {:,d}'.format(n,receptive_field_D))
                 message = '\n\n\n-------------- Discriminator --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:

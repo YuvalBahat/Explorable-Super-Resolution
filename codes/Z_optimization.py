@@ -327,7 +327,8 @@ class Z_optimizer():
     MIN_LR = 1e-5
     PATCH_SIZE_4_STD = 7
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
-                 batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False):
+                 batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False,jpeg_extractor=None):
+        self.data_keys = {'reconstructed':'SR','GT':'HR'} if jpeg_extractor is None else {'reconstructed':'Decomp','GT':'Uncomp'}
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
             if initial_Z is None:
                 initial_Z = 1*model.GetLatent()
@@ -343,6 +344,7 @@ class Z_optimizer():
         self.objective = objective
         self.data = data
         self.device = torch.device('cuda')
+        self.jpeg_extractor = jpeg_extractor
         self.model = model
         self.model_training = HR_unpadder is not None
         if image_mask is None:
@@ -369,8 +371,8 @@ class Z_optimizer():
             print('Initial STD: %.3e' % (self.initial_STD.mean().item()))
         if existing_optimizer is None:
             if any([phrase in objective for phrase in ['l1','scribble']]) and 'random' not in objective:
-                if data is not None and 'HR' in data.keys():
-                    self.GT_HR = data['HR']
+                if data is not None and self.data_keys['GT'] in data.keys():
+                    self.GT_HR = data[self.data_keys['GT']]
                 if self.image_mask is None:
                     self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
                 else:
@@ -481,8 +483,8 @@ class Z_optimizer():
                     self.data['Z'] = self.Z_model()
                     pre_tanh_Z = self.Z_model.Z
                     pre_tanh_Z.requires_grad = True
-                    model.feed_data(self.data, need_HR=False)
-                    d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
+                    model.feed_data(self.data, need_GT=False)
+                    d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data[self.data_keys['GT']].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
                                                                 input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,automatic_temperature=True,image_Z=pre_tanh_Z)
                     temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=0.5)
                     temperature_optimizer.zero_grad()
@@ -499,7 +501,7 @@ class Z_optimizer():
                     optimal_temperature = temperatures[np.argmin(gradient_sizes)]
                 else:
                     optimal_temperature = 5e-4 if 'hist' in objective else 1e-3
-                self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['HR'] if self.data is not None else None,
+                self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data[self.data_keys['GT']] if self.data is not None else None,
                     desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,input_im_HR_mask=self.image_mask,
                     gray_scale=True,patch_size=6 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective,
                     no_patch_DC='noDC' in objective,no_patch_STD='no_localSTD' in objective)
@@ -538,9 +540,9 @@ class Z_optimizer():
         self.data = data
         self.cur_iter = 0
         if 'l1' in self.objective:
-            self.GT_HR = data['HR'].to(self.device)
+            self.GT_HR = data[self.data_keys['GT']].to(self.device)
         elif 'hist' in self.objective:
-            self.loss.Feed_Desired_Hist_Im(data['HR'].to(self.device))
+            self.loss.Feed_Desired_Hist_Im(data[self.data_keys['GT']].to(self.device))
 
     def Manage_Model_Grad_Requirements(self,disable):
         if disable:
@@ -571,8 +573,10 @@ class Z_optimizer():
                     break
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
-            self.model.feed_data(self.data, need_HR=False)
+            self.model.feed_data(self.data, need_GT=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
+            if self.jpeg_extractor is not None:
+                self.model.fake_H = self.jpeg_extractor(self.model.fake_H)
             if self.model_training:
                 self.model.fake_H = self.HR_unpadder(self.model.fake_H)
             if 'random' in self.objective:
@@ -650,7 +654,7 @@ class Z_optimizer():
         self.Manage_Model_Grad_Requirements(disable=False)
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
-            self.model.feed_data(self.data, need_HR=False)
+            self.model.feed_data(self.data, need_GT=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
         return Z_2_return
 

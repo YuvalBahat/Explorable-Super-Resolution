@@ -163,7 +163,7 @@ class BaseModel():
                 modified_state_dict[current_key] = torch.cat([LATENT_WEIGHTS_RELATIVE_STD*loaded_weights_STD/current_state_dict[current_key][:,:additional_channels,:,:].std()*\
                     current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),\
                                                               loaded_state_dict[key].cuda()],1)
-                self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
+                # self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
             elif 'CEM_net' in self.__dict__ and self.CEM_arch and any([CEM_op in key for CEM_op in self.CEM_net.OP_names]):
                 continue # Not loading CEM module weights
             else:

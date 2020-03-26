@@ -20,8 +20,9 @@ def Latent_channels_desc_2_num_channels(latent_channels_desc):
         return 3
 
 class FilterLoss(nn.Module):
-    def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None):
+    def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None,task='SR',gray_scale=False):
         super(FilterLoss,self).__init__()
+        self.data_keys = {'reconstructed':'SR','GT':'HR'} if task=='SR' else {'reconstructed':'Decomp','GT':'Uncomp'}
         self.latent_channels = latent_channels
         self.num_channels = Latent_channels_desc_2_num_channels(self.latent_channels)
         if self.num_channels==0:
@@ -41,13 +42,17 @@ class FilterLoss(nn.Module):
                 self.filter.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(dir_filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
                 self.filter.filter_layer = True
             elif 'structure_tensor' in self.latent_channels:
-                self.NOISE_STD = 1e-7
+                self.NOISE_STD = 1/255 if task=='SR' else 1 #1e-7
                 gradient_filters = [[[-1,1],[0,0]],[[-1,0],[1,0]]]
                 self.filters = []
+                num_color_channels = 1 if gray_scale else 3
                 for filter in gradient_filters:
                     filter = np.array(filter)
-                    conv_layer = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
-                    conv_layer.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+                    conv_layer = nn.Conv2d(in_channels=num_color_channels,out_channels=num_color_channels,kernel_size=filter.shape,bias=False,groups=num_color_channels)
+                    filter = np.expand_dims(np.expand_dims(filter, 0), 0)
+                    if not gray_scale:
+                        filter = np.tile(filter, reps=[3, 1, 1, 1])
+                    conv_layer.weight = nn.Parameter(data=torch.from_numpy(filter).type(torch.cuda.FloatTensor), requires_grad=False)
                     conv_layer.filter_layer = True
                     self.filters.append(conv_layer)
             else:
@@ -73,19 +78,19 @@ class FilterLoss(nn.Module):
             self.reference_derivatives = reference_derivatives
 
     def forward(self, data):
-        image_shape = list(data['SR'].size())
+        image_shape = list(data[self.data_keys['reconstructed']].size())
         LOWER_PERCENTILE,HIGHER_PERCENTILE = 5,95
         if self.model_training:
             cur_Z = data['Z'].mean(dim=(2,3))
         else:
             cur_Z = self.constant_Z
         if self.latent_channels == 'STD_1dir':
-            dir_filter_output_SR = self.filter(data['SR'])
-            dir_filter_output_HR = self.filter(data['HR'])
+            dir_filter_output_SR = self.filter(data[self.data_keys['reconstructed']])
+            dir_filter_output_HR = self.filter(data[self.data_keys['GT']])
             dir_magnitude_ratio = dir_filter_output_SR.abs().mean(dim=(1, 2, 3)) / (
             dir_filter_output_HR.abs().mean(dim=(1, 2, 3)) + self.NOISE_STD)
-            STD_ratio = data['SR'].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) /\
-                        (data['HR'].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) + self.NOISE_STD)
+            STD_ratio = data[self.data_keys['reconstructed']].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) /\
+                        (data[self.data_keys['GT']].contiguous().view(tuple(image_shape[:2] + [-1])).std(dim=-1).mean(1) + self.NOISE_STD)
             normalized_Z = []
             for ch_num in range(self.num_channels):
                 self.collected_ratios[ch_num] += [val.item() for val in list(measured_values[:, ch_num])]
@@ -96,17 +101,17 @@ class FilterLoss(nn.Module):
             normalized_Z = torch.stack(normalized_Z, 1)
             measured_values = torch.stack([STD_ratio, dir_magnitude_ratio], 1)
         elif self.latent_channels == 'STD_directional':
-            horizontal_derivative_SR = (data['SR'][:,:,:,2:]-data['SR'][:,:,:,:-2])[:,:,1:-1,:].unsqueeze(1)/2
-            vertical_derivative_SR = (data['SR'][:, :, 2:,:] - data['SR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
-            horizontal_derivative_HR = (data['HR'][:, :, :, 2:] - data['HR'][:, :, :, :-2])[:,:,1:-1,:].unsqueeze(1)/2
-            vertical_derivative_HR = (data['HR'][:, :, 2:, :] - data['HR'][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
+            horizontal_derivative_SR = (data[self.data_keys['reconstructed']][:,:,:,2:]-data[self.data_keys['reconstructed']][:,:,:,:-2])[:,:,1:-1,:].unsqueeze(1)/2
+            vertical_derivative_SR = (data[self.data_keys['reconstructed']][:, :, 2:,:] - data[self.data_keys['reconstructed']][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
+            horizontal_derivative_HR = (data[self.data_keys['GT']][:, :, :, 2:] - data[self.data_keys['GT']][:, :, :, :-2])[:,:,1:-1,:].unsqueeze(1)/2
+            vertical_derivative_HR = (data[self.data_keys['GT']][:, :, 2:, :] - data[self.data_keys['GT']][:, :, :-2, :])[:,:,:,1:-1].unsqueeze(1)/2
             dir_normal = cur_Z[:,1:3]
             dir_normal = dir_normal/torch.sqrt(torch.sum(dir_normal**2,dim=1,keepdim=True))
             dir_filter_output_SR = (dir_normal.unsqueeze(2).unsqueeze(3).unsqueeze(4)*torch.cat([horizontal_derivative_SR,vertical_derivative_SR],dim=1)).sum(1)
             dir_filter_output_HR = (dir_normal.unsqueeze(2).unsqueeze(3).unsqueeze(4) * torch.cat([horizontal_derivative_HR, vertical_derivative_HR],dim=1)).sum(1)
             dir_magnitude_ratio = dir_filter_output_SR.abs().mean(dim=(1,2,3))/(dir_filter_output_HR.abs().mean(dim=(1,2,3))+self.NOISE_STD)
             self.collected_ratios[1] += [val.item() for val in list(dir_magnitude_ratio)]
-            STD_ratio = (data['SR'][:,:,1:-1,1:-1]-dir_filter_output_SR).abs().mean(dim=(1,2,3))/((data['HR'][:,:,1:-1,1:-1]-dir_filter_output_HR).abs().mean(dim=(1,2,3))+self.NOISE_STD)
+            STD_ratio = (data[self.data_keys['reconstructed']][:,:,1:-1,1:-1]-dir_filter_output_SR).abs().mean(dim=(1,2,3))/((data[self.data_keys['GT']][:,:,1:-1,1:-1]-dir_filter_output_HR).abs().mean(dim=(1,2,3))+self.NOISE_STD)
             self.collected_ratios[0] += [val.item() for val in list(STD_ratio)]
             STD_upper_bound = np.percentile(self.collected_ratios[0], HIGHER_PERCENTILE)
             STD_lower_bound = np.percentile(self.collected_ratios[0],LOWER_PERCENTILE)
@@ -129,9 +134,9 @@ class FilterLoss(nn.Module):
                 assert not (RATIO_LOSS=='All' and ZERO_CENTERED_IxIy),'Do I want to combine these two flags?'
             derivatives_SR,derivatives_HR = [],[]
             for filter in self.filters:
-                derivatives_SR.append(filter(data['SR']))
+                derivatives_SR.append(filter(data[self.data_keys['reconstructed']]))
                 if RATIO_LOSS!='No':
-                    derivatives_HR.append(filter(data['HR']))
+                    derivatives_HR.append(filter(data[self.data_keys['GT']]))
             non_squared_derivatives_SR = torch.stack(derivatives_SR,0)
             derivatives_SR = torch.cat([non_squared_derivatives_SR**2,torch.prod(non_squared_derivatives_SR,dim=0,keepdim=True)],0)
             if self.model_training:

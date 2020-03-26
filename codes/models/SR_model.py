@@ -57,7 +57,7 @@ class SRModel(BaseModel):
         self.print_network()
         print('-----------------------------------------------')
 
-    def feed_data(self, data, need_HR=True):
+    def feed_data(self, data, need_GT=True):
         self.var_L = data['LR'].to(self.device)  # LR
         if need_HR:
             self.real_H = data['HR'].to(self.device)  # HR

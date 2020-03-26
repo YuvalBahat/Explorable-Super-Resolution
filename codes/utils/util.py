@@ -46,12 +46,14 @@ def mkdir_and_rename(path):
 
 def Assign_GPU(max_GPUs=1,**kwargs):
     excluded_IDs = []
-    GPU_2_use = GPUtil.getAvailable(order='memory',excludeID=excluded_IDs,limit=max_GPUs if max_GPUs is not None else 100,**kwargs)
+    def getAvailable():
+        return GPUtil.getAvailable(order='memory',excludeID=excluded_IDs,limit=max_GPUs if max_GPUs is not None else 100,**kwargs)
+    GPU_2_use = getAvailable()
     if len(GPU_2_use)==0:
         print('No available GPUs. waiting...')
         while len(GPU_2_use)==0:
-            time.sleep(10)
-            GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
+            time.sleep(5)
+            GPU_2_use = getAvailable()
     assert len(GPU_2_use)>0,'No available GPUs...'
     if max_GPUs is not None:
         print('Using GPU #%d'%(GPU_2_use[0]))

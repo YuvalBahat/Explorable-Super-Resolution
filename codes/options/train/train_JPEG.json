@@ -1,8 +1,8 @@
 {
-  "name": "nf160nb10_QF10_initializedInputConcatD_noRefLoss_DCT_noRangeLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_initializedInputConcatD_B48_noRefLoss_DCT_5e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
-  , "scale": 4
+//  , "scale": 4
   , "gpu_ids": [0]
   , "range": [0,255]
 
@@ -74,7 +74,7 @@
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4 //1e-5
     , "lr_E": 1e-4
-    , "lr_latent": 1e-5
+//    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -100,9 +100,9 @@
     , "pixel_weight": 0 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
-    , "latent_weight": 0 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 0 //100
-    , "range_weight": 0 //1 //0 //5000
+    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+    , "optimalZ_loss_weight": 5e-4 //0 //100
+    , "range_weight": 1 //0 //5000
 
     //for wgan-gp
     // , "D_update_ratio": 1
