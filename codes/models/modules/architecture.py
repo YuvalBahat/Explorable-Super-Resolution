@@ -110,19 +110,23 @@ class DnCNN(nn.Module):
         assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
-        assert latent_input is None and num_latent_channels is None
+        # assert latent_input is None and num_latent_channels is None
         self.average_err_collection_counter = 0
         self.average_abs_err_estimates = np.zeros([8,8])
         self.discriminator_net = discriminator
         padding = 0 if self.discriminator_net else kernel_size//2
-        layers = []
+        self.latent_input = latent_input
+        self.num_latent_channels = num_latent_channels
+        if latent_input is None or 'all_layers' not in latent_input:
+            self.num_latent_channels = 0
 
-        layers.append(nn.Conv2d(in_channels=in_nc, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
+        layers = []
+        layers.append(nn.Conv2d(in_channels=in_nc+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
         if self.discriminator_net:
             expected_input_size -= (kernel_size - 1)
         layers.append(nn.ReLU(inplace=True))
         for _ in range(depth - 2):
-            layers.append(nn.Conv2d(in_channels=n_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
             if self.discriminator_net:
                 expected_input_size -= (kernel_size-1)
             if norm_type=='batch':
@@ -132,26 +136,36 @@ class DnCNN(nn.Module):
             elif norm_type=='instance':
                 layers.append(nn.InstanceNorm2d(n_channels))
             layers.append(nn.LeakyReLU(inplace=True))
-        layers.append(nn.Conv2d(in_channels=n_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
         if self.discriminator_net:
             expected_input_size -= (kernel_size - 1)
             layers.append(Flatten())
             layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
             # layers.append(nn.Linear(in_features=64, out_features=1))
         layers.append(nn.Sigmoid())
-        self.dncnn = nn.Sequential(*layers)
+        if self.discriminator_net:
+            self.dncnn = nn.Sequential(*layers)
+        else:
+            self.dncnn = nn.ModuleList(layers)
         # self._initialize_weights()
 
     def forward(self, x):
         if self.discriminator_net:
             return self.dncnn(x)
         else:
-            quantization_err_estimation = self.dncnn(x)-0.5
+            latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
+            x = 1*quantized_coeffs
+            for i, module in enumerate(self.dncnn):
+                if self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
+                    x = torch.cat([latent_input,x],dim=1)
+                x = module(x)
+            quantization_err_estimation = x-0.5
+            # quantization_err_estimation = self.dncnn(x)-0.5
             if not next(self.modules()).training:
                 self.average_err_collection_counter += 1
                 self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
                     quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
-            return x+quantization_err_estimation
+            return quantized_coeffs+quantization_err_estimation
 
     def return_collected_err_avg(self):
         self.average_err_collection_counter = 0
@@ -221,8 +235,8 @@ class RRDBNet(nn.Module):
 
         if USE_MODULE_LISTS:
             self.model = nn.ModuleList(fea_conv+\
-                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_MODULE_LISTS),latent_input_channels=num_latent_channels,use_module_list=True)]+\
-                                       upsampler+HR_conv0+HR_conv1)
+                [B.ShortcutBlock(B.sequential(*(rb_blocks+LR_conv),return_module_list=USE_MODULE_LISTS),latent_input_channels=num_latent_channels,
+                                 use_module_list=True)]+upsampler+HR_conv0+HR_conv1)
         else:
             self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*rb_blocks, LR_conv)),\
                 *upsampler, HR_conv0, HR_conv1)
@@ -627,13 +641,14 @@ class VGGFeatureExtractor(nn.Module):
             # assert (re.search('patches_init_(first|all)',arch_config) is None) or 'untrained' not in arch_config,'Relying on trained weights statistics when setting model weights'
         if arch=='SegNetAE':
             from models.modules import SegNet
-            model = nn.DataParallel(SegNet.SegNet(3,encode_only=True))
+            model = nn.DataParallel(SegNet.SegNet(3,encode_only=True,batch_norm_DS=False,num_layers=4))
             loaded_state_dict = torch.load('/home/tiras/ybahat/Autoencoder/models/BEST_checkpoint.tar')['model']
             modified_state_dict = {}
             for key in model.state_dict().keys():
                 modified_state_dict[key] = loaded_state_dict[key.replace('.features.0','.down1').replace('.features.1','.down2').replace('.features.2','.down3').replace('.features.3','.down4').replace('.features.4','.down5')]
             model.load_state_dict(modified_state_dict)
             model = model.module
+            use_input_norm = False # SegNet model expects non-normalized images
         elif use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:

@@ -108,7 +108,7 @@ class SFTGAN_ACD_Model(BaseModel):
         self.print_network()
         print('-----------------------------------------------')
 
-    def feed_data(self, data, need_HR=True):
+    def feed_data(self, data, need_GT=True):
         # LR
         self.var_L = data['LR'].to(self.device)
         # seg

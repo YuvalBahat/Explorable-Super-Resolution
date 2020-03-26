@@ -124,7 +124,7 @@ class SRGANModel(BaseModel):
         self.print_network()
         print('-----------------------------------------------')
 
-    def feed_data(self, data, need_HR=True):
+    def feed_data(self, data, need_GT=True):
         # LR
         self.var_L = data['LR'].to(self.device)
         if need_HR:  # train or val

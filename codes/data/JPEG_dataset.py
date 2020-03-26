@@ -65,7 +65,7 @@ class JpegDataset(data.Dataset):
         self.random_scale_list = [1]
 
     def __getitem__(self, index):
-        scale = self.opt['scale']
+        block_size = 8
         Uncomp_size = self.opt['patch_size']
 
         # get Uncomp image
@@ -88,13 +88,13 @@ class JpegDataset(data.Dataset):
             random_scale = random.choice(self.random_scale_list)
             H_s, W_s, _ = img_Uncomp.shape
 
-            def _mod(n, random_scale, scale, thres):
+            def _mod(n, random_scale, block_size, thres):
                 rlt = int(n * random_scale)
-                rlt = (rlt // scale) * scale
+                rlt = (rlt // block_size) * block_size
                 return thres if rlt < thres else rlt
 
-            H_s = _mod(H_s, random_scale, scale, Uncomp_size)
-            W_s = _mod(W_s, random_scale, scale, Uncomp_size)
+            H_s = _mod(H_s, random_scale, block_size, Uncomp_size)
+            W_s = _mod(W_s, random_scale, block_size, Uncomp_size)
             img_Uncomp = cv2.resize(np.copy(img_Uncomp), (W_s, H_s), interpolation=cv2.INTER_LINEAR)
             # force to 3 channels
             if img_Uncomp.ndim == 2:

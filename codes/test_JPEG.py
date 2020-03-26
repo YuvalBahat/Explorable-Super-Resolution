@@ -196,7 +196,7 @@ for test_loader in test_loaders:
                     Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,loggers=logger,max_iters=NUM_Z_ITERS,data=data)
                     cur_Z = Z_optimizer.optimize()
             data['Z'] = cur_Z
-            model.feed_data(data, need_Uncomp=need_Uncomp)
+            model.feed_data(data, need_GT=need_Uncomp)
 
             model.test()  # test
             visuals = model.get_current_visuals(need_Uncomp=need_Uncomp)

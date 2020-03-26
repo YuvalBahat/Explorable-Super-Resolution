@@ -25,7 +25,7 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     if parser.parse_args().single_GPU:
-        available_GPUs = util.Assign_GPU()
+        available_GPUs = util.Assign_GPU(maxMemory=0.66)
     else:
         # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
@@ -160,7 +160,8 @@ def main():
                                                  save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp)
                         if save_GT_Uncomp:  # Save GT Uncomp images
                             save_GT_Uncomp = False
-                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']/len(Z_latent)))
+                    print_rlt['psnr'] /= len(Z_latent)
+                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time

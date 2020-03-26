@@ -1,8 +1,8 @@
 {
-  "name": "nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_initializedInputConcatD_B48_noRefLoss_DCT_5e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
-  , "scale": 4
+//  , "scale": 4
   , "gpu_ids": [0]
   , "range": [0,255]
 
@@ -15,9 +15,9 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 0
-      , "batch_size": 16
-      , "batch_size_4_grads_G": 16
-      , "batch_size_4_grads_D": 16
+      , "batch_size": 24 //16
+      , "batch_size_4_grads_G": 48 //16
+      , "batch_size_4_grads_D": 48 //16
       , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -32,16 +32,15 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-//    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_D": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_Verific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/147981_D.pth" //,"../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
+//    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/456439_G.pth"
+    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
-    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
-//    , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
-    , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_channels": 64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
     , "nf": 160
@@ -68,13 +67,13 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4 //1e-5
     , "lr_E": 1e-4
-    , "lr_latent": 1e-5
+//    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -100,8 +99,8 @@
     , "pixel_weight": 0 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
-    , "latent_weight": 0 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 0 //100
+    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+    , "optimalZ_loss_weight": 5e-4 //0 //100
     , "range_weight": 1 //0 //5000
 
     //for wgan-gp
