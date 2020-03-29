@@ -20,6 +20,9 @@ class JpegDataset(data.Dataset):
         self.opt = opt
         self.paths_Uncomp = None
         self.Uncomp_env = None
+        self.block_size = 8
+        if opt['input_downsampling'] is not None:
+            self.block_size *= opt['input_downsampling']
         self.quality_factors = opt['jpeg_quality_factor']
         if not isinstance(self.quality_factors,list):
             self.quality_factors = [self.quality_factors]
@@ -38,7 +41,8 @@ class JpegDataset(data.Dataset):
             if opt['dataroot_LR'] is not None:
                 raise NotImplementedError('Now subset only supports generating LR on-the-fly.')
         else:  # read image list from lmdb or image files
-            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'], opt['dataroot_Uncomp'])
+            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],
+                opt['dataroot_Uncomp'].replace('GrayScale','HRx4') if '_chroma' in opt['mode'] else opt['dataroot_Uncomp'])
         assert self.paths_Uncomp, 'Error: Uncomp path is empty.'
 
         if self.opt['phase'] == 'train':
@@ -65,7 +69,7 @@ class JpegDataset(data.Dataset):
         self.random_scale_list = [1]
 
     def __getitem__(self, index):
-        block_size = 8
+        # self.block_size = 8
         Uncomp_size = self.opt['patch_size']
 
         # get Uncomp image
@@ -73,10 +77,10 @@ class JpegDataset(data.Dataset):
         img_Uncomp = 255*util.read_img(self.Uncomp_env, Uncomp_path)
         # modcrop in the validation / test phase
         if self.opt['phase'] != 'train':
-            img_Uncomp = util.modcrop(img_Uncomp, 8)
+            img_Uncomp = util.modcrop(img_Uncomp, self.block_size)
         # change color space if necessary
-        if self.opt['color']:
-            img_Uncomp = util.channel_convert(img_Uncomp.shape[2], self.opt['color'], [img_Uncomp])[0]
+        if 'chroma' in self.opt['mode']:
+            img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
 
         # randomly scale during training
         if self.opt['phase'] == 'train':
@@ -88,13 +92,13 @@ class JpegDataset(data.Dataset):
             random_scale = random.choice(self.random_scale_list)
             H_s, W_s, _ = img_Uncomp.shape
 
-            def _mod(n, random_scale, block_size, thres):
+            def _mod(n, random_scale, thres):
                 rlt = int(n * random_scale)
-                rlt = (rlt // block_size) * block_size
+                rlt = (rlt // self.block_size) * self.block_size
                 return thres if rlt < thres else rlt
 
-            H_s = _mod(H_s, random_scale, block_size, Uncomp_size)
-            W_s = _mod(W_s, random_scale, block_size, Uncomp_size)
+            H_s = _mod(H_s, random_scale, Uncomp_size)
+            W_s = _mod(W_s, random_scale, Uncomp_size)
             img_Uncomp = cv2.resize(np.copy(img_Uncomp), (W_s, H_s), interpolation=cv2.INTER_LINEAR)
             # force to 3 channels
             if img_Uncomp.ndim == 2:
@@ -121,8 +125,8 @@ class JpegDataset(data.Dataset):
             img_Uncomp = img_Uncomp[0]
 
         # BGR to RGB, HWC to CHW, numpy to tensor
-        if img_Uncomp.shape[2] == 3:
-            img_Uncomp = img_Uncomp[:, :, [2, 1, 0]]
+        # if img_Uncomp.shape[2] == 3:
+        #     img_Uncomp = img_Uncomp[:, :, [2, 1, 0]]
         img_Uncomp = torch.from_numpy(np.ascontiguousarray(np.transpose(img_Uncomp, (2, 0, 1)))).float()
 
         return {'Uncomp': img_Uncomp,  'Uncomp_path': Uncomp_path,'QF':QF}

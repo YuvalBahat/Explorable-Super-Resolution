@@ -105,15 +105,20 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_mode=False):
         super(DnCNN, self).__init__()
-        assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
+        # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
         # assert latent_input is None and num_latent_channels is None
-        self.average_err_collection_counter = 0
-        self.average_abs_err_estimates = np.zeros([8,8])
+        # self.average_err_collection_counter = 0
+        # self.average_abs_err_estimates = np.zeros([8,8])
         self.discriminator_net = discriminator
+        self.chroma_mode = chroma_mode
+        if chroma_mode:
+            self.block_size = np.sqrt(out_nc/2)
+            assert self.block_size==np.round(self.block_size)
+            self.block_size = int(self.block_size)
         padding = 0 if self.discriminator_net else kernel_size//2
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
@@ -161,11 +166,21 @@ class DnCNN(nn.Module):
                 x = module(x)
             quantization_err_estimation = x-0.5
             # quantization_err_estimation = self.dncnn(x)-0.5
-            if not next(self.modules()).training:
-                self.average_err_collection_counter += 1
-                self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
-                    quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
-            return quantized_coeffs+quantization_err_estimation
+            # if not next(self.modules()).training:
+            #     self.average_err_collection_counter += 1
+            #     self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
+            #         quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
+            if self.chroma_mode:
+                num_coeffs_per_channel = quantization_err_estimation.size(1)//2
+                quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
+                                                                               quantization_err_estimation.size(2),quantization_err_estimation.size(3))
+                quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
+                quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
+                # quantization_err_estimation[:,:64,:,:] += quantized_coeffs[:,-2*64:-64,:,:]
+                # quantization_err_estimation[:, num_coeffs_per_channel:num_coeffs_per_channel+64, :, :] += quantized_coeffs[:, -64:, :, :]
+                return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
+            else:
+                return quantized_coeffs+quantization_err_estimation
 
     def return_collected_err_avg(self):
         self.average_err_collection_counter = 0

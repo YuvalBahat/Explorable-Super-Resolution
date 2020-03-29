@@ -105,8 +105,12 @@ def define_G(opt,CEM=None,num_latent_channels=None):
             act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
-        netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=opt_net['in_nc'],out_nc=opt_net['out_nc'],norm_type=opt_net['norm_type'],
-                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
+        chroma_mode = opt['name'][:len('JPEG/chroma')]=='JPEG/chroma'
+        assert opt_net['in_nc']==64 and opt_net['out_nc']==64
+        in_nc = opt['scale']**2+2*64 if chroma_mode else 64
+        out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
+                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels,chroma_mode=chroma_mode)
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])

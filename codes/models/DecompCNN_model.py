@@ -27,6 +27,7 @@ class DecompCNNModel(BaseModel):
         #     self.Z_size_factor = opt['scale'] if 'HR' in opt['network_G']['latent_input_domain'] else 1
         self.num_latent_channels = 0
         self.debug = 'debug' in opt['path']['log']
+        self.chroma_mode = self.opt['name'][:len('JPEG/chroma')]=='JPEG/chroma'
         self.cri_latent = None
         self.optimalZ_loss_type = None
         self.generator_started_learning = False #I'm adding this flag to avoid wasting time optimizing over the Z space when D is still in its early learning phase. I don't change it when resuming training of a saved model - it would change by itself after 1 generator step.
@@ -43,8 +44,8 @@ class DecompCNNModel(BaseModel):
         self.step = 0
         self.D_steps_since_G = 0
         self.G_steps_since_D = 0
-        self.jpeg_compressor = JPEG(compress=True, quantize=True).to(self.device)
-        self.jpeg_extractor = JPEG(compress=False).to(self.device)
+        self.jpeg_compressor = JPEG(compress=True,chroma_mode=self.chroma_mode, downsample_and_quantize=True,block_size=self.opt['scale']).to(self.device)
+        self.jpeg_extractor = JPEG(compress=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
 
         self.netG = networks.define_G(opt,num_latent_channels=self.num_latent_channels).to(self.device)  # G
         # print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,64,64,64])))
@@ -81,12 +82,12 @@ class DecompCNNModel(BaseModel):
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.l_gan_w = train_opt['gan_weight']
             self.D_exists = self.l_gan_w>0 or self.debug
+            self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
+            self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             if self.D_exists:
                 self.netD = networks.define_D(opt).to(self.device)  # D
-                self.DCT_discriminator = self.opt['network_D']['DCT_D']
-                self.concatenated_D_input = self.opt['network_D']['concat_input']
                 if self.DCT_discriminator:
-                    self.jpeg_non_quantized_compressor = JPEG(compress=True, quantize=False).to(self.device)
+                    self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
                 if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
                     # if self.DCT_discriminator:
                     #     input = torch.zeros([1, 64] + 2 * [opt['datasets']['train']['patch_size'] // 8]).to(next(self.netD.parameters()).device)
@@ -223,6 +224,8 @@ class DecompCNNModel(BaseModel):
         print('-----------------------------------------------')
 
     def ConcatLatent(self,Comp_image,latent_input):
+        # if self.chroma_mode:
+        #     Comp_image = torch.cat([Comp_image[:,0,...],Comp_image[:,1,:64,...],Comp_image[:,2,:64,...]],1)
         if latent_input is not None:
             if Comp_image.size()[2:]!=latent_input.size()[2:]:
                 latent_input = latent_input.contiguous().view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(Comp_image.size()[2:]))
@@ -243,6 +246,8 @@ class DecompCNNModel(BaseModel):
         if self.DCT_discriminator:
             self.jpeg_non_quantized_compressor.Set_QF(self.QF)
         self.var_Comp = self.jpeg_compressor(data['Uncomp'].to(self.device))
+        if self.chroma_mode:
+            self.y_channel_input = data['Uncomp'][:,0,...].unsqueeze(1).to(self.device)
         if self.latent_input is not None:
             if 'Z' in data.keys():
                 cur_Z = data['Z']
@@ -319,6 +324,8 @@ class DecompCNNModel(BaseModel):
                 self.fake_H = self.netG(self.model_input)
             self.fake_H_4_D = self.fake_H
             self.fake_H = self.jpeg_extractor(self.fake_H_4_D)
+            if self.chroma_mode:
+                self.fake_H = torch.cat([self.y_channel_input, self.fake_H], 1)
             if not self.DCT_discriminator:
                 self.fake_H_4_D = self.fake_H
             if self.concatenated_D_input:
@@ -515,6 +522,8 @@ class DecompCNNModel(BaseModel):
                 self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
         else:
             self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
+        if self.chroma_mode:
+            self.fake_H = torch.cat([self.y_channel_input,self.fake_H],1)
         self.netG.train()
 
     def perform_validation(self,data_loader,cur_Z,print_rlt,GT_and_quantized,save_images,collect_avg_err_est=True):
@@ -542,8 +551,8 @@ class DecompCNNModel(BaseModel):
             self.feed_data(val_data)
             self.test()
             visuals = self.get_current_visuals()
-            sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255])  # float32
-            gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255])  # float32
+            sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
+            gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
             avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
             if save_images:
                 if SAVE_IMAGE_COLLAGE:
@@ -551,11 +560,13 @@ class DecompCNNModel(BaseModel):
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                     if GT_and_quantized:  # Save GT Uncomp images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                        quantized_image = util.tensor2img(self.jpeg_extractor(self.jpeg_compressor(val_data['Uncomp'].to(self.device))),out_type=np.uint8, min_max=[0, 255])
+                        quantized_image = util.tensor2img(self.jpeg_extractor(self.jpeg_compressor(val_data['Uncomp'].to(self.device))),out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
-                        cv2.putText(quantized_image_collage[-1][-1], str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
+                        quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1], str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
                                     color=np.mod(255 / 2 + quantized_image_collage[-1][-1][:25, :25].mean(), 255),thickness=2)
+                        if self.chroma_mode: # In this case cv2.putText returns cv2.Umat instead of an ndarray, so it should be converted:
+                            quantized_image_collage[-1][-1] = quantized_image_collage[-1][-1].get()
                 else:
                     # Save Decomp images for reference
                     img_dir = os.path.join(self.opt['path']['val_images'], img_name)
@@ -574,10 +585,11 @@ class DecompCNNModel(BaseModel):
         if save_images:
             self.generator_changed = False
 
-        if collect_avg_err_est:
+        if False and collect_avg_err_est:#Disabled until I adapt it to the chroma case
             self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.netG.module.return_collected_err_avg(),-1)],-1)
             self.avg_estimated_err_step.append(self.gradient_step_num)
             # self.log_dict['avg_est_err'].append((self.gradient_step_num,self.netG.module.return_collected_err_avg()))
+        avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
             print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1])/QF_images_counter[QF]
         avg_psnr = 1 * np.mean(avg_psnr)
@@ -765,7 +777,7 @@ class DecompCNNModel(BaseModel):
                 print('loading model for G [{:s}] ...'.format(load_path_G))
                 self.load_network(load_path_G, self.netG)
             load_path_D = self.opt['path']['pretrain_model_D']
-            if self.opt['is_train'] and load_path_D is not None:
+            if self.opt['is_train'] and load_path_D is not None and self.D_exists:
                 print('loading model for D [{:s}] ...'.format(load_path_D))
                 self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
 
