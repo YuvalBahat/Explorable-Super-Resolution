@@ -15,9 +15,9 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 0
-      , "batch_size": 32 //16
-      , "batch_size_4_grads_G": 32 //16
-      , "batch_size_4_grads_D": 32 //16
+      , "batch_size": 16
+      , "batch_size_4_grads_G": 16
+      , "batch_size_4_grads_D": 16
       , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -32,6 +32,11 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
+//    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
+//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
+//    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
     , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
 //    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/456439_G.pth"
     , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
@@ -95,7 +100,7 @@
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10 //10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
-    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
+    , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
     , "pixel_weight": 0 //1e-3 //1e-2
     , "feature_weight": 0 //1

@@ -40,9 +40,22 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             line = line.split('//')[0] + '\n'
             json_str += line
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-    if name=='JPEG':
+    if 'JPEG' in name:
+        if name=='JPEG_chroma':
+            opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
+            opt['name'] = 'chroma_'+opt['name']
+            # for pretrain_model in ['pretrain_model_G','pretrain_model_D']:
+            #     if pretrain_model in opt['path'].keys():
+            #         opt['path'][pretrain_model] = opt['path'][pretrain_model].split('/')
+            #         opt['path'][pretrain_model][-1] = 'chroma_'+opt['path'][pretrain_model][-1]
+            #         opt['path'][pretrain_model] = '/'.join(opt['path'][pretrain_model])
+            for dataset in opt['datasets'].keys():
+                opt['datasets'][dataset]['mode'] += '_chroma'
+                opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
+        else:
+            opt['input_downsampling'] = 1
         opt['name'] = os.path.join('JPEG', opt['name'])
-        opt['scale'] = 8
+        opt['scale'] = 8*opt['input_downsampling']
     scale = opt['scale']
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
@@ -52,7 +65,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     # if running_on_Technion:
     #     opt['datasets']['train']['n_workers'] = 0
     # datasets
-    non_degraded_images_fieldname = 'dataroot_Uncomp' if name=='JPEG' else 'dataroot_HR'
+    non_degraded_images_fieldname = 'dataroot_Uncomp' if 'JPEG' in name else 'dataroot_HR'
     for phase, dataset in opt['datasets'].items():
         phase = phase.split('_')[0]
         dataset['phase'] = phase
@@ -80,7 +93,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             opt['path'][key] = os.path.expanduser(path)
     if 'tiras' in os.getcwd():
         opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
-    elif name is not None:
+    if 'JPEG' not in name and name is not None:
         opt['name'] = os.path.join(name)
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
