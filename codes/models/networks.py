@@ -82,7 +82,7 @@ def init_weights(net, init_type='kaiming', scale=1, std=0.02):
 
 
 # Generator
-def define_G(opt,CEM=None,num_latent_channels=None):
+def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
@@ -105,12 +105,13 @@ def define_G(opt,CEM=None,num_latent_channels=None):
             act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
-        chroma_mode = opt['name'][:len('JPEG/chroma')]=='JPEG/chroma'
+        # chroma_mode = opt['name'][:len('JPEG/chroma')]=='JPEG/chroma'
+        chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         assert opt_net['in_nc']==64 and opt_net['out_nc']==64
         in_nc = opt['scale']**2+2*64 if chroma_mode else 64
         out_nc = 2*(opt['scale']**2) if chroma_mode else 64
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
-                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels,chroma_mode=chroma_mode)
+                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels,chroma_generator=chroma_mode)
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -126,7 +127,7 @@ def define_G(opt,CEM=None,num_latent_channels=None):
     return netG
 
 # Discriminator
-def define_D(opt,CEM=None):
+def define_D(opt,CEM=None,**kwargs):
     gpu_ids = opt['gpu_ids']
     opt_net = opt['network_D']
     which_model = opt_net['which_model_D']
@@ -158,11 +159,16 @@ def define_D(opt,CEM=None):
     elif which_model == 'discriminator_vgg_128_SN':
         netD = arch.Discriminator_VGG_128_SN()
     elif which_model=='DnCNN_D':
+        chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
         assert opt_net['DCT_D']==1
-        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=opt_net_G['out_nc']*(2 if opt_net['concat_input'] else 1),
+        G_in_nc = opt['scale']**2+2*64 if chroma_mode else 64
+        G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
+        D_input_channels = G_in_nc+G_out_nc if opt_net['concat_input'] else (opt['scale']**2+G_out_nc if chroma_mode else G_out_nc)
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
-                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//8)
+                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],chroma_generator=False)
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

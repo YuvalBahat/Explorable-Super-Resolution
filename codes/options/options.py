@@ -44,11 +44,11 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         if name=='JPEG_chroma':
             opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
             opt['name'] = 'chroma_'+opt['name']
-            for pretrain_model in ['pretrain_model_G','pretrain_model_D']:
-                if pretrain_model in opt['path'].keys():
-                    opt['path'][pretrain_model] = opt['path'][pretrain_model].split('/')
-                    opt['path'][pretrain_model][-1] = 'chroma_'+opt['path'][pretrain_model][-1]
-                    opt['path'][pretrain_model] = '/'.join(opt['path'][pretrain_model])
+            # for pretrain_model in ['pretrain_model_G','pretrain_model_D']:
+            #     if pretrain_model in opt['path'].keys():
+            #         opt['path'][pretrain_model] = opt['path'][pretrain_model].split('/')
+            #         opt['path'][pretrain_model][-1] = 'chroma_'+opt['path'][pretrain_model][-1]
+            #         opt['path'][pretrain_model] = '/'.join(opt['path'][pretrain_model])
             for dataset in opt['datasets'].keys():
                 opt['datasets'][dataset]['mode'] += '_chroma'
                 opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']

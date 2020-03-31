@@ -147,7 +147,7 @@ def pol2cart(rho, phi):
 def SVD_2_LatentZ(SVD_values,max_lambda=1):
     # Given SVD values, returns corresponding structural tensor values.
     # SVD values: lambda0 in [0,max_lambda], lambda1 in [0,max_lambda], theta in [0,2*pi]
-    # Returned values: Signa I_x^2 in [-max_lambda,max_lambda], Signa I_y^2 in [-max_lambda,max_lambda], Sigma I_x*I_y in (not sure, should calculate, but a symmetric range).
+    # Returned values: Sigma I_x^2 in [-max_lambda,max_lambda], Sigma I_y^2 in [-max_lambda,max_lambda], Sigma I_x*I_y in (not sure, should calculate, but a symmetric range).
     return torch.stack([2*max_lambda*(SVD_values[:,1,...]*(torch.sin(SVD_values[:,-1,...])**2)+SVD_values[:,0,...]*(torch.cos(SVD_values[:,-1,...])**2))-max_lambda,
                                   2*max_lambda*(SVD_values[:,0,...]*(torch.sin(SVD_values[:,-1,...])**2)+SVD_values[:,1,...]*(torch.cos(SVD_values[:,-1,...])**2))-max_lambda,#Normalizing range to have negative values as well,trying to match [-1,1]
                                   2*(SVD_values[:,0,...]-SVD_values[:,1,...])*torch.sin(SVD_values[:,-1,...])*torch.cos(SVD_values[:,-1,...])],1)

@@ -105,35 +105,43 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_mode=False):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
-        # assert latent_input is None and num_latent_channels is None
         # self.average_err_collection_counter = 0
         # self.average_abs_err_estimates = np.zeros([8,8])
         self.discriminator_net = discriminator
-        self.chroma_mode = chroma_mode
-        if chroma_mode:
+        if discriminator:
+            # Ideally I should not use padding for the discriminator model. I do use padding in the first layers if the input size is too small,
+            # so that the dimension of the fully connected layer's input would be at least MIN_DCT_DIMS_4_D x MIN_DCT_DIMS_4_D
+            MIN_DCT_DIMS_4_D = 5
+            num_padded_layers = max(0,depth-int(np.floor((expected_input_size-MIN_DCT_DIMS_4_D)/(kernel_size-1))))
+            layer_num = 0
+        self.chroma_generator = chroma_generator
+        if chroma_generator:
             self.block_size = np.sqrt(out_nc/2)
             assert self.block_size==np.round(self.block_size)
             self.block_size = int(self.block_size)
-        padding = 0 if self.discriminator_net else kernel_size//2
+        # padding = 0 if self.discriminator_net else kernel_size//2
+        padding = kernel_size//2
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
         if latent_input is None or 'all_layers' not in latent_input:
             self.num_latent_channels = 0
 
         layers = []
-        layers.append(nn.Conv2d(in_channels=in_nc+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
-        if self.discriminator_net:
+        if self.discriminator_net and layer_num>=num_padded_layers:
             expected_input_size -= (kernel_size - 1)
+            padding = 0
+        layers.append(nn.Conv2d(in_channels=in_nc+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
         layers.append(nn.ReLU(inplace=True))
-        for _ in range(depth - 2):
-            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
-            if self.discriminator_net:
+        for layer_num in range(1,depth - 2+1):
+            if self.discriminator_net and layer_num>=num_padded_layers:
                 expected_input_size -= (kernel_size-1)
+                padding = 0
+            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
             if norm_type=='batch':
                 layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
             elif norm_type=='layer':
@@ -141,9 +149,12 @@ class DnCNN(nn.Module):
             elif norm_type=='instance':
                 layers.append(nn.InstanceNorm2d(n_channels))
             layers.append(nn.LeakyReLU(inplace=True))
+        layer_num += 1
+        if self.discriminator_net and layer_num >= num_padded_layers:
+            expected_input_size -= (kernel_size - 1)
+            padding = 0
         layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
         if self.discriminator_net:
-            expected_input_size -= (kernel_size - 1)
             layers.append(Flatten())
             layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
             # layers.append(nn.Linear(in_features=64, out_features=1))
@@ -170,14 +181,11 @@ class DnCNN(nn.Module):
             #     self.average_err_collection_counter += 1
             #     self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
             #         quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
-            if self.chroma_mode:
-                num_coeffs_per_channel = quantization_err_estimation.size(1)//2
+            if self.chroma_generator:
                 quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
                                                                                quantization_err_estimation.size(2),quantization_err_estimation.size(3))
                 quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
                 quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
-                # quantization_err_estimation[:,:64,:,:] += quantized_coeffs[:,-2*64:-64,:,:]
-                # quantization_err_estimation[:, num_coeffs_per_channel:num_coeffs_per_channel+64, :, :] += quantized_coeffs[:, -64:, :, :]
                 return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
             else:
                 return quantized_coeffs+quantization_err_estimation
