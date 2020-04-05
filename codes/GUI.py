@@ -1172,8 +1172,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setGeometry(QRect(0,0,self.sizeHint().width(),self.sizeHint().height()))
 
         # Loading and downsampling an initial demo HR image:
-        example_image = [f for  f in os.listdir() if any([ext in f for ext in ['.png','.jpg','.bmp']])][0]
-        self.open_file(path=example_image,HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
+        sample_image_folder = ''
+        example_image = [f for f in os.listdir(sample_image_folder) if any([ext in f for ext in ['.png','.jpg','.bmp']])][0]
+        self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
         self.show()
 
@@ -1214,6 +1215,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.in_picking_desired_hist_mode = 1*checked
         if checked:
             self.MasksStorage(True)
+            self.canvas.selection_display_timer_cleanup(clear_data=True)
             self.canvas.desired_im_taken_from_same = not another_image
             if self.canvas.current_display_index == self.canvas.scribble_display_index:
                 self.Update_Scribble_Data()
@@ -1415,7 +1417,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.Z_optimizer_Reset()
 
     def MasksStorage(self,store):
-        canvas_keys = ['Z_mask','Z_mask_display_size','HR_selected_mask','LR_mask_vertices','HR_size','random_Zs','image_4_scribbling','current_scribble_mask']
+        canvas_keys = ['Z_mask','Z_mask_display_size','HR_selected_mask','LR_mask_vertices','HR_size','random_Zs','image_4_scribbling','current_scribble_mask',
+                       'selection_display','existing_selection_timer_event']
         self_keys = ['cur_Z','var_L']
         for key in canvas_keys:
             if store:
