@@ -161,7 +161,7 @@ class DecompCNNModel(BaseModel):
 
             # Range limiting loss:
             if train_opt['range_weight'] > 0 or self.debug:
-                self.cri_range = CreateRangeLoss(opt['range'])
+                self.cri_range = CreateRangeLoss(opt['range'],chroma_mode=self.chroma_mode)
                 self.l_range_w = train_opt['range_weight']
             else:
                 print('Remove range loss.')
@@ -266,7 +266,7 @@ class DecompCNNModel(BaseModel):
                 else:
                     cur_Z = 2*cur_Z-1
 
-            if isinstance(cur_Z,int) or len(cur_Z.shape)<4 or (cur_Z.shape[2]==1 and not torch.is_tensor(cur_Z)):
+            if isinstance(cur_Z,int) or isinstance(cur_Z,float) or len(cur_Z.shape)<4 or (cur_Z.shape[2]==1 and not torch.is_tensor(cur_Z)):
                 cur_Z = cur_Z*np.ones([1,self.num_latent_channels]+DCT_dims)
             elif torch.is_tensor(cur_Z) and cur_Z.size(dim=2)==1:
                 cur_Z = (cur_Z*torch.ones([1,1]+DCT_dims))#.type(self.var_Comp.type())
@@ -280,7 +280,7 @@ class DecompCNNModel(BaseModel):
                 self.jpeg_extractor_Y.Set_QF(self.QF)
                 self.var_Comp_Y = self.jpeg_compressor_Y(data['Uncomp'][:,0,...].unsqueeze(1).to(self.device))
                 self.ConcatLatent(Comp_image=self.var_Comp_Y, latent_input=cur_Z)
-                self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input)).detach()
+                self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input)).detach().clamp(0.,255.)
                 self.var_Comp = self.jpeg_compressor(torch.cat([self.y_channel_input,data['Uncomp'][:,1:,...].type(self.y_channel_input.type())],1))
             else:
                 self.y_channel_input = data['Uncomp'][:,0,...].unsqueeze(1).to(self.device)
