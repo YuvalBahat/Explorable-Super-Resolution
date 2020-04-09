@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF10_initializedInputConcatD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_InputConcatinitialized_optimizerD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_ZwithoutLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -59,6 +59,7 @@
     "which_model_D": "DnCNN_D" //"discriminator_vgg_128_nonModified" //,"discriminator_vgg_128" //,"PatchGAN"
     , "relativistic": 0
     , "concat_input": 1
+    , "inject_Z": 0 //1
     , "DCT_D": 1
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
@@ -97,7 +98,7 @@
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 10 //10 //0
+    , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
@@ -105,7 +106,7 @@
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 1e-4 //0 //100
+    , "optimalZ_loss_weight": 0 //1e-4 //0 //100
     , "range_weight": 1 //0 //5000
 
     //for wgan-gp

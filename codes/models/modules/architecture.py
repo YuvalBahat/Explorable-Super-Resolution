@@ -124,11 +124,10 @@ class DnCNN(nn.Module):
             self.block_size = np.sqrt(out_nc/2)
             assert self.block_size==np.round(self.block_size)
             self.block_size = int(self.block_size)
-        # padding = 0 if self.discriminator_net else kernel_size//2
         padding = kernel_size//2
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
-        if latent_input is None or 'all_layers' not in latent_input:
+        if latent_input is None or 'all_layers' not in latent_input or num_latent_channels is None:
             self.num_latent_channels = 0
 
         layers = []
@@ -159,22 +158,26 @@ class DnCNN(nn.Module):
             layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
             # layers.append(nn.Linear(in_features=64, out_features=1))
         layers.append(nn.Sigmoid())
-        if self.discriminator_net:
+        if False and self.discriminator_net:
             self.dncnn = nn.Sequential(*layers)
         else:
             self.dncnn = nn.ModuleList(layers)
-        # self._initialize_weights()
 
     def forward(self, x):
-        if self.discriminator_net:
+        if False and self.discriminator_net:
             return self.dncnn(x)
         else:
             latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
             x = 1*quantized_coeffs
             for i, module in enumerate(self.dncnn):
-                if self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
-                    x = torch.cat([latent_input,x],dim=1)
+                if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
+                    if self.discriminator_net and latent_input.size(2)!=x.size(2):
+                        x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
+                    else:
+                        x = torch.cat([latent_input,x],dim=1)
                 x = module(x)
+            if self.discriminator_net:
+                return x
             quantization_err_estimation = x-0.5
             # quantization_err_estimation = self.dncnn(x)-0.5
             # if not next(self.modules()).training:

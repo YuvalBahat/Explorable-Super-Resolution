@@ -166,9 +166,14 @@ def define_D(opt,CEM=None,**kwargs):
         G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
         # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
         D_input_channels = G_in_nc+G_out_nc if opt_net['concat_input'] else (opt['scale']**2+G_out_nc if chroma_mode else G_out_nc)
+        num_latent_channels = None
+        if opt_net['inject_Z']:
+            num_latent_channels = opt_net_G['latent_channels']
+            # D_input_channels += num_latent_channels
         netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
-                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],chroma_generator=False)
+                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
+                          latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False)
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 
