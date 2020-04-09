@@ -91,6 +91,7 @@ class DecompCNNModel(BaseModel):
             self.D_exists = self.l_gan_w>0 or self.debug
             self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
+            self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
                 if self.DCT_discriminator:
@@ -301,6 +302,8 @@ class DecompCNNModel(BaseModel):
                         input_ref = torch.cat([self.var_Comp[:,:self.opt['scale']**2,...], input_ref], 1)
                 elif self.concatenated_D_input:
                     input_ref = torch.cat([self.var_Comp, input_ref], 1)
+                if self.Z_injected_2_D:
+                    input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self):
@@ -355,7 +358,8 @@ class DecompCNNModel(BaseModel):
                 self.fake_H_4_D = self.fake_H
             if self.concatenated_D_input:
                 self.fake_H_4_D = torch.cat([self.var_Comp, self.fake_H_4_D], 1)
-
+            if self.Z_injected_2_D:
+                self.fake_H_4_D = torch.cat([self.GetLatent().type(self.fake_H_4_D.type()), self.fake_H_4_D], 1)
             # D
             l_d_total = 0
             if not self.D_exists:
@@ -824,7 +828,8 @@ class DecompCNNModel(BaseModel):
             load_path_D = self.opt['path']['pretrain_model_D']
             if self.opt['is_train'] and load_path_D is not None and self.D_exists:
                 print('loading model for D [{:s}] ...'.format(load_path_D))
-                self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
+                self.load_network(load_path_D, self.netD)
+                # self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
         if self.chroma_mode and USE_Y_GENERATOR_4_CHROMA:
             print('loading model for G of channel Y [{:s}] ...'.format(self.opt['path']['Y_channel_model_G']))
             self.load_network(self.opt['path']['Y_channel_model_G'], self.netG_Y)
