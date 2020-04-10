@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from MainWindow import Ui_MainWindow
 import os
+import argparse
 import random
 
 # Explorable SR imports:
@@ -24,6 +25,9 @@ from CEM.imresize_CEM import imresize
 import time
 from collections import deque
 from KernelGAN import train as KernelGAN
+
+# Explorable JPEG imports:
+from data.util import rgb2ycbcr
 
 DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
@@ -523,6 +527,12 @@ class Canvas(QLabel):
         self.third_channel_slider.setSliderPosition(100*third_channel_slider_new_val)
         self.previous_sliders_values = np.expand_dims(self.Z_mask,0)*np.array([z0_slider_new_val,Z1_slider_new_val,third_channel_slider_new_val]).reshape([3,1,1])+\
                                        np.expand_dims(1-self.Z_mask, 0)*self.previous_sliders_values
+
+    def Set_Output_Image(self):
+        if self.JPEG_GUI:
+            pass
+        else:
+            self.output_image =  self.SR_model.fake_H[0]
 
     # Pencil events
 
@@ -1042,7 +1052,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.setMouseTracking(True)
         # Enable focus to capture key inputs.
         self.canvas.setFocusPolicy(Qt.StrongFocus)
-        self.opt = option.parse('./options/test/GUI_esrgan.json', is_train=False)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
+        parser.add_argument('-JPEG', action='store_true', help='JPEG decompresion exploration')
+        self.JPEG_GUI =  parser.parse_args().JPEG
+        # parser.add_argument('-chroma', action='store_true', help='Exploring chroma channels as well')
+        opt_name = None
+        if self.JPEG_GUI:
+            opt_name = 'JPEG'
+            self.display_ESRGAN = False
+            # if parser.parse_args().chroma:
+            #     opt_name += '_chroma'
+        self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
         self.opt = option.dict_to_nonedict(self.opt)
         if DISPLAY_INDUCED_LR:
             #Add a 3rd canvas:
@@ -1088,9 +1109,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.scribble_modes = SCRIBBLE_MODES
         self.canvas.Update_Image_Display = self.Update_Image_Display
         self.canvas.SelectImage2Display = self.SelectImage2Display
-        self.canvas.Enforce_DT_on_Image_Pair = self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
-        self.canvas.Project_2_Orthog_Nullspace = self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
+        if not self.JPEG_GUI:
+            self.canvas.Enforce_DT_on_Image_Pair = self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
+            self.canvas.Project_2_Orthog_Nullspace = self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
         self.canvas.statusBar = self.statusBar
+        self.canvas.JPEG_GUI = self.JPEG_GUI
+        # And vice-versa:
+        self.output_image = self.canvas.output_image
 
         #### Connecting buttons to functions:
         # Load & Save:
@@ -1172,7 +1197,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setGeometry(QRect(0,0,self.sizeHint().width(),self.sizeHint().height()))
 
         # Loading and downsampling an initial demo HR image:
-        sample_image_folder = ''
+        sample_image_folder = './'
         example_image = [f for f in os.listdir(sample_image_folder) if any([ext in f for ext in ['.png','.jpg','.bmp']])][0]
         self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
@@ -1265,7 +1290,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cur_Z = ((self.cur_Z * torch.ones([1, 1] + self.canvas.Z_size) - 0.5) * 2).type(self.var_L.type())
         else:
             cur_Z = self.cur_Z.type(self.var_L.type())
-        self.canvas.SR_model.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
+        self.canvas.SR_model.ConcatLatent(self.var_L,latent_input=cur_Z)
         self.canvas.SR_model.netG.eval()
         with torch.no_grad():
             self.canvas.SR_model.fake_H = self.canvas.SR_model.netG(self.canvas.SR_model.model_input)
@@ -1701,6 +1726,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.derived_controls_indicator = (self.canvas.Z_mask*0+(1-self.canvas.Z_mask)*self.canvas.derived_controls_indicator).astype(np.bool)
 
     def Recompose_cur_Z(self):
+        if self.JPEG_GUI:
+            self.statusBar.showMessage('Direct Z control unsupported for JPEG',INFO_MESSAGE_DURATION)
+            return
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         new_Z = util.SVD_2_LatentZ(self.canvas.control_values.unsqueeze(0),max_lambda=self.max_SVD_Lambda).to(self.cur_Z.device)
         self.cur_Z = Z_mask * new_Z + (1 - Z_mask) * self.cur_Z
@@ -1814,6 +1842,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
+        if self.JPEG_GUI:
+            pass
         self.canvas.Z_optimizer_Reset()
         if reprocess:
             self.ReProcess()
@@ -1878,7 +1908,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             loaded_image = loaded_image[:loaded_image.shape[0]//SR_scale*SR_scale,:loaded_image.shape[1]//SR_scale*SR_scale,:] #Removing bottom right margins to make the image shape adequate to this SR factor
             self.GT_HR = torch.from_numpy(np.transpose(loaded_image, (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             self.canvas.HR_size = list(self.GT_HR.size()[2:])
-            self.var_L = self.canvas.SR_model.netG.module.DownscaleOP(torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0))
+            if self.JPEG_GUI:
+                loaded_image = np.expand_dims(rgb2ycbcr(loaded_image,only_y=True),-1)
+            loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            if self.JPEG_GUI:
+                self.canvas.SR_model.jpeg_compressor.Set_QF(torch.tensor(10))
+                self.statusBar.showMessage('Currently fixing QF to 10',INFO_MESSAGE_DURATION)
+                self.var_L = self.canvas.SR_model.jpeg_compressor(loaded_image)
+            else:
+                self.var_L = self.canvas.SR_model.netG.module.DownscaleOP(loaded_image)
             self.LR_image = np.clip(255*self.var_L[0].data.cpu().numpy().transpose(1, 2, 0),0, 255).astype(np.uint8)
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(True)
         else:
@@ -1901,7 +1939,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if 'random_Z_images' in self.canvas.__dict__.keys():
             del self.canvas.random_Z_images
         self.canvas.LR_size = list(self.var_L.size()[2:])
-        self.canvas.Z_size = [val*self.canvas.CEM_opt['scale'] for val in self.canvas.LR_size] if self.canvas.HR_Z else self.canvas.LR_size
+        if self.JPEG_GUI:
+            self.canvas.Z_size = self.canvas.LR_size
+        else:
+            self.canvas.Z_size = [val*self.canvas.CEM_opt['scale'] for val in self.canvas.LR_size] if self.canvas.HR_Z else self.canvas.LR_size
         self.canvas.Z_mask = np.ones(self.canvas.Z_size)
         self.canvas.update_Z_mask_display_size()
         self.canvas.derived_controls_indicator = np.zeros(self.canvas.Z_size)
