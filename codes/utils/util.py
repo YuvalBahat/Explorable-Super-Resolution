@@ -169,7 +169,11 @@ def ResizeCategorialImage(image,dsize):
 def ResizeScribbleImage(image,dsize):
     if np.all(image.shape[:2]==dsize):
         return image
-    return cv2.resize(image, dsize=dsize[::-1], interpolation=cv2.INTER_AREA)
+    resized = cv2.resize(image, dsize=dsize[::-1], interpolation=cv2.INTER_AREA)
+    if image.ndim>resized.ndim:
+        resized = np.reshape(resized,list(resized.shape[:2])+[image.shape[2]])
+    return resized
+
 ####################
 # metric
 ####################

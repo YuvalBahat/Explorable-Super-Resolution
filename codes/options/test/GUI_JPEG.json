@@ -1,6 +1,7 @@
 {
-  "name": "nf160nb10_QF10_InputConcatZinjectD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_ZwithoutLoss"
-  , "suffix": ""
+//  "name": "nf160nb10_QF10_initializedInputConcatD_noRefLoss_DCT_StructTensorZloss",
+  "name": "nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss",
+  "suffix": ""
   , "model": "dncnn"
   , "scale": 4
   , "gpu_ids": [0]
@@ -23,7 +24,7 @@
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "latent_input": "all_layers" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
-    , "latent_channels": 64
+    , "latent_channels": 64 //3 //64
     , "norm_type": "batch"
     , "mode": "CNA"
     , "nf": 160

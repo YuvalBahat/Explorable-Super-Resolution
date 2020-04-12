@@ -70,6 +70,7 @@ class JPEG(nn.Module):
 
     def Set_QF(self,quality_factor):
         # Following the procedure in the Prototype_jpeg repository to convert quality factor to quantization table:
+        self.QF = quality_factor
         condition = (quality_factor < 50).to(self.device).type(torch.LongTensor)
         self.factor = (condition*(5000 / quality_factor) + (1-condition)*(200 - 2 * quality_factor))
         self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.Q_table.dtype).to(self.device)

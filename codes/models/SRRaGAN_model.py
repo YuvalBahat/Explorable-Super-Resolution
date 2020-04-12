@@ -268,6 +268,13 @@ class SRRaGANModel(BaseModel):
         print('---------- Model initialized ------------------')
         self.print_network()
         print('-----------------------------------------------')
+
+    def Output_Batch(self,within_0_1):
+        if within_0_1:
+            return torch.clamp(self.fake_H,0,1)
+        else:
+            return self.fake_H
+
     def ConcatLatent(self,LR_image,latent_input):
         if latent_input is not None:
             if LR_image.size()[2:]!=latent_input.size()[2:]:

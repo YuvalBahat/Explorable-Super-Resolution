@@ -40,7 +40,8 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             line = line.split('//')[0] + '\n'
             json_str += line
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-    if 'JPEG' in name:
+    JPEG_run = name is not None and 'JPEG' in name
+    if JPEG_run:
         if name=='JPEG_chroma':
             opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
             opt['name'] = 'chroma_'+opt['name']
@@ -65,7 +66,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     # if running_on_Technion:
     #     opt['datasets']['train']['n_workers'] = 0
     # datasets
-    non_degraded_images_fieldname = 'dataroot_Uncomp' if 'JPEG' in name else 'dataroot_HR'
+    non_degraded_images_fieldname = 'dataroot_Uncomp' if JPEG_run else 'dataroot_HR'
     for phase, dataset in opt['datasets'].items():
         phase = phase.split('_')[0]
         dataset['phase'] = phase
@@ -93,7 +94,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             opt['path'][key] = os.path.expanduser(path)
     if 'tiras' in os.getcwd():
         opt['path']['root'] = opt['path']['root'].replace('/media/ybahat/data/projects/', '/home/tiras/ybahat/')
-    if 'JPEG' not in name and name is not None:
+    if not JPEG_run and name is not None:
         opt['name'] = os.path.join(name)
     experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
     opt['path']['experiments_root'] = experiments_root
