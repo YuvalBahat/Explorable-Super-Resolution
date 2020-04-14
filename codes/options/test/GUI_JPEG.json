@@ -1,0 +1,47 @@
+{
+//  "name": "nf160nb10_QF10_initializedInputConcatD_noRefLoss_DCT_StructTensorZloss",
+//  "name": "nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss",
+  "name": "nf160nb10_QF10_DinputConcat_Verif0_85correct_noRefLoss_DCT",
+  "suffix": ""
+  , "model": "dncnn"
+  , "scale": 4
+  , "gpu_ids": [0]
+  , "use_tb_logger": 1
+  , "datasets": {
+     "test_1": { // the 1st test dataset
+      "name": "set14"
+      , "mode": "LRHR"
+      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
+      , "dataroot_LR": "Set14/Set14_bicLRx4"
+    }
+  }
+
+  , "path": {
+    "root": "/media/ybahat/data/projects/SRGAN"
+    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss/models/112726_G.pth"
+//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_InputConcatinitialized_optimizerD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_ZwithoutLoss/models/1016501_G.pth"
+  }
+
+  , "network_G": {
+    "which_model_G": "DnCNN" // RRDB_net | sr_resnet
+    , "latent_input": "all_layers" // "all_layers","first_layer","None"
+    , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
+    , "latent_channels": 64 //3 //64
+    , "norm_type": "batch"
+    , "mode": "CNA"
+    , "nf": 160
+    , "nb": 10
+    , "in_nc": 64
+    , "out_nc": 64
+    , "gc": 32
+    , "group": 1
+  }
+//  , "datasets": {
+//    "train": {
+//       "patch_size": 256}
+//  }
+//  ,"test": {
+//    "kernel": "estimated" //"estimated","cubic","blurry_cubic_1"
+//  }
+}

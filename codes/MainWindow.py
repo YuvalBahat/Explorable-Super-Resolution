@@ -7,7 +7,6 @@ import os
 from scipy.signal import convolve2d
 
 MAX_SVD_LAMBDA = 1.
-DISPLAY_ESRGAN_RESULTS = True
 DEFAULT_BUTTON_SIZE = 30
 
 def ReturnSizePolicy(policy,hasHeightForWidth):
@@ -118,7 +117,7 @@ class Ui_MainWindow(object):
 
         # Configuring parameters:
         self.max_SVD_Lambda = MAX_SVD_LAMBDA
-        self.display_ESRGAN = DISPLAY_ESRGAN_RESULTS
+        # self.display_ESRGAN = DISPLAY_ESRGAN_RESULTS
         self.button_size = DEFAULT_BUTTON_SIZE
 
         # Set parent layouts:
@@ -216,6 +215,8 @@ class Ui_MainWindow(object):
             self.DisplayedImageSelection_button.addItem('ESRGAN')
             self.DisplayedImageSelection_button.setEnabled(True)
             self.ESRGAN_index = self.DisplayedImageSelection_button.findText('ESRGAN')
+        else:
+            self.ESRGAN_index = None
         # I always add GT display, and only enable it for images with GT
         self.DisplayedImageSelection_button.addItem('GT')
         self.DisplayedImageSelection_button.setEnabled(True)
@@ -227,6 +228,8 @@ class Ui_MainWindow(object):
         self.random_display_indexes = [self.DisplayedImageSelection_button.findText(str(i+1)) for i in range(self.num_random_Zs)]
         self.DisplayedImageSelection_button.addItem('Scribble')
         self.canvas.scribble_display_index = self.DisplayedImageSelection_button.findText('Scribble')
+        self.DisplayedImageSelection_button.addItem('Input')
+        self.input_display_index = self.DisplayedImageSelection_button.findText('Input')
 
         ######## Defining user input boxes:
         # Weight limiting random Z generated images, if enabled:

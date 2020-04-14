@@ -158,7 +158,7 @@ def define_D(opt,CEM=None,**kwargs):
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
     elif which_model == 'discriminator_vgg_128_SN':
         netD = arch.Discriminator_VGG_128_SN()
-    elif which_model=='DnCNN_D':
+    elif 'DnCNN_D' in which_model:
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
         assert opt_net['DCT_D']==1
@@ -172,8 +172,8 @@ def define_D(opt,CEM=None,**kwargs):
             # D_input_channels += num_latent_channels
         netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
-                          discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
-                          latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False)
+            discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
+            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='SN' in which_model)
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

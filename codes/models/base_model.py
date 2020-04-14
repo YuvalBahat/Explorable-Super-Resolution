@@ -145,7 +145,7 @@ class BaseModel():
         # num_latent_channels = self.opt['network_G']['latent_channels']
         current_keys = [k for k in current_state_dict.keys()]
         assert len(current_keys)==len([key for key in loaded_state_dict.keys()]),'Loaded model and current one should have the same number of parameters'
-        modified_key_names_counter = 0
+        modified_key_names_counter,zero_extended_weights_counter = 0,0
         for i,key in enumerate(loaded_state_dict.keys()):
             current_key = current_keys[i]
             loaded_size = loaded_state_dict[key].size()
@@ -164,12 +164,15 @@ class BaseModel():
                     current_state_dict[current_key][:,:additional_channels,:,:].view([current_state_dict[current_key].size()[0],additional_channels]+list(current_state_dict[current_key].size()[2:])).cuda(),\
                                                               loaded_state_dict[key].cuda()],1)
                 # self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
+                zero_extended_weights_counter += 1
             elif 'CEM_net' in self.__dict__ and self.CEM_arch and any([CEM_op in key for CEM_op in self.CEM_net.OP_names]):
                 continue # Not loading CEM module weights
             else:
                 modified_state_dict[current_key] = loaded_state_dict[key]
         if modified_key_names_counter>0:
             print('Warning: Modified %d key names due to the change to using ModuleLists' % (modified_key_names_counter))
+        if zero_extended_weights_counter>0:
+            print('Warning: %d model weights were augmented with zeros to accommodate for larger inputs' % (zero_extended_weights_counter))
         return modified_state_dict
 
     def plot_curves(self,steps,loss):

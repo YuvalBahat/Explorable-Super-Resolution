@@ -268,7 +268,14 @@ class SRRaGANModel(BaseModel):
         print('---------- Model initialized ------------------')
         self.print_network()
         print('-----------------------------------------------')
-    def ConcatLatent(self,LR_image,latent_input):
+
+    def Output_Batch(self,within_0_1):
+        if within_0_1:
+            return torch.clamp(self.fake_H,0,1)
+        else:
+            return self.fake_H
+
+    def Prepare_Input(self,LR_image,latent_input,**kwargs):
         if latent_input is not None:
             if LR_image.size()[2:]!=latent_input.size()[2:]:
                 latent_input = latent_input.contiguous().view([latent_input.size(0)]+[latent_input.size(1)*self.opt['scale']**2]+list(LR_image.size()[2:]))
@@ -314,7 +321,7 @@ class SRRaGANModel(BaseModel):
                 cur_Z = torch.from_numpy(cur_Z).type(self.var_L.type())
         else:
             cur_Z = None
-        self.ConcatLatent(LR_image=self.var_L,latent_input=cur_Z)
+        self.Prepare_Input(LR_image=self.var_L,latent_input=cur_Z)
         if need_GT:  # train or val
             if self.is_train and self.add_quantization_noise:
                 data['HR'] += (torch.rand_like(data['HR'])-0.5)/255 # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
@@ -363,7 +370,7 @@ class SRRaGANModel(BaseModel):
                 self.Z_optimizer.feed_data({'LR':self.var_L,'HR':self.var_H})
                 self.Z_optimizer.optimize()
             else:
-                self.ConcatLatent(LR_image=self.var_L, latent_input=static_Z)
+                self.Prepare_Input(LR_image=self.var_L, latent_input=static_Z)
                 self.fake_H = self.netG(self.model_input)
             if self.CEM_net is not None:
                 if self.decomposed_output:

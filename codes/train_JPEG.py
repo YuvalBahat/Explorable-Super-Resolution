@@ -18,6 +18,9 @@ from utils.logger import Logger, PrintLogger
 import tqdm
 from datetime import datetime
 import cv2
+import copy
+
+# USE_Y_GENERATOR_4_CHROMA = True
 
 def main():
     # options
@@ -76,7 +79,18 @@ def main():
         model = BaseModel
         model.step = 0
     else:
-        model = create_model(opt,max_accumulation_steps)
+        model = create_model(opt,max_accumulation_steps,chroma_mode=opt['name'][:len('JPEG/chroma')]=='JPEG/chroma')
+    # if model.chroma_mode:
+    #     if USE_Y_GENERATOR_4_CHROMA:
+    #         opt_Y = option.parse(parser.parse_args().opt, is_train=False,batch_size_multiplier=len(available_GPUs),name='JPEG')
+    #         opt_Y = option.dict_to_nonedict(opt_Y)  # Convert to NoneDict, which return None for missing key.
+    #         opt_Y['Y_model'] = True
+    #         # opt_Y['train']['gan_weight'] = 0 # Prevent loading or creating of D for the Y channel
+    #         # opt_Y['train']['resume'] = 0 # Loading a pre-trained model whose exact path is specified, not like loading a partially trained model by looking for the highest step num in a certain folder.
+    #         opt_Y['path']['pretrain_model_G'] = opt['path']['Y_channel_model_G']
+    #         model_Y = create_model(opt_Y)
+    #     else:
+    #         raise Exception('Unsupported currently')
 
     # create logger
     logger = Logger(opt)
@@ -177,6 +191,13 @@ def main():
                 print('-----------------------------------')
 
             # training
+            # if model.chroma_mode:
+            #     data = copy.deepcopy(train_data)
+            #     data['Uncomp'] = train_data['Uncomp'][:,0,...].unsqueeze(1)
+            #     model_Y.feed_data(data)
+            #     model_Y.test()
+            #     model.y_channel_input = model_Y.Output_Batch(within_0_1=False)
+            #     train_data['Uncomp'][:,0,...] = model.y_channel_input.squeeze(1)
             model.feed_data(train_data)
             model.optimize_parameters()
 
