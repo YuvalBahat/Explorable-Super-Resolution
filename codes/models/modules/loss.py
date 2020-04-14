@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import cv2
 from collections import deque
+from utils.util import Tensor_YCbCR2RGB
 
 EPSILON = 1e-30
 
@@ -241,11 +242,12 @@ class GANLoss(nn.Module):
 def CreateRangeLoss(legit_range,chroma_mode=False):
     dtype = torch.cuda.FloatTensor
     legit_range = torch.FloatTensor(legit_range).type(dtype)
-    ycbcr2rgb_mat = torch.from_numpy(255*np.array([[0.00456621, 0.00456621, 0.00456621], [0, -0.00153632, 0.00791071],[0.00625893, -0.00318811, 0]]).transpose()).view(1,3,3,1,1)
+    # ycbcr2rgb_mat = torch.from_numpy(255*np.array([[0.00456621, 0.00456621, 0.00456621], [0, -0.00153632, 0.00791071],[0.00625893, -0.00318811, 0]]).transpose()).view(1,3,3,1,1)
     def RangeLoss(x):
         # Returning the mean deviation from the legitimate range, across all channels and pixels:
         if chroma_mode:
-            x = (ycbcr2rgb_mat.type(x.type())*x.unsqueeze(1)).sum(2)+ torch.tensor([-222.921, 135.576, -276.836]).type(x.type()).view(1,3,1,1)/255
+            x = Tensor_YCbCR2RGB(x)
+            # x = (ycbcr2rgb_mat.type(x.type())*x.unsqueeze(1)).sum(2)+ torch.tensor([-222.921, 135.576, -276.836]).type(x.type()).view(1,3,1,1)/255
         return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
     return RangeLoss
 

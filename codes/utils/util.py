@@ -174,6 +174,13 @@ def ResizeScribbleImage(image,dsize):
         resized = np.reshape(resized,list(resized.shape[:2])+[image.shape[2]])
     return resized
 
+def Tensor_YCbCR2RGB(image):
+    ycbcr2rgb_mat = torch.from_numpy(255*np.array([[0.00456621, 0.00456621, 0.00456621], [0, -0.00153632, 0.00791071],[0.00625893, -0.00318811, 0]]).transpose()).view(1,3,3,1,1)
+    return (ycbcr2rgb_mat.type(image.type()) * image.unsqueeze(1)).sum(2) + torch.tensor([-222.921, 135.576, -276.836]).type(image.type()).view(1, 3, 1, 1) / 255
+
+def Z_64channels2image(Z):
+    return np.reshape(Z,list(Z.shape[:2])+[8,8]).transpose((0,2,1,3)).reshape(list(8*np.array(Z.shape[:2]))+[1])
+
 ####################
 # metric
 ####################

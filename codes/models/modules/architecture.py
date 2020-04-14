@@ -105,7 +105,7 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
@@ -119,6 +119,8 @@ class DnCNN(nn.Module):
             MIN_DCT_DIMS_4_D = 5
             num_padded_layers = max(0,depth-int(np.floor((expected_input_size-MIN_DCT_DIMS_4_D)/(kernel_size-1))))
             layer_num = 0
+        else:
+            spectral_norm = False
         self.chroma_generator = chroma_generator
         if chroma_generator:
             self.block_size = np.sqrt(out_nc/2)
@@ -135,12 +137,16 @@ class DnCNN(nn.Module):
             expected_input_size -= (kernel_size - 1)
             padding = 0
         layers.append(nn.Conv2d(in_channels=in_nc+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
+        if spectral_norm:
+            layers[-1] = SN.spectral_norm(layers[-1])
         layers.append(nn.ReLU(inplace=True))
         for layer_num in range(1,depth - 2+1):
             if self.discriminator_net and layer_num>=num_padded_layers:
                 expected_input_size -= (kernel_size-1)
                 padding = 0
             layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            if spectral_norm:
+                layers[-1] = SN.spectral_norm(layers[-1])
             if norm_type=='batch':
                 layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
             elif norm_type=='layer':
@@ -153,6 +159,8 @@ class DnCNN(nn.Module):
             expected_input_size -= (kernel_size - 1)
             padding = 0
         layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        if spectral_norm:
+            layers[-1] = SN.spectral_norm(layers[-1])
         if self.discriminator_net:
             layers.append(Flatten())
             layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))

@@ -328,7 +328,7 @@ class Z_optimizer():
     PATCH_SIZE_4_STD = 7
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False,jpeg_extractor=None):
-        self.data_keys = {'reconstructed':'SR','GT':'HR'} if jpeg_extractor is None else {'reconstructed':'Decomp','GT':'Uncomp'}
+        self.data_keys = {'reconstructed':'SR'} if jpeg_extractor is None else {'reconstructed':'Decomp'}
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
             if initial_Z is None:
                 initial_Z = 1*model.GetLatent()
@@ -371,8 +371,8 @@ class Z_optimizer():
             print('Initial STD: %.3e' % (self.initial_STD.mean().item()))
         if existing_optimizer is None:
             if any([phrase in objective for phrase in ['l1','scribble']]) and 'random' not in objective:
-                if data is not None and self.data_keys['GT'] in data.keys():
-                    self.GT_HR = data[self.data_keys['GT']]
+                if data is not None and 'desired' in data.keys():
+                    self.desired_im = data['desired']
                 if self.image_mask is None:
                     self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
                 else:
@@ -392,7 +392,7 @@ class Z_optimizer():
                         desired_RGB = hsv2rgb(cur_HSV)
                         desired_RGB = np.expand_dims(desired_RGB.transpose((2,0,1)),0)/255
                         desired_RGB_mask = (scribble_mask_tensor==2)+(scribble_mask_tensor==3)
-                        self.GT_HR = self.GT_HR*(1-desired_RGB_mask).float()+desired_RGB_mask.float()*torch.from_numpy(desired_RGB).type(loss_mask.dtype).to(loss_mask.device)
+                        self.desired_im = self.desired_im*(1-desired_RGB_mask).float()+desired_RGB_mask.float()*torch.from_numpy(desired_RGB).type(loss_mask.dtype).to(loss_mask.device)
                     def Scribble_Loss(produced_im,GT_im):
                         loss_per_im = []
                         for im_num in range(produced_im.size(0)):
@@ -471,7 +471,7 @@ class Z_optimizer():
                 else:
                     self.periodicity_points = [np.array(point) for point in data['periodicity_points']]
             elif 'VGG' in objective and 'random' not in objective:
-                self.GT_HR_VGG = model.netF(self.GT_HR).detach().to(self.device)
+                self.GT_HR_VGG = model.netF(self.desired_im).detach().to(self.device)
                 self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
             elif 'TV' in objective:
                 self.STD_PRESERVING_WEIGHT = 100
@@ -484,7 +484,7 @@ class Z_optimizer():
                     pre_tanh_Z = self.Z_model.Z
                     pre_tanh_Z.requires_grad = True
                     model.feed_data(self.data, need_GT=False)
-                    d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data[self.data_keys['GT']].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
+                    d_KLdiv_2_d_temperature = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['desired'].detach(),desired_hist_image_mask=data['Desired_Im_Mask'],
                                                                 input_im_HR_mask=self.image_mask,gray_scale=True,patch_size=3 if 'patch' in objective else 1,automatic_temperature=True,image_Z=pre_tanh_Z)
                     temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=0.5)
                     temperature_optimizer.zero_grad()
@@ -501,7 +501,7 @@ class Z_optimizer():
                     optimal_temperature = temperatures[np.argmin(gradient_sizes)]
                 else:
                     optimal_temperature = 5e-4 if 'hist' in objective else 1e-3
-                self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data[self.data_keys['GT']] if self.data is not None else None,
+                self.loss = SoftHistogramLoss(bins=256,min=0,max=1,desired_hist_image=self.data['desired'] if self.data is not None else None,
                     desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,input_im_HR_mask=self.image_mask,
                     gray_scale=True,patch_size=6 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective,
                     no_patch_DC='noDC' in objective,no_patch_STD='no_localSTD' in objective)
@@ -541,9 +541,9 @@ class Z_optimizer():
         self.data = data
         self.cur_iter = 0
         if 'l1' in self.objective:
-            self.GT_HR = data[self.data_keys['GT']].to(self.device)
+            self.desired_im = data['desired'].to(self.device)
         elif 'hist' in self.objective:
-            self.loss.Feed_Desired_Hist_Im(data[self.data_keys['GT']].to(self.device))
+            self.loss.Feed_Desired_Hist_Im(data['desired'].to(self.device))
 
     def Manage_Model_Grad_Requirements(self,disable):
         if disable:
@@ -578,7 +578,8 @@ class Z_optimizer():
             #     self.data['QF'] = self.jpeg_extractor.QF
             #     self.data['Uncomp'] =
             self.model.feed_data(self.data, need_GT=False)
-            self.model.fake_H = self.model.netG(self.model.model_input)
+            self.model.test(prevent_grads_calc=False)
+            # self.model.fake_H = self.model.netG(self.model.model_input)
             self.output_image = self.model.Output_Batch(within_0_1=True)
             # if self.jpeg_extractor is not None:
             #     self.model.fake_H = self.jpeg_extractor(self.model.fake_H)
@@ -600,7 +601,7 @@ class Z_optimizer():
                     Z_loss = Z_loss*self.Z_mask
                 Z_loss = -1*Z_loss.mean(dim=(1,2,3))
             elif any([phrase in self.objective for phrase in ['l1','scribble']]):
-                Z_loss = self.loss(self.output_image.to(self.device), self.GT_HR.to(self.device))
+                Z_loss = self.loss(self.output_image.to(self.device), self.desired_im.to(self.device))
             elif 'desired_SVD' in self.objective:
                 Z_loss = self.loss({'SR':self.output_image.to(self.device)}).mean()
             elif any([phrase in self.objective for phrase in ['hist','dict']]):

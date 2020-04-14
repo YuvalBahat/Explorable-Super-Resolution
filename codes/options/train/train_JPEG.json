@@ -40,7 +40,7 @@
 //    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/456439_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
-      , "pretrain_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
+//      , "pretrain_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
@@ -57,7 +57,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "DnCNN_D" //"discriminator_vgg_128_nonModified" //,"discriminator_vgg_128" //,"PatchGAN"
+    "which_model_D": "DnCNN_D" //"DnCNN_D_SN" //,"DnCNN_D" //,"PatchGAN"
     , "relativistic": 0
     , "concat_input": 1
     , "inject_Z": 0 //1
@@ -67,10 +67,8 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "num_2_strides": 5 //2
-    , "n_layers": 8
-    , "nf": 16 //64
-    , "in_nc": 1
+//    , "nf": 16 //64
+//    , "in_nc": 1
   }
 
   , "train": {
@@ -95,10 +93,10 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
+    , "D_verification": "past" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
-    , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
-    , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
+    , "min_D_prob_ratio_4_G": 0.01 //0.01 //1.05 //1.1//Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
+    , "min_mean_D_correct": 0.85 //0.85 //0.1 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.

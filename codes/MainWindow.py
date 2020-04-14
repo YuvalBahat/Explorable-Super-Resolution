@@ -228,6 +228,8 @@ class Ui_MainWindow(object):
         self.random_display_indexes = [self.DisplayedImageSelection_button.findText(str(i+1)) for i in range(self.num_random_Zs)]
         self.DisplayedImageSelection_button.addItem('Scribble')
         self.canvas.scribble_display_index = self.DisplayedImageSelection_button.findText('Scribble')
+        self.DisplayedImageSelection_button.addItem('Input')
+        self.input_display_index = self.DisplayedImageSelection_button.findText('Input')
 
         ######## Defining user input boxes:
         # Weight limiting random Z generated images, if enabled:
