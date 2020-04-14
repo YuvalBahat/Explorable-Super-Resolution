@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF10_InputConcatinitialized_optimizerD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_ZwithoutLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_ZinjectD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -38,8 +38,8 @@
 //    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/456439_G.pth"
-    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
+//    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
+    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
@@ -58,8 +58,8 @@
   , "network_D": {
     "which_model_D": "DnCNN_D" //"discriminator_vgg_128_nonModified" //,"discriminator_vgg_128" //,"PatchGAN"
     , "relativistic": 0
-    , "concat_input": 1
-    , "inject_Z": 0 //1
+    , "concat_input": 0 //1
+    , "inject_Z": 1
     , "DCT_D": 1
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
@@ -106,7 +106,7 @@
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 0 //1e-4 //0 //100
+    , "optimalZ_loss_weight": 1e-4 //0 //100
     , "range_weight": 1 //0 //5000
 
     //for wgan-gp
