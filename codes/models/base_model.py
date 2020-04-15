@@ -140,16 +140,20 @@ class BaseModel():
         network.load_state_dict(loaded_state_dict, strict=strict)
 
     def process_loaded_state_dict(self,loaded_state_dict,current_state_dict):
+        SPECTRAL_NORMALIZATIONFIX_PATCH = False
         modified_state_dict = collections.OrderedDict()
         LATENT_WEIGHTS_RELATIVE_STD = 0.
         # num_latent_channels = self.opt['network_G']['latent_channels']
         current_keys = [k for k in current_state_dict.keys()]
-        assert len(current_keys)==len([key for key in loaded_state_dict.keys()]),'Loaded model and current one should have the same number of parameters'
+        if not SPECTRAL_NORMALIZATIONFIX_PATCH:
+            assert len(current_keys)==len([key for key in loaded_state_dict.keys()]),'Loaded model and current one should have the same number of parameters'
         modified_key_names_counter,zero_extended_weights_counter = 0,0
         for i,key in enumerate(loaded_state_dict.keys()):
             current_key = current_keys[i]
             loaded_size = loaded_state_dict[key].size()
             current_size = current_state_dict[current_key].size()
+            if SPECTRAL_NORMALIZATIONFIX_PATCH and len(loaded_size)!=len(current_size):
+                continue
             if key!=current_key:
                 assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
                 modified_key_names_counter += 1

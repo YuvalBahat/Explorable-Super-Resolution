@@ -381,7 +381,7 @@ class DecompCNNModel(BaseModel):
                 else:
                     static_Z = None
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'Comp':self.var_Comp,'Uncomp':self.var_Uncomp,'QF':self.QF})
+                self.Z_optimizer.feed_data({'Comp':self.var_Comp,'desired':self.var_Uncomp/255,'QF':self.QF})
                 self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
@@ -891,6 +891,7 @@ class DecompCNNModel(BaseModel):
                     model_name = str(loaded_model_step)+'_D.pth'
                     print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                     self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD,optimizer=self.optimizer_D)
+                    # self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD)
             else:
                 print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
