@@ -164,6 +164,8 @@ class DnCNN(nn.Module):
         if self.discriminator_net:
             layers.append(Flatten())
             layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
+            if spectral_norm:
+                layers[-1] = SN.spectral_norm(layers[-1])
             # layers.append(nn.Linear(in_features=64, out_features=1))
         layers.append(nn.Sigmoid())
         if False and self.discriminator_net:
