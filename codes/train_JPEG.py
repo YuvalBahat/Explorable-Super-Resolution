@@ -173,8 +173,8 @@ def main():
                     for cur_Z in Z_latent:
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,
                                                  save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp)
-                        if save_GT_Uncomp:  # Save GT Uncomp images
-                            save_GT_Uncomp = False
+                    if save_GT_Uncomp:  # Save GT Uncomp images
+                        save_GT_Uncomp = False
                     print_rlt['psnr'] /= len(Z_latent)
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
                 else:

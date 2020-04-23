@@ -578,7 +578,7 @@ class Z_optimizer():
             #     self.data['QF'] = self.jpeg_extractor.QF
             #     self.data['Uncomp'] =
             self.model.feed_data(self.data, need_GT=False)
-            self.model.test(prevent_grads_calc=False)
+            self.model.test(prevent_grads_calc=False,chroma_input=self.data['chroma_input'] if self.jpeg_extractor is not None else None)
             # self.model.fake_H = self.model.netG(self.model.model_input)
             self.output_image = self.model.Output_Batch(within_0_1=True)
             # if self.jpeg_extractor is not None:

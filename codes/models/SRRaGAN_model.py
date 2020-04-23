@@ -606,13 +606,14 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
-    def test(self,prevent_grads_calc=True):
+    def test(self,prevent_grads_calc=True,**kwargs):
         self.netG.eval()
         if prevent_grads_calc:
             with torch.no_grad():
                 self.fake_H = self.netG(self.model_input)
         else:
             self.fake_H = self.netG(self.model_input)
+        self.output_image = 1*self.fake_H
         self.netG.train()
 
     def perform_validation(self,data_loader,cur_Z,print_rlt,save_GT_HR,save_images):
