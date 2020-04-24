@@ -1,7 +1,8 @@
 {
 //  "name": "nf160nb10_QF10_initializedInputConcatD_noRefLoss_DCT_StructTensorZloss",
 //  "name": "nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss",
-  "name": "nf160nb10_QF10_DinputConcat_Verif0_85correct_noRefLoss_DCT",
+//  "name": "nf160nb10_QF10_DinputConcat_Verif0_85correct_noRefLoss_DCT",
+  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_ZwithoutLoss",
   "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -19,8 +20,8 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
-    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss/models/112726_G.pth"
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_InputConcatinitialized_optimizerD_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_ZwithoutLoss/models/1016501_G.pth"
+//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_InputConcatDratio5_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss/models/112726_G.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMapLoss/models/576521_G.pth"
   }
 
   , "network_G": {

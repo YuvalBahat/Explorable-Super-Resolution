@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 from collections import deque
 from utils.util import Tensor_YCbCR2RGB
+import re
 
 EPSILON = 1e-30
 
@@ -18,7 +19,10 @@ def Latent_channels_desc_2_num_channels(latent_channels_desc):
     elif latent_channels_desc == 'STD_1dir':  # Channel 0 controls STD, channel 1 controls horizontal Sobel
         return 2
     elif latent_channels_desc=='STD_directional' or 'structure_tensor' in latent_channels_desc:
-        return 3
+        if re.search('(\d)+',latent_channels_desc) is not None:
+            return int(re.search('(\d)+',latent_channels_desc).group(0))
+        else:
+            return 3
 
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None,task='SR',gray_scale=False):

@@ -16,6 +16,7 @@ from JPEG_module.JPEG import JPEG
 import tqdm
 from utils import util
 import cv2
+from data.util import rgb2ycbcr
 
 USE_Y_GENERATOR_4_CHROMA = True
 
@@ -34,6 +35,8 @@ class DecompCNNModel(BaseModel):
         self.optimalZ_loss_type = None
         self.generator_started_learning = False #I'm adding this flag to avoid wasting time optimizing over the Z space when D is still in its early learning phase. I don't change it when resuming training of a saved model - it would change by itself after 1 generator step.
         self.num_latent_channels = FilterLoss(latent_channels=opt['network_G']['latent_channels']).num_channels
+        if isinstance(opt['network_G']['latent_channels'],str):
+            opt['network_G']['latent_channels'] = opt['network_G']['latent_channels'].replace('_%d'%(self.num_latent_channels),'')
         if self.latent_input is not None:
             if self.is_train:
                 # Loss encouraging effect of Z:
@@ -268,6 +271,50 @@ class DecompCNNModel(BaseModel):
         #     latent = latent.view([latent.size(0)]+[self.num_latent_channels]+[self.opt['scale']*val for val in list(latent.size()[2:])])
         return latent
 
+    def Repeat_Z_3_channels(self,input_Z):
+        if self.num_latent_channels>3:
+            return torch.cat([input_Z.repeat([1, self.num_latent_channels // 3, 1, 1]), input_Z[:, :self.num_latent_channels % 3, ...]], 1)
+        else:
+            return input_Z
+
+    def Z_2_three_channels(self,multi_channel_Z):
+        if self.num_latent_channels > 3:
+            ndims = multi_channel_Z.dim()
+            if ndims==3:
+                multi_channel_Z = multi_channel_Z.unsqueeze(0)
+            input_Z_size = np.array(multi_channel_Z.size())
+            multi_channel_Z = 1*nn.functional.pad(multi_channel_Z,(0,0,0,0,0,int(np.ceil(input_Z_size[1]/3)*3-input_Z_size[1])))
+            multi_channel_Z = multi_channel_Z.view(input_Z_size[0],-1,3,input_Z_size[2],input_Z_size[3])
+            num_repeats = input_Z_size[1]//3
+            per_channel_normalizer = num_repeats+((input_Z_size[1]/3-num_repeats)*torch.tensor([3.,2.,1.])>=1)
+            t_2_return = multi_channel_Z.sum(1)/per_channel_normalizer.view(1,3,1,1).type(multi_channel_Z.type())
+            if ndims==3:
+                t_2_return = t_2_return.squeeze(0)
+            return t_2_return
+        else:
+            return multi_channel_Z
+
+    def Enforce_pair_Consistency(self,compressed_im,desired_im):
+        def im_2_tensor(im):
+            return torch.from_numpy(rgb2ycbcr(255*im,only_y=False).transpose((2,0,1))).unsqueeze(0)
+        compressed_im,desired_im = im_2_tensor(compressed_im),im_2_tensor(desired_im)
+        compressed_Y_DCT = self.jpeg_compressor_Y(compressed_im[:,0,...].unsqueeze(1))
+        def Consistent_Correction(desired_coeffs,constraining_coeffs):
+            return torch.clamp(desired_coeffs-constraining_coeffs,-0.5,0.5)+constraining_coeffs
+        Y = Consistent_Correction(self.jpeg_compressor_Y_non_quantized(desired_im[:,0,...].unsqueeze(1)),compressed_Y_DCT)
+        # Y = torch.clamp(self.jpeg_compressor_Y_non_quantized(desired_im[:,0,...].unsqueeze(1))-compressed_Y_DCT,-0.5,0.5)+compressed_Y_DCT
+        Y = self.jpeg_extractor_Y(Y)
+        compressed_chroma_DCT = self.jpeg_compressor(compressed_im)
+        num_coeffs = self.jpeg_compressor.block_size
+        chroma = self.jpeg_compressor_non_quantized(desired_im).view(1,3,num_coeffs//8,8,num_coeffs//8,8,compressed_chroma_DCT.size(2),compressed_chroma_DCT.size(3))
+        chroma[0, 1, 0, :, 0, ...] = Consistent_Correction(chroma[0, 1, 0, :, 0, ...],
+            compressed_chroma_DCT[0, num_coeffs ** 2:num_coeffs ** 2 + 8 ** 2,...].view(8, 8, compressed_chroma_DCT.size(2),compressed_chroma_DCT.size(3)))
+        chroma[0, 2, 0, :, 0, ...] = Consistent_Correction(chroma[0, 2, 0, :, 0, ...],
+            compressed_chroma_DCT[0, num_coeffs ** 2+ 8 ** 2:num_coeffs ** 2 + 2*(8 ** 2),...].view(8, 8, compressed_chroma_DCT.size(2),compressed_chroma_DCT.size(3)))
+        chroma = chroma.view(1,3*num_coeffs**2,compressed_chroma_DCT.size(2),compressed_chroma_DCT.size(3))
+        chroma = self.jpeg_extractor(chroma[:,num_coeffs**2:,...])
+        return torch.clamp(util.Tensor_YCbCR2RGB(torch.cat([Y,chroma],1))/255,0,1)[0].data.cpu().numpy().transpose((1,2,0))
+
     def feed_data(self, data, need_GT=True):
         self.QF = data['QF']
         self.jpeg_compressor.Set_QF(self.QF)
@@ -285,9 +332,12 @@ class DecompCNNModel(BaseModel):
                 cur_Z = torch.rand([input_size[0], self.num_latent_channels, 1, 1])
                 # cur_Z = torch.rand([self.var_Comp.size(dim=0), self.num_latent_channels, 1, 1])
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
+                    cur_Z = cur_Z[:,:3,...]
                     cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
                     self.SVD = {'theta':cur_Z[:,-1,...],'lambda0_ratio':1*cur_Z[:,0,...],'lambda1_ratio':1*cur_Z[:,1,...]}
                     cur_Z = SVD_2_LatentZ(cur_Z).detach()
+                    cur_Z =self.Repeat_Z_3_channels(cur_Z)
+                    # cur_Z = torch.cat([cur_Z.repeat([1,self.num_latent_channels//3,1,1]),cur_Z[:,:self.num_latent_channels%3,...]],1)
                 else:
                     cur_Z = 2*cur_Z-1
 
@@ -381,7 +431,8 @@ class DecompCNNModel(BaseModel):
                 else:
                     static_Z = None
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'Comp':self.var_Comp,'desired':self.var_Uncomp/255,'QF':self.QF})
+                self.Z_optimizer.feed_data({'Comp':self.var_Comp,'desired':self.var_Uncomp/255,'QF':self.QF,
+                    'chroma_input':'fix_this' if self.chroma_mode else None})
                 self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
@@ -465,9 +516,10 @@ class DecompCNNModel(BaseModel):
                                         self.generator_step = False
                                     if self.D_verification=='initial' and self.generator_step:
                                         self.D_verified = True
+                                        self.save(self.gradient_step_num,first_verified_D=True)#D was approved in the current step
                                     elif self.D_verification=='initial_gradual':
                                         GRAD_WIN_LENGTH_FACTOR = 100
-                                        # if len(self.log_dict['D_logits_diff'])>= GRAD_WIN_LENGTH_FACTOR*self.opt['train']['D_valid_Steps_4_G_update']:
+                                        # Not saving D's state when D is verified because here this happens only after G had changed from its original state, so I cannot use this D for other models of G
                                         if len(self.log_dict['l_g_gan'])>=GRAD_WIN_LENGTH_FACTOR:
                                             self.D_verified = \
                                                 np.mean([val[1] for val in
@@ -476,8 +528,6 @@ class DecompCNNModel(BaseModel):
                                                 np.mean([val[1] for val in
                                                  self.log_dict['Correctly_distinguished'][-(GRAD_WIN_LENGTH_FACTOR * self.opt['train']['D_valid_Steps_4_G_update']):]])\
                                                 > self.opt['train']['min_mean_D_correct']
-                                    if self.D_verified: #D was approved in the current step:
-                                        self.save(self.gradient_step_num,first_verified_D=True)
                             elif self.D_verification=='convergence':
                                 if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
                                     std, slope = 0, 0
@@ -592,7 +642,8 @@ class DecompCNNModel(BaseModel):
                     if self.cri_range:
                         self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
                     if self.cri_latent:
-                        for channel_num in range(self.num_latent_channels):
+                        for channel_num in range(3):
+                        # for channel_num in range(self.num_latent_channels):
                             self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
@@ -601,19 +652,17 @@ class DecompCNNModel(BaseModel):
         self.step += 1
 
     def test_Y(self,detach=False):
-        self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input))
+        self.y_channel_input = torch.clamp(self.jpeg_extractor_Y(self.netG_Y(self.model_input)),0,255)
         if detach:
             self.y_channel_input = self.y_channel_input.detach()
 
-    def test_(self):
+    def test_(self,chroma_input=None):
         self.netG.eval()
-        if self.chroma_mode:
+        # if self.chroma_mode and not Y_already_computed:
+        if chroma_input is not None:
             self.test_Y()
-            # self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input))
-            chroma_input = 1*self.chroma_input
             if chroma_input.size(0)!=self.y_channel_input.size(0):
                 chroma_input = chroma_input.repeat([self.y_channel_input.size(0)]+[1]*(chroma_input.ndimension()-1))
-            # chroma_model_comp = self.jpeg_compressor(torch.cat([self.y_channel_input,chroma_input],1))
             self.Prepare_Input(torch.cat([self.y_channel_input,chroma_input],1),self.GetLatent())
         self.fake_H = self.netG(self.model_input)
         self.output_image = self.jpeg_extractor(self.fake_H)
@@ -632,25 +681,12 @@ class DecompCNNModel(BaseModel):
         else:
             return self.jpeg_extractor(self.jpeg_compressor(uncompressed))
 
-    def test(self,prevent_grads_calc=True):
-        # self.netG.eval()
+    def test(self,prevent_grads_calc=True,**kwargs):
         if prevent_grads_calc:
             with torch.no_grad():
-                self.test_()
-                # self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
-                # if self.chroma_mode:
-                #     self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input))
-                #     chroma_model_comp = self.jpeg_compressor(torch.cat([self.y_channel_input,self.chroma_input],1))
-                #     self.Prepare_Input(chroma_model_comp,self.GetLatent())
-                # self.fake_H = self.netG(self.model_input)
+                self.test_(**kwargs)
         else:
-            self.test_()
-            # self.fake_H = self.jpeg_extractor(self.netG(self.model_input))
-            # self.fake_H = self.netG(self.model_input)
-        # self.output_image = self.jpeg_extractor(self.fake_H)
-        # if self.chroma_mode:
-        #     self.output_image = torch.cat([self.y_channel_input,self.output_image],1)
-        # self.netG.train()
+            self.test_(**kwargs)
 
     def perform_validation(self,data_loader,cur_Z,print_rlt,GT_and_quantized,save_images,collect_avg_err_est=True):
         SAVE_IMAGE_COLLAGE = True
@@ -676,6 +712,7 @@ class DecompCNNModel(BaseModel):
             val_data['Z'] = cur_Z
             self.feed_data(val_data)
             self.test()
+            # self.test(Y_already_computed=True) # I pass Y_already_computed because Y was computed inside feed_data, and self.model_input now comprises the computed Y generator output.
             visuals = self.get_current_visuals()
             sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
             gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
@@ -725,11 +762,12 @@ class DecompCNNModel(BaseModel):
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
             util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
             if GT_and_quantized:  # Save GT Uncomp images
-                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))
+                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
+                              os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))
                 avg_quantized_psnr = 1 * np.mean(avg_quantized_psnr)
                 print_rlt['psnr_baseline'] = avg_quantized_psnr
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in quantized_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']),
-                                           'Quantized_PSNR{:.3f}.png'.format(avg_quantized_psnr)))
+                       'Quantized_{}_PSNR{:.3f}.png'.format(('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '',avg_quantized_psnr)))
                 self.log_dict['psnr_val_baseline'] = [(self.gradient_step_num, print_rlt['psnr_baseline'])]
 
         print_rlt['psnr'] += avg_psnr

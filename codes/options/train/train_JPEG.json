@@ -74,7 +74,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume":0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
