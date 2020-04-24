@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF10_InputConcatD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF5_50_InputConcatD_SN_VerifInit1_1DGprobRatio_noRefLoss_DCT_Renamed200419-163528" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -10,7 +10,7 @@
     "train": {
       "name": "DIV2K"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 10 //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70] //10
       , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_sub_GrayScale.lmdb"
       , "subset_file": null
       , "use_shuffle": true
@@ -25,7 +25,7 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 10 //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "Set14/Set14_GrayScale" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
@@ -34,20 +34,20 @@
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
-    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
+//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
+    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
 //    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrain_model_G": "../experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_Dverific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/456439_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
-//      , "pretrain_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
+//    , "pretrain_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
-    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
     , "latent_channels": 64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
@@ -74,12 +74,11 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":1
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4 //1e-5
-    , "lr_E": 1e-4
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.9
@@ -95,7 +94,7 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
+    , "D_verification": "initial" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
@@ -103,11 +102,11 @@
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 0 //1e-3 //1e-2
+    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 1e-4 //0 //100
+    , "optimalZ_loss_weight": 0 //1e-4 //0 //100
     , "range_weight": 1 //0 //5000
 
     //for wgan-gp
