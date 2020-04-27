@@ -1032,6 +1032,7 @@ class Canvas(QLabel):
         rescaled_cropped_desired_image = zero_pad_desired_array(rescaled_cropped_desired_image,mode='edge' if IGNORE_DESIRED_MASK_4_COMBINATION else 'constant')
         rescaled_cropped_desired_image_mask = zero_pad_desired_array(rescaled_cropped_desired_image_mask)
         if self.JPEG_GUI:
+            # For JPEG, setting the imprinted image to the existing one everywhere outside the mask. This is because consistency is enforced during imprinting itself, and I only want the desired image where the mask is non-zero, so no point of using it outside the mask too.
             rescaled_cropped_desired_image = rescaled_cropped_desired_image*rescaled_cropped_desired_image_mask+\
                 (1-rescaled_cropped_desired_image_mask)*relevant_existing_scribble_image
         if not IGNORE_DESIRED_MASK_4_COMBINATION:
