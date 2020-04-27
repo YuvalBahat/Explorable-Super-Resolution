@@ -190,14 +190,6 @@ def main():
                 logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
                 print('-----------------------------------')
 
-            # training
-            # if model.chroma_mode:
-            #     data = copy.deepcopy(train_data)
-            #     data['Uncomp'] = train_data['Uncomp'][:,0,...].unsqueeze(1)
-            #     model_Y.feed_data(data)
-            #     model_Y.test()
-            #     model.y_channel_input = model_Y.Output_Batch(within_0_1=False)
-            #     train_data['Uncomp'][:,0,...] = model.y_channel_input.squeeze(1)
             model.feed_data(train_data)
             model.optimize_parameters()
 

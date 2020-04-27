@@ -42,7 +42,7 @@ class DecompCNNModel(BaseModel):
                 # Loss encouraging effect of Z:
                 self.l_latent_w = train_opt['latent_weight']
                 if train_opt['latent_weight']>0 or self.debug:
-                    self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'],task='JPEG',gray_scale=True)
+                    self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'],task='JPEG',gray_scale=not self.chroma_mode)
             else:
                 assert isinstance(opt['network_G']['latent_channels'],int)
         # define networks and load pretrained models
@@ -302,7 +302,6 @@ class DecompCNNModel(BaseModel):
         def Consistent_Correction(desired_coeffs,constraining_coeffs):
             return torch.clamp(desired_coeffs-constraining_coeffs,-0.5,0.5)+constraining_coeffs
         Y = Consistent_Correction(self.jpeg_compressor_Y_non_quantized(desired_im[:,0,...].unsqueeze(1)),compressed_Y_DCT)
-        # Y = torch.clamp(self.jpeg_compressor_Y_non_quantized(desired_im[:,0,...].unsqueeze(1))-compressed_Y_DCT,-0.5,0.5)+compressed_Y_DCT
         Y = self.jpeg_extractor_Y(Y)
         compressed_chroma_DCT = self.jpeg_compressor(compressed_im)
         num_coeffs = self.jpeg_compressor.block_size
@@ -315,14 +314,14 @@ class DecompCNNModel(BaseModel):
         chroma = self.jpeg_extractor(chroma[:,num_coeffs**2:,...])
         return torch.clamp(util.Tensor_YCbCR2RGB(torch.cat([Y,chroma],1))/255,0,1)[0].data.cpu().numpy().transpose((1,2,0))
 
-    def feed_data(self, data, need_GT=True):
+    def feed_data(self, data, need_GT=True,detach_Y=True):
         self.QF = data['QF']
         self.jpeg_compressor.Set_QF(self.QF)
         self.jpeg_extractor.Set_QF(self.QF)
         if self.DCT_discriminator:
             self.jpeg_non_quantized_compressor.Set_QF(self.QF)
         if self.latent_input is not None:
-            input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else np.array(data['Comp'].size())
+            input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else 8*np.array(data['Comp'].size())
             DCT_dims = list(input_size[2:]//8)
             # DCT_dims = list(np.array(self.var_Comp.size())[2:]) # Spatial dimensions of the latent channel correspond to those of the Y channel DCT coefficients.
             # Z is downsampled for the chroma channels generator
@@ -330,14 +329,12 @@ class DecompCNNModel(BaseModel):
                 cur_Z = data['Z']
             else:
                 cur_Z = torch.rand([input_size[0], self.num_latent_channels, 1, 1])
-                # cur_Z = torch.rand([self.var_Comp.size(dim=0), self.num_latent_channels, 1, 1])
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
                     cur_Z = cur_Z[:,:3,...]
                     cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
                     self.SVD = {'theta':cur_Z[:,-1,...],'lambda0_ratio':1*cur_Z[:,0,...],'lambda1_ratio':1*cur_Z[:,1,...]}
                     cur_Z = SVD_2_LatentZ(cur_Z).detach()
                     cur_Z =self.Repeat_Z_3_channels(cur_Z)
-                    # cur_Z = torch.cat([cur_Z.repeat([1,self.num_latent_channels//3,1,1]),cur_Z[:,:self.num_latent_channels%3,...]],1)
                 else:
                     cur_Z = 2*cur_Z-1
 
@@ -349,18 +346,6 @@ class DecompCNNModel(BaseModel):
                 cur_Z = torch.from_numpy(cur_Z)#.type(self.var_Comp.type())
         else:
             cur_Z = None
-        # if self.chroma_mode:
-        #     if USE_Y_GENERATOR_4_CHROMA:
-        #         self.jpeg_compressor_Y.Set_QF(self.QF)
-        #         self.jpeg_extractor_Y.Set_QF(self.QF)
-        #         self.var_Comp_Y = self.jpeg_compressor_Y(data['Uncomp'][:,0,...].unsqueeze(1).to(self.device))
-        #         self.Prepare_Input(Comp_image=self.var_Comp_Y, latent_input=cur_Z)
-        #         self.y_channel_input = self.jpeg_extractor_Y(self.netG_Y(self.model_input)).detach().clamp(0.,255.)
-        #         self.var_Comp = self.jpeg_compressor(torch.cat([self.y_channel_input,data['Uncomp'][:,1:,...].type(self.y_channel_input.type())],1))
-        #     else:
-        #         self.y_channel_input = data['Uncomp'][:,0,...].unsqueeze(1).to(self.device)
-        # if not self.chroma_mode or not USE_Y_GENERATOR_4_CHROMA:
-        #     self.var_Comp = self.jpeg_compressor(data['Uncomp'].to(self.device))
         if 'Comp' in data.keys():
             self.var_Comp = data['Comp']
             self.Prepare_Input(self.var_Comp, latent_input=cur_Z,compressed_input=True)
@@ -369,11 +354,9 @@ class DecompCNNModel(BaseModel):
                 self.jpeg_compressor_Y.Set_QF(self.QF)
                 self.jpeg_extractor_Y.Set_QF(self.QF)
                 self.Prepare_Input(data['Uncomp'][:,0,...].unsqueeze(1),cur_Z)
-                self.test_Y(detach=True)
+                self.test_Y(detach=detach_Y) # Use detach_Y=False here when, e.g., computing gradients with respect to Z, which should take into account the path going through netG_Y as well, so it should not be detached.
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
-            # self.var_Comp = self.jpeg_compressor(data['Uncomp'].to(self.device))
             self.Prepare_Input(data['Uncomp'],latent_input=cur_Z)
-        # self.Prepare_Input(Comp_image=self.var_Comp,latent_input=cur_Z)
         if need_GT:  # train or val
             self.var_Uncomp = data['Uncomp'].to(self.device)
             input_ref = data['ref'] if 'ref' in data else data['Uncomp']
@@ -431,8 +414,7 @@ class DecompCNNModel(BaseModel):
                 else:
                     static_Z = None
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'Comp':self.var_Comp,'desired':self.var_Uncomp/255,'QF':self.QF,
-                    'chroma_input':'fix_this' if self.chroma_mode else None})
+                self.Z_optimizer.feed_data({'Uncomp':self.var_Uncomp,'desired':self.var_Uncomp/255,'QF':self.QF})
                 self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)

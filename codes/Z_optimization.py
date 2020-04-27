@@ -557,12 +557,18 @@ class Z_optimizer():
 
     def optimize(self):
         if 'Adversarial' in self.objective:
-            self.model.netG.train(True) # Preventing image padding in the DTE code, to have the output fitD's input size
+            self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
         self.Manage_Model_Grad_Requirements(disable=True)
         self.loss_values = []
         if self.random_Z_inits and self.cur_iter==0:
             self.Z_model.Randomize_Z(what_2_shuffle=self.random_Z_inits)
         z_iter = self.cur_iter
+        if 'Uncomp' in self.data.keys():
+            # This is to prevent the error "Trying to backward through the graph a second time, but the buffers have already been freed...".
+            # I suspect it happens here because I change two portions of self.data['Uncomp'] at two different points in the optimization (Y and chroma channels), so at no point
+            # does self.data['Uncomp'] get completely overridden, and therefore the optimizer "thinks" it need to use self.data['Uncomp'] in consecutive backward() steps. I solve it by
+            # explicitly initializing self.data['Uncomp'] to its original value before each iteration.
+            Uncomp_batch = 1*self.data['Uncomp']
         while True:
             if self.max_iters>0:
                 if z_iter==(self.cur_iter+self.max_iters):
@@ -574,15 +580,11 @@ class Z_optimizer():
                     break
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
-            # if self.jpeg_extractor is not None:
-            #     self.data['QF'] = self.jpeg_extractor.QF
-            #     self.data['Uncomp'] =
-            self.model.feed_data(self.data, need_GT=False)
-            self.model.test(prevent_grads_calc=False,chroma_input=self.data['chroma_input'] if self.jpeg_extractor is not None else None)
-            # self.model.fake_H = self.model.netG(self.model.model_input)
+            if self.model_training and 'Uncomp' in self.data.keys():
+                self.data['Uncomp'] = 1*Uncomp_batch
+            self.model.feed_data(self.data, need_GT=False,detach_Y=False)
+            self.model.test(prevent_grads_calc=False,chroma_input=self.data['chroma_input'] if 'chroma_input' in self.data.keys() else None)
             self.output_image = self.model.Output_Batch(within_0_1=True)
-            # if self.jpeg_extractor is not None:
-            #     self.model.fake_H = self.jpeg_extractor(self.model.fake_H)
             if self.model_training:
                 self.output_image = self.HR_unpadder(self.output_image)
             if 'random' in self.objective:
@@ -631,7 +633,6 @@ class Z_optimizer():
                 Z_loss = self.loss(self.model.netF(self.output_image).to(self.device),self.GT_HR_VGG)
             if 'max' in self.objective:
                 Z_loss = -1*Z_loss
-            # Z_loss.backward(retain_graph=(self.HR_unpadder is not None))
             cur_LR = self.optimizer.param_groups[0]['lr']
             if self.loggers is not None:
                 for logger_num,logger in enumerate(self.loggers):
@@ -660,6 +661,8 @@ class Z_optimizer():
         self.Manage_Model_Grad_Requirements(disable=False)
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
+            if 'Uncomp' in self.data.keys():
+                self.data['Uncomp'] = 1 * Uncomp_batch
             self.model.feed_data(self.data, need_GT=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
         return Z_2_return
