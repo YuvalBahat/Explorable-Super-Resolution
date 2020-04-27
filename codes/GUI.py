@@ -787,6 +787,7 @@ class Canvas(QLabel):
         self.finalize_imprinting(e,transparent_mask=self.special_behavior_button.isChecked())
 
     def FindOptimalImprintingLocation(self,desired_mask_bounding_rect):
+        # For SR imprinting:
         NUM_BEST_2_KEEP = 4
         NUM_SAMPLES_IN_RANGE = 10*NUM_BEST_2_KEEP
         def crop_LR_im(cropping_location):
@@ -859,10 +860,65 @@ class Canvas(QLabel):
         self.target_imprinting_dimensions = np.array([np.abs(best_location[2] - best_location[0]) + 1, np.abs(best_location[3] - best_location[1]) + 1])
         self.top_left_corner = np.array([np.minimum(best_location[2], best_location[0]), np.minimum(best_location[3], best_location[1])])
 
+    def Find_Optimal_Desired_Imprint_Mask(self,desired_mask_bounding_rect,target_region,padding):
+        # For JPEG imprinting:
+        SEARCH_IN_GRAYSCALE = True
+        full_desired = 255*self.desired_image[0]
+        if SEARCH_IN_GRAYSCALE:
+            full_desired = rgb2ycbcr(full_desired)
+            target_region = rgb2ycbcr(1*target_region)
+        def crop_padding(array):
+            return np.pad(array, (tuple(padding[0]), tuple(padding[1]))) if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)))
+
+        target_coeffs = self.SR_model.jpeg_compressor_Y(torch.from_numpy(target_region).unsqueeze(0).unsqueeze(0))
+        optional_rects = [desired_mask_bounding_rect]
+        offset_grids = [[i for i in range(-7,9,3)],[-1,0,1]]
+        self.statusBar.showMessage('Automatically fine-tuning desired imprint borders...')
+        for scale_num in range(len(offset_grids)):
+            def return_optional_coords(rect_coord):
+                optional_coords = [[]]
+                if rect_coord.size>1:
+                    optional_coords = return_optional_coords(rect_coord[1:])
+                return [[rect_coord[0]+i]+suffix for i in offset_grids[scale_num] for suffix in optional_coords]
+            optional_desired_im_rect_coords = [return_optional_coords(rect) for rect in optional_rects]
+            optional_desired_im_rect_coords = [np.array(coords_) for coords in optional_desired_im_rect_coords for coords_ in coords]
+            optional_desired_im_rect_coords = \
+                [coords for coords in optional_desired_im_rect_coords if (np.all(coords[:2]>=0) and np.all(coords[2:]-1<=full_desired.shape[:2]))]
+            optional_crops = [util.crop_nd_array(full_desired,coords) for coords in optional_desired_im_rect_coords]
+            optional_masks = [util.crop_nd_array(self.desired_im_HR_mask_4_imprinting,coords) for coords in optional_desired_im_rect_coords]
+            optional_imprints = []
+            for option_num in range(len(optional_crops)):
+                crop = crop_padding(util.ResizeScribbleImage(optional_crops[option_num],dsize=tuple(self.target_imprinting_dimensions)))
+                mask = crop_padding(util.ResizeCategorialImage(optional_masks[option_num].astype(np.uint8),dsize=tuple(self.target_imprinting_dimensions)))
+                if not SEARCH_IN_GRAYSCALE:
+                    mask = np.expand_dims(mask,-1)
+                optional_imprints.append(crop*mask+target_region*(1-mask))
+            calc_batches = 1
+            success = False
+            while not success: #Dealing with limited memory resources when calculating DCT coefficients of all possible imprints:
+                optional_coeffs = []
+                b_size = int(np.ceil(len(optional_imprints)/calc_batches))
+                try:
+                    for b_num in range(calc_batches):
+                        optional_coeffs.append(self.SR_model.jpeg_compressor_Y_non_quantized(torch.from_numpy(np.stack(optional_imprints[b_num*b_size:(b_num+1)*b_size],0)).unsqueeze(1).to(self.SR_model.jpeg_compressor_Y.device)))
+                    success = True
+                except:
+                    calc_batches += 1
+                    if calc_batches>50:
+                        raise Exception('Too many attempts, check what''s the problem.')
+            optional_coeffs = torch.cat(optional_coeffs,0)
+            best_coords_num = torch.max(torch.tensor(0).type(target_coeffs.type()),(optional_coeffs-target_coeffs).abs()-0.5).sum(-1).sum(-1).sum(-1).argsort()
+            if scale_num==0:
+                optional_rects = [optional_desired_im_rect_coords[i.item()] for i in best_coords_num[:10]]
+            else:
+                self.statusBar.showMessage('Done fine-tuning desired imprint borders.',INFO_MESSAGE_DURATION)
+                return optional_desired_im_rect_coords[best_coords_num[0]]
+
     def finalize_imprinting(self, e=None,transparent_mask=False,modification=None):
         EXPLORE_SHIFTS = False
         SIZE_MODIFICATION_STEP_SIZE = 1*self.display_zoom_factor  # if ALLOW_LR_SUBPIXEL_TARGET_SIZES else self.opt['scale']*self.display_zoom_factor
         explore_shifts = EXPLORE_SHIFTS and modification is None
+        auto_location_press = self.imprinting_location_boundaries is not None
         desired_mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.desired_image_HR_mask_vertices], 1).transpose()))
         if self.last_pos and e is not None:
             # Clear up indicator.
@@ -873,9 +929,15 @@ class Canvas(QLabel):
             e_y, e_x,origin_y,origin_x = convert_2_saved_im_size(e_y),convert_2_saved_im_size(e_x),convert_2_saved_im_size(origin_y),convert_2_saved_im_size(origin_x)
             self.target_imprinting_dimensions = np.array([np.abs(e_y-origin_y)+1,np.abs(e_x-origin_x)+1])
             self.top_left_corner = np.array([np.minimum(e_y,origin_y),np.minimum(e_x,origin_x)])
+            # Handling the case of out-of-canvas top left corner:
+            self.target_imprinting_dimensions -= np.maximum(0,-1*self.top_left_corner)
+            self.top_left_corner = np.maximum(0,self.top_left_corner)
+            #     Handling the case of out-of-canvas bottom-right corner:
+            self.target_imprinting_dimensions = np.minimum(self.target_imprinting_dimensions,self.HR_size-self.top_left_corner)
         if modification is None:
-            if not (self.last_pos and e is not None) or np.any(self.target_imprinting_dimensions<self.opt['scale']): #target dimensions are smaller than 2 pixels in the LR image::
-                if self.desired_im_taken_from_same and self.imprinting_location_boundaries is None:  # If the desired image was taken from the one being edited, this means we want to place the desired image at its original location.
+            if not (self.JPEG_GUI and auto_location_press) and (not (self.last_pos and e is not None) or np.any(self.target_imprinting_dimensions<self.opt['scale'])): #target dimensions are smaller than 2 pixels in the LR image::
+                if self.desired_im_taken_from_same and not auto_location_press:
+                    # If the desired image was taken from the one being edited, this means we want to place the desired image at its original location, to allow subtle region shifting.
                     self.top_left_corner = desired_mask_bounding_rect[:2][::-1]
                     self.target_imprinting_dimensions = desired_mask_bounding_rect[2:][::-1]
                 else:  # Otherwise, this was pressed by mistake.
@@ -890,10 +952,11 @@ class Canvas(QLabel):
                 def mask_negation(mask):
                     return (-1 * (mask.astype(np.float32) - 1)).astype(mask.dtype)
                 self.desired_im_HR_mask_4_imprinting = np.logical_and(self.desired_im_HR_mask_4_imprinting,mask_negation(transparency_mask)).astype(self.desired_im_HR_mask_4_imprinting.dtype)
-            if self.imprinting_location_boundaries is not None:
+            if auto_location_press:
                 if self.JPEG_GUI:#Temporary - the auto-location button is used for imprinting into the entire image, in the JPEG configuration:
-                    self.top_left_corner = np.array([0,0])
-                    self.target_imprinting_dimensions = np.array(self.HR_size)
+                    pass
+                    # self.top_left_corner = np.array([0,0])
+                    # self.target_imprinting_dimensions = np.array(self.HR_size)
                 else:
                     self.imprinting_location_boundaries.append((origin_y, origin_x, e_y, e_x))
                     if len(self.imprinting_location_boundaries) == 1:
@@ -942,27 +1005,36 @@ class Canvas(QLabel):
             extended_dimensions += (self.opt['scale']*(extended_dimensions-self.target_imprinting_dimensions-target_im_pad_sizes<0)).astype(extended_dimensions.dtype)
         else:
             target_im_pad_sizes = (extended_dimensions - self.target_imprinting_dimensions) // 2
+            # Here there is an issue when the target region is very close to canvas borders: As the padding is arbitrary, it may cause the extended location to fall outside the canvas. Didn't take care of it, as it reuqires some thought and it rarely happens.
         top_left_corner = np.maximum([0, 0], self.top_left_corner -target_im_pad_sizes)
         target_im_pad_sizes = np.stack([target_im_pad_sizes,extended_dimensions-self.target_imprinting_dimensions-target_im_pad_sizes],-1)
         def crop_target_im_using_selected_rectangle(array):
             return array[top_left_corner[0]:top_left_corner[0]+extended_dimensions[0],top_left_corner[1]:top_left_corner[1]+extended_dimensions[1],...]
         relevant_existing_scribble_image = 255*crop_target_im_using_selected_rectangle(self.output_image_0_1[0].data.cpu().numpy().transpose(1, 2, 0))
 
-        def crop_desired_im_using_bounding_rect(array):
-            return array[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],
-                                desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0]+desired_mask_bounding_rect[2],...]
+        if modification is None and self.JPEG_GUI and auto_location_press: #Imprinting using the "auto-location" button:
+            desired_mask_bounding_rect = self.Find_Optimal_Desired_Imprint_Mask(desired_mask_bounding_rect,relevant_existing_scribble_image,target_im_pad_sizes)
+
+        crop_desired_im_using_bounding_rect = lambda array: util.crop_nd_array(array,desired_mask_bounding_rect)
+        # def crop_desired_im_using_bounding_rect(array):
+        #     return array[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],
+        #                         desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0]+desired_mask_bounding_rect[2],...]
 
         IGNORE_DESIRED_MASK_4_COMBINATION = True
         cropped_desired_image = crop_desired_im_using_bounding_rect(self.desired_image[0])
         cropped_desired_image_mask = crop_desired_im_using_bounding_rect(self.desired_im_HR_mask_4_imprinting)
         rescaled_cropped_desired_image = 255*util.ResizeScribbleImage(cropped_desired_image,dsize=tuple(self.target_imprinting_dimensions))
         rescaled_cropped_desired_image_mask = np.expand_dims(util.ResizeCategorialImage(cropped_desired_image_mask.astype(np.uint8),dsize=tuple(self.target_imprinting_dimensions)),-1)
+
         # Padding desired regions to fit the size of relevant_existing_scribble_image, which is an integer multiplication of scale_facotr*display_factor:
         def zero_pad_desired_array(array,mode='constant'):
             return np.pad(array,(tuple(target_im_pad_sizes[0]),tuple(target_im_pad_sizes[1]),(0,0)),mode=mode)
         rescaled_cropped_desired_image = zero_pad_desired_array(rescaled_cropped_desired_image,mode='edge' if IGNORE_DESIRED_MASK_4_COMBINATION else 'constant')
         rescaled_cropped_desired_image_mask = zero_pad_desired_array(rescaled_cropped_desired_image_mask)
-
+        if self.JPEG_GUI:
+            # For JPEG, setting the imprinted image to the existing one everywhere outside the mask. This is because consistency is enforced during imprinting itself, and I only want the desired image where the mask is non-zero, so no point of using it outside the mask too.
+            rescaled_cropped_desired_image = rescaled_cropped_desired_image*rescaled_cropped_desired_image_mask+\
+                (1-rescaled_cropped_desired_image_mask)*relevant_existing_scribble_image
         if not IGNORE_DESIRED_MASK_4_COMBINATION:
             rescaled_cropped_desired_image = rescaled_cropped_desired_image*rescaled_cropped_desired_image_mask+relevant_existing_scribble_image*(1-rescaled_cropped_desired_image_mask)
         combined_image_2_input = np.clip(255*util.ResizeScribbleImage(self.Enforce_Consistency_on_Image_Pair(relevant_existing_scribble_image/255,
@@ -1634,6 +1706,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif 'scribble' in objective:
                 data['desired'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.canvas.image_4_scribbling, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)/255
                 data['scribble_mask'] = 1*self.canvas.current_scribble_mask
+                if self.JPEG_GUI:
+                    data['scribble_mask'] = util.SmearMask2JpegBlocks(data['scribble_mask'])
                 data['brightness_factor'] = self.STD_increment.value()#For the brightness increase/decrease functionality
                 # self.iters_per_round *= 3
             if any([phrase in objective for phrase in ['STD','Mag']]):

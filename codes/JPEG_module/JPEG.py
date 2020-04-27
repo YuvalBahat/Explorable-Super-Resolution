@@ -57,8 +57,6 @@ class JPEG(nn.Module):
             if FACTORIZE_CHROMA_HIGH_FREQS:
                 self.padded_Q_table = torch.cat([process_Q_table(np.pad(LUMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
                     process_Q_table(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
-                # self.padded_Q_table = torch.from_numpy(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')/100)\
-                #     .view(1,1,self.block_size,self.block_size,1,1).type(torch.FloatTensor).to(self.device)
 
     #     For DCT:
         self.DCT_freq_grid = (np.pi * torch.arange(block_size).type(torch.FloatTensor) /2/block_size).view(1, 1, 1, 1, 1,block_size).to(self.device)
@@ -139,7 +137,7 @@ class JPEG(nn.Module):
                 if self.downsample_and_quantize:
                     output = torch.round(output)
                 output = output.contiguous().view([input.size(0),self.block_size**2,input.size(2)//self.block_size,input.size(3)//self.block_size])
-        else:# Input is DCT blocks
+        else:# Extraction: Input is DCT blocks
             if self.chroma_mode:
                 if input.size(1)==2*self.block_size**2: #Input is the 2 full chroma channels:
                     num_channels = 2

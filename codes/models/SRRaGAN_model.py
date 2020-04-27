@@ -295,7 +295,7 @@ class SRRaGANModel(BaseModel):
             latent = latent.view([latent.size(0)]+[self.num_latent_channels]+[self.opt['scale']*val for val in list(latent.size()[2:])])
         return latent
 
-    def feed_data(self, data, need_GT=True):
+    def feed_data(self, data, need_GT=True,**kwargs):
         # LR
         self.var_L = data['LR'].to(self.device)
         if self.latent_input is not None:
