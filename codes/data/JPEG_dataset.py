@@ -41,8 +41,9 @@ class JpegDataset(data.Dataset):
             if opt['dataroot_LR'] is not None:
                 raise NotImplementedError('Now subset only supports generating LR on-the-fly.')
         else:  # read image list from lmdb or image files
-            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],
-                opt['dataroot_Uncomp'].replace('GrayScale','HRx4') if '_chroma' in opt['mode'] else opt['dataroot_Uncomp'])
+            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],opt['dataroot_Uncomp'])
+            # self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],
+            #     opt['dataroot_Uncomp'].replace('GrayScale','HRx4') if '_chroma' in opt['mode'] else opt['dataroot_Uncomp'])
         assert self.paths_Uncomp, 'Error: Uncomp path is empty.'
 
         if self.opt['phase'] == 'train':
@@ -79,8 +80,9 @@ class JpegDataset(data.Dataset):
         if self.opt['phase'] != 'train':
             img_Uncomp = util.modcrop(img_Uncomp, self.block_size)
         # change color space if necessary
-        if 'chroma' in self.opt['mode']:
-            img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
+        img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if 'chroma' in self.opt['mode'] else 'y', [img_Uncomp])[0]
+        # if 'chroma' in self.opt['mode']:
+        #     img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
 
         # randomly scale during training
         if self.opt['phase'] == 'train':
@@ -90,16 +92,17 @@ class JpegDataset(data.Dataset):
                 # raise Exception('QF range is unsupported yet')
 
             random_scale = random.choice(self.random_scale_list)
-            H_s, W_s, _ = img_Uncomp.shape
+            if random_scale!=1:
+                H_s, W_s, _ = img_Uncomp.shape
 
-            def _mod(n, random_scale, thres):
-                rlt = int(n * random_scale)
-                rlt = (rlt // self.block_size) * self.block_size
-                return thres if rlt < thres else rlt
+                def _mod(n, random_scale, thres):
+                    rlt = int(n * random_scale)
+                    rlt = (rlt // self.block_size) * self.block_size
+                    return thres if rlt < thres else rlt
 
-            H_s = _mod(H_s, random_scale, Uncomp_size)
-            W_s = _mod(W_s, random_scale, Uncomp_size)
-            img_Uncomp = cv2.resize(np.copy(img_Uncomp), (W_s, H_s), interpolation=cv2.INTER_LINEAR)
+                H_s = _mod(H_s, random_scale, Uncomp_size)
+                W_s = _mod(W_s, random_scale, Uncomp_size)
+                img_Uncomp = cv2.resize(np.copy(img_Uncomp), (W_s, H_s), interpolation=cv2.INTER_LINEAR)
             # force to 3 channels
             if img_Uncomp.ndim == 2:
                 img_Uncomp = np.expand_dims(img_Uncomp,-1)

@@ -11,8 +11,8 @@ from utils.progress_bar import ProgressBar
 
 # configurations
 dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets'
-img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_GrayScale/*')  # glob matching pattern
-lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_GrayScale.lmdb')  # must end with .lmdb
+img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_HR/*')  # glob matching pattern
+lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_HR.lmdb')  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
 dataset = []
@@ -26,7 +26,7 @@ for i, v in enumerate(img_list[:10]):
     img = cv2.imread(v, cv2.IMREAD_UNCHANGED)
     dataset.append(img)
     data_size += img.nbytes
-env = lmdb.open(lmdb_save_path, map_size=data_size *portion_4_low_mem* 10)
+env = lmdb.open(lmdb_save_path, map_size=data_size *portion_4_low_mem* 10,writemap=True) #Passing writemap=True to avoid process falling due to memory requirement exceeding RAM
 print('Finish reading {} images.\nWrite lmdb...'.format(len(img_list)))
 
 pbar = ProgressBar(len(img_list))
