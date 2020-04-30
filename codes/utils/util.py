@@ -181,14 +181,14 @@ def ResizeScribbleImage(image,dsize):
         resized = np.reshape(resized,list(resized.shape[:2])+[image.shape[2]])
     return resized
 
-def SmearMask2JpegBlocks(mask):
+def SmearMask2JpegBlocks(mask,block_size=8):
     # Each block in the mask is assigned with the maximal value in it. This is meant to convert each block participating in the mask to participate fully, which makes more sense in the JPEG case.
     # Note the special case of non-binary masks (when using brightness manipulation or local TV minimization) and having different non-zero values at the same block.
     # The maximal value would prevail - which is a somewhat arbitrary rule.
     mask_shape = np.array(mask.shape)
-    assert np.all(mask_shape/8==np.round(mask_shape/8)),'Only supporting sizes containing integer number of 8x8 blocks'
-    mask = mask.reshape([mask_shape[0]//8,8,mask_shape[1]//8,8])
-    mask = np.max(np.max(mask,axis=1,keepdims=True),axis=3,keepdims=True)*np.ones([1,8,1,8]).astype(mask.dtype)
+    assert np.all(mask_shape/block_size==np.round(mask_shape/block_size)),'Only supporting sizes containing integer number of block_sizexblock_size blocks'
+    mask = mask.reshape([mask_shape[0]//block_size,block_size,mask_shape[1]//block_size,block_size])
+    mask = np.max(np.max(mask,axis=1,keepdims=True),axis=3,keepdims=True)*np.ones([1,block_size,1,block_size]).astype(mask.dtype)
     return mask.reshape(mask_shape)
 
 def Tensor_YCbCR2RGB(image):

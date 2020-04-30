@@ -68,8 +68,11 @@ class Ui_MainWindow(object):
         return new_layout
 
     def Set_Button_Size(self,button,size):
-        button.setMinimumSize(QtCore.QSize(size[0] * self.button_size, size[1] * self.button_size))
-        button.setMaximumSize(QtCore.QSize(size[0] * self.button_size, size[1] * self.button_size))
+        Qsize_obj = QtCore.QSize(size[0] * self.button_size, size[1] * self.button_size)
+        button.setMinimumSize(Qsize_obj)
+        button.setMaximumSize(Qsize_obj)
+        if isinstance(button,QPushButton) or isinstance(button,QToolButton):
+            button.setIconSize(0.8*Qsize_obj)
 
     def Define_Slider(self,slider_name,tooltip,range,position=None,size=1,horizontal=True,parent=None,dial=False):
         if parent is None:
@@ -204,6 +207,17 @@ class Ui_MainWindow(object):
         self.Define_Slider('third_channel',tooltip='Graidents direction',range=[-100*np.pi, 100*np.pi],position=0,size=3,parent=self.canvas,dial=True)
         self.Define_Slider('sizeselect',tooltip='Set line width',range=[1,20],size=2,horizontal=True)
 
+        if self.JPEG_GUI:
+        #     self.Define_Slider('H',tooltip='Hue',range=[-100*np.pi, 100*np.pi],position=0,size=3,parent=self.canvas,dial=True)
+        #     self.Define_Slider('S',tooltip='Saturation',range=[0, 100],position=50,size=3,parent=self.canvas,horizontal=False)
+        #     self.Define_Slider('V',tooltip='Value',range=[0, 100],position=50,size=3,parent=self.canvas,horizontal=False)
+            self.Define_Button('H_clockwise',tooltip='Hue clockwise',action_not_push=True)
+            self.Define_Button('H_counter_clockwise', tooltip='Hue counter-clockwise', action_not_push=True)
+            self.Define_Button('S_up', tooltip='Increase saturation', action_not_push=True)
+            self.Define_Button('S_down', tooltip='Decrease saturation', action_not_push=True)
+            self.Define_Button('V_up', tooltip='Increase value', action_not_push=True)
+            self.Define_Button('V_down', tooltip='Decrease value', action_not_push=True)
+
         # Define button controlling displayed image version:
         self.DisplayedImageSelection_button = QtWidgets.QComboBox()
         self.DisplayedImageSelection_button.setObjectName("DisplayedImageSelection_button")
@@ -276,6 +290,10 @@ class Ui_MainWindow(object):
             self.DisplayedImageSelection_button,self.CopyFromAlternative_button,self.Copy2Alternative_button],layout_cols=4)
         uniform_Z_control_TB = self.Define_Grid_layout(layout_name='Uniform Z control',buttons_list=[self.canvas.Z0_slider,self.canvas.third_channel_slider, self.canvas.Z1_slider,
                                               self.uniformZ_button],layout_cols=6)
+        if self.JPEG_GUI:
+            # HSV_TB = self.Define_Grid_layout('HSV',[self.canvas.H_slider,self.canvas.S_slider,self.canvas.V_slider],layout_cols=5)
+            HSV_TB = self.Define_Grid_layout('HSV',[self.H_clockwise_button,self.S_up_button,self.V_up_button,
+                self.H_counter_clockwise_button,self.S_down_button,self.V_down_button],layout_cols=3)
         region_selection_TB = self.Define_Grid_layout('Region selection',
             buttons_list=[self.selectrect_button,self.invertSelection_button,self.Z_mask_load_button,self.selectpoly_button,self.unselect_button],layout_cols=3)
         periodicity_TB = self.Define_Grid_layout('Periodicity',buttons_list=[self.IncreasePeriodicity_1D_button,self.periodicity_mag_1_button,
@@ -308,6 +326,8 @@ class Ui_MainWindow(object):
         self.verticalLayout_R.addWidget(optimize_Z_TB)
         self.verticalLayout_C.addWidget(imprinting_TB)
         self.verticalLayout_R.addWidget(periodicity_TB)
+        if self.JPEG_GUI:
+            self.verticalLayout_R.addWidget(HSV_TB)
         self.verticalLayout_R.addWidget(uniform_Z_control_TB)
 
 
