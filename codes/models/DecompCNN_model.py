@@ -709,10 +709,10 @@ class DecompCNNModel(BaseModel):
                         # quantized_image = util.tensor2img(self.jpeg_extractor(self.jpeg_compressor(val_data['Uncomp'].to(self.device))),out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
-                        quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1], str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
+                        quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1].copy(), str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
                                     color=np.mod(255 / 2 + quantized_image_collage[-1][-1][:25, :25].mean(), 255),thickness=2)
-                        if self.chroma_mode: # In this case cv2.putText returns cv2.Umat instead of an ndarray, so it should be converted:
-                            quantized_image_collage[-1][-1] = quantized_image_collage[-1][-1].get()
+                        # if self.chroma_mode: # In this case cv2.putText returns cv2.Umat instead of an ndarray, so it should be converted:
+                        #     quantized_image_collage[-1][-1] = quantized_image_collage[-1][-1].get()
                 else:
                     # Save Decomp images for reference
                     img_dir = os.path.join(self.opt['path']['val_images'], img_name)
