@@ -27,7 +27,7 @@
       "name": "val_set14_part"
       , "mode": "JPEG"
       , "jpeg_quality_factor": 10 //[[5,50]] //[5,10,20,30,40,50,60,70]
-      , "dataroot_Uncomp": "Set14/Set14_GrayScale" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
+      , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
 
@@ -73,7 +73,7 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":1
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

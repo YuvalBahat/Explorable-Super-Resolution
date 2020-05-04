@@ -316,10 +316,10 @@ class DecompCNNModel(BaseModel):
 
     def feed_data(self, data, need_GT=True,detach_Y=True):
         self.QF = data['QF']
-        self.jpeg_compressor.Set_QF(self.QF)
-        self.jpeg_extractor.Set_QF(self.QF)
+        self.jpeg_compressor.Set_Q_Table(self.QF)
+        self.jpeg_extractor.Set_Q_Table(self.QF)
         if self.DCT_discriminator:
-            self.jpeg_non_quantized_compressor.Set_QF(self.QF)
+            self.jpeg_non_quantized_compressor.Set_Q_Table(self.QF)
         if self.latent_input is not None:
             input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else 8*np.array(data['Comp'].size())
             DCT_dims = list(input_size[2:]//8)
@@ -351,8 +351,8 @@ class DecompCNNModel(BaseModel):
             self.Prepare_Input(self.var_Comp, latent_input=cur_Z,compressed_input=True)
         else:
             if self.chroma_mode:
-                self.jpeg_compressor_Y.Set_QF(self.QF)
-                self.jpeg_extractor_Y.Set_QF(self.QF)
+                self.jpeg_compressor_Y.Set_Q_Table(self.QF)
+                self.jpeg_extractor_Y.Set_Q_Table(self.QF)
                 self.Prepare_Input(data['Uncomp'][:,0,...].unsqueeze(1),cur_Z)
                 self.test_Y(detach=detach_Y) # Use detach_Y=False here when, e.g., computing gradients with respect to Z, which should take into account the path going through netG_Y as well, so it should not be detached.
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
