@@ -1,5 +1,5 @@
 {
-  "name": "chroma_nf160nb10_QF5_50_LR1e-4" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF5_50_multiScaleDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap1e-3Loss" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -11,7 +11,7 @@
       "name": "DIV2K"
       , "mode": "JPEG"
       , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70] //10
-      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_sub_GrayScale.lmdb"
+      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 0
@@ -26,7 +26,7 @@
       "name": "val_set14_part"
       , "mode": "JPEG"
       , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70]
-      , "dataroot_Uncomp": "Set14/Set14_GrayScale" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
+      , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
 
@@ -35,7 +35,7 @@
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
-//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
     , "Y_channel_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
 //    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
@@ -49,7 +49,7 @@
 
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
-    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
     , "latent_channels": "SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
@@ -76,7 +76,7 @@
   }
 
   , "train": {
-    "resume":1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

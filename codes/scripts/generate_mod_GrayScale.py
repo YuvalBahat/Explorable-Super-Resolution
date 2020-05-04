@@ -51,7 +51,7 @@ if save_Uncomp_folder is not None:
 progress_bar = tqdm(os.listdir(input_folder))
 for file_name in progress_bar:
     cur_im = mod_img(cv2.imread(os.path.join(input_folder,file_name)),mod_scale)
-    cur_im = cv2.cvtColor(cur_im,cv2.COLOR_RGB2GRAY)
+    cur_im = cv2.cvtColor(cur_im,cv2.COLOR_BGR2GRAY)
     cv2.imwrite(os.path.join(save_Uncomp_folder,file_name.replace('.jpg','.png')),cur_im)
     # if save_LR_folder is not None:
     #     # cur_im = cv2.resize(cur_im,dsize=(0,0),fx=1/up_scale,fy=1/up_scale,interpolation = cv2.INTER_CUBIC)
