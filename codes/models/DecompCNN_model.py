@@ -73,6 +73,7 @@ class DecompCNNModel(BaseModel):
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
         if self.is_train:
+            self.batch_size = self.opt['datasets']['train']['batch_size']
             if self.latent_input:
                 # self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 # self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
@@ -114,7 +115,7 @@ class DecompCNNModel(BaseModel):
             self.netG.train()
         else:
             self.DCT_discriminator = False
-
+        self.mixed_Y_4_training = self.D_exists and self.is_train
         # define losses, optimizer and scheduler
         if self.is_train:
             # G pixel loss
@@ -134,9 +135,10 @@ class DecompCNNModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,
-                    Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']))],model=self,Z_range=1,
-                    max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=lambda x:x,jpeg_extractor=self.jpeg_extractor)
+                # Dividing the batch size in 2 for the case of training a chroma Discriminator. See explanation for self.Y_channel_is_fake
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']))],
+                    model=self,Z_range=1,max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size']//(2 if self.chroma_mode and self.D_exists else 1),
+                    HR_unpadder=lambda x:x,jpeg_extractor=self.jpeg_extractor)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
                 elif self.optimalZ_loss_type == 'l1':
@@ -314,7 +316,7 @@ class DecompCNNModel(BaseModel):
         chroma = self.jpeg_extractor(chroma[:,num_coeffs**2:,...])
         return torch.clamp(util.Tensor_YCbCR2RGB(torch.cat([Y,chroma],1))/255,0,1)[0].data.cpu().numpy().transpose((1,2,0))
 
-    def feed_data(self, data, need_GT=True,detach_Y=True):
+    def feed_data(self, data, need_GT=True,detach_Y=True,mixed_Y=False):
         self.QF = data['QF']
         self.jpeg_compressor.Set_Q_Table(self.QF)
         self.jpeg_extractor.Set_Q_Table(self.QF)
@@ -353,8 +355,13 @@ class DecompCNNModel(BaseModel):
             if self.chroma_mode:
                 self.jpeg_compressor_Y.Set_Q_Table(self.QF)
                 self.jpeg_extractor_Y.Set_Q_Table(self.QF)
-                self.Prepare_Input(data['Uncomp'][:,0,...].unsqueeze(1),cur_Z)
+                GT_Y_channel = data['Uncomp'][:,0,...].unsqueeze(1)
+                self.Prepare_Input(GT_Y_channel,cur_Z)
                 self.test_Y(detach=detach_Y) # Use detach_Y=False here when, e.g., computing gradients with respect to Z, which should take into account the path going through netG_Y as well, so it should not be detached.
+                if self.mixed_Y_4_training and mixed_Y:#When training a chroma Discriminator (D), I want to prevent it from distinguishing based on the Y channel. To this end, Y channel of fake batches is a mix of real Y channels and the output of the Y generator, with arbitrary 1:1 ratio.
+                    self.Y_channel_is_fake = torch.zeros([self.batch_size]).byte()
+                    self.Y_channel_is_fake[torch.randperm(self.batch_size)[:self.batch_size//2]] = 1
+                    self.y_channel_input[~self.Y_channel_is_fake] = GT_Y_channel[~self.Y_channel_is_fake].cuda()
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
             self.Prepare_Input(data['Uncomp'],latent_input=cur_Z)
         if need_GT:  # train or val
@@ -414,8 +421,18 @@ class DecompCNNModel(BaseModel):
                 else:
                     static_Z = None
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'Uncomp':self.var_Uncomp,'desired':self.var_Uncomp/255,'QF':self.QF})
-                self.Z_optimizer.optimize()
+                stored_QF = 1*self.QF
+                self.Z_optimizer.feed_data({'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],
+                    'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]})
+                if self.mixed_Y_4_training:
+                    # In this case, fake_H has half the batch_size images, so the rest of the images (whose Y channel is real) should be loaded back.
+                    optimized_Z = self.Z_optimizer.optimize()
+                    temp_Z = torch.zeros_like(optimized_Z).repeat([2,1,1,1])
+                    temp_Z[self.Y_channel_is_fake] = optimized_Z
+                    self.feed_data({'Uncomp':self.var_Uncomp,'QF':stored_QF,'Z':temp_Z}, need_GT=False)
+                    self.fake_H = self.netG(self.model_input)
+                else:
+                    self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
                 self.fake_H = self.netG(self.model_input)
@@ -577,9 +594,9 @@ class DecompCNNModel(BaseModel):
                     latent_loss_dict = {'Decomp':self.output_image,'Uncomp':self.var_Uncomp,'Z':static_Z}
                     if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
                         latent_loss_dict['SVD'] = self.SVD
-                    l_g_latent = self.cri_latent(latent_loss_dict)
+                    l_g_latent = self.cri_latent(latent_loss_dict)[self.Y_channel_is_fake]
                     l_g_total += self.l_latent_w * l_g_latent.mean()/self.grad_accumulation_steps_G
-                    self.l_g_latent_grad_step.append([l.item() for l in l_g_latent])
+                    self.l_g_latent_grad_step.append([l.item() for l in l_g_latent.mean(0)])
                 if self.cri_optimalZ and first_dual_batch_step:  # optimized-Z reference image loss
                     l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G

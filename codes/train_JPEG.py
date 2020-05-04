@@ -190,7 +190,7 @@ def main():
                 logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
                 print('-----------------------------------')
 
-            model.feed_data(train_data)
+            model.feed_data(train_data,mixed_Y=True)
             model.optimize_parameters()
 
 

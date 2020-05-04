@@ -530,7 +530,7 @@ class SRRaGANModel(BaseModel):
                     latent_loss_dict = {'SR':self.fake_H,'HR':self.var_H,'Z':static_Z}
                     if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
                         latent_loss_dict['SVD'] = self.SVD
-                    l_g_latent = self.cri_latent(latent_loss_dict)
+                    l_g_latent = self.cri_latent(latent_loss_dict).mean(0)
                     l_g_total += self.l_latent_w * l_g_latent.mean()/self.grad_accumulation_steps_G
                     self.l_g_latent_grad_step.append([l.item() for l in l_g_latent])
                 if self.cri_optimalZ and first_dual_batch_step:  # optimized-Z reference image loss

@@ -34,13 +34,13 @@
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
-//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF10_G.pth"
-    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF5_50_G.pth"
+//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
     , "Y_channel_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
 //    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
-    , "pretrain_model_D": "../pretrained_models/ConcatInput_SN_DCTnf160nb10QF5_50_verifiedD.pth"
+//    , "pretrain_model_D": "../pretrained_models/ConcatInput_SN_DCTnf160nb10QF5_50_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
@@ -96,7 +96,7 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
+    , "D_verification": "initial" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.

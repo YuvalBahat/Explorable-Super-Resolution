@@ -48,13 +48,12 @@ class JPEG(nn.Module):
         self.block_size = block_size
         self.chroma_mode = chroma_mode
         # Following the procedure in the Prototype_jpeg repository to convert quality factor to quantization table:
-        # self.Q_table = torch.from_numpy(LUMINANCE_QUANTIZATION_TABLE / 100).view(1, 8, 8, 1, 1).type(torch.FloatTensor).to(self.device)
-        # self.Q_table = process_Q_table(LUMINANCE_QUANTIZATION_TABLE)
-        # if self.chroma_mode:
-        #     self.Q_table = torch.cat([self.Q_table.unsqueeze(1),process_Q_table(CHROMINANCE_QUANTIZATION_TABLE).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
-        #     if FACTORIZE_CHROMA_HIGH_FREQS:
-        #         self.padded_Q_table = torch.cat([process_Q_table(np.pad(LUMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
-        #             process_Q_table(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
+        self.synthetic_Q_table = self.process_Q_table(LUMINANCE_QUANTIZATION_TABLE)
+        if self.chroma_mode:
+            self.synthetic_Q_table = torch.cat([self.synthetic_Q_table.unsqueeze(1),self.process_Q_table(CHROMINANCE_QUANTIZATION_TABLE).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
+            if FACTORIZE_CHROMA_HIGH_FREQS:
+                self.synthetic_padded_Q_table = torch.cat([self.process_Q_table(np.pad(LUMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
+                    self.process_Q_table(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
 
     #     For DCT:
         self.DCT_freq_grid = (np.pi * torch.arange(block_size).type(torch.FloatTensor) /2/block_size).view(1, 1, 1, 1, 1,block_size).to(self.device)
@@ -69,20 +68,13 @@ class JPEG(nn.Module):
 
     def Set_Q_Table(self,QF_or_table,QF=True):
         if QF:
-            self.Q_table = self.process_Q_table(LUMINANCE_QUANTIZATION_TABLE)
-            if self.chroma_mode:
-                self.Q_table = torch.cat([self.Q_table.unsqueeze(1),self.process_Q_table(CHROMINANCE_QUANTIZATION_TABLE).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
-                if FACTORIZE_CHROMA_HIGH_FREQS:
-                    self.padded_Q_table = torch.cat([self.process_Q_table(np.pad(LUMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
-                        self.process_Q_table(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
-            # Following the procedure in the Prototype_jpeg repository to convert quality factor to quantization table:
             self.QF = QF_or_table
             condition = (QF_or_table < 50).to(self.device).type(torch.LongTensor)
             self.factor = (condition*(5000 / QF_or_table) + (1-condition)*(200 - 2 * QF_or_table))
-            self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.Q_table.dtype).to(self.device)
-            self.Q_table = torch.clamp(self.factor * self.Q_table,0,255)
+            self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.synthetic_Q_table.dtype).to(self.device)
+            self.Q_table = torch.clamp((self.factor * self.synthetic_Q_table).round(),0,255)
             if self.chroma_mode and FACTORIZE_CHROMA_HIGH_FREQS:
-                self.padded_Q_table = torch.clamp(self.factor * self.padded_Q_table,0,255)
+                self.padded_Q_table = torch.clamp((self.factor * self.synthetic_padded_Q_table).round(),0,255)
         else:
             tables_ratio = np.mean(LUMINANCE_QUANTIZATION_TABLE/QF_or_table[0])
             self.QF = 50*tables_ratio if tables_ratio<1 else 50*np.mean((2*LUMINANCE_QUANTIZATION_TABLE-QF_or_table[0])/LUMINANCE_QUANTIZATION_TABLE)

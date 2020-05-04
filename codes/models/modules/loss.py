@@ -205,8 +205,8 @@ class FilterLoss(nn.Module):
             else:
                 return torch.zeros([3]).type(abs_differences[0].dtype).view([-1])
         else:
-            return torch.mean((measured_values-normalized_Z).abs(),dim=0)
-
+            # return torch.mean((measured_values-normalized_Z).abs(),dim=0)
+            return (measured_values-normalized_Z).abs()
 
 # Define GAN loss: [vanilla | lsgan | wgan-gp]
 class GANLoss(nn.Module):
