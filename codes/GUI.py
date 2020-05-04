@@ -30,6 +30,7 @@ from KernelGAN import train as KernelGAN
 from data.util import rgb2ycbcr
 from JPEG_module.JPEG import JPEG
 from skimage.color import rgb2hsv,hsv2rgb
+from PIL import Image as PIL_Image
 
 DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
@@ -1166,6 +1167,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.JPEG_GUI:
             opt_name = 'JPEG_chroma'
             self.display_ESRGAN = False
+            self.real_JPEG_image = False
             # if parser.parse_args().chroma:
             #     opt_name += '_chroma'
         util.Assign_GPU()
@@ -1227,7 +1229,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.Update_Image_Display = self.Update_Image_Display
         self.canvas.SelectImage2Display = self.SelectImage2Display
         if self.JPEG_GUI:
-            self.open_image_button.setEnabled(False)
+            # self.open_image_button.setEnabled(False)
             self.estimatedKenrel_button.setEnabled(False)
             self.FoolAdversary_button.setEnabled(False)
         # else:
@@ -1242,6 +1244,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_HR_image_button.clicked.connect(lambda x: self.open_file(HR_image=True))
         self.Z_load_button.pressed.connect(self.Load_Z)
         self.SaveImageAndData_button.clicked.connect(self.save_file_and_Z_map)
+        if self.JPEG_GUI:
+            self.QF_box.valueChanged.connect(lambda s: self.Update_QF(s))
         # Display:
         self.Zdisplay_button.clicked.connect(self.ToggleDisplay_Z_Image)
         self.DecreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
@@ -2069,24 +2073,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
             self.canvas.loop_apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
 
+    def Assign_Q_Table(self,QF_or_table=None):
+        if self.real_JPEG_image:
+        #     Ignoring given QF:
+            QF = False
+            self.QF_box.setEnabled(False)
+            QF_or_table = self.Q_Tables.copy()
+        else:
+            QF = True
+            self.QF_box.setEnabled(True)
+            self.QF_box.setMaximum(49)
+            QF_or_table = torch.tensor(QF_or_table)
+        self.canvas.SR_model.jpeg_compressor.Set_Q_Table(QF_or_table,QF)
+        self.canvas.SR_model.jpeg_extractor.Set_Q_Table(QF_or_table,QF)
+        self.canvas.SR_model.jpeg_compressor_Y.Set_Q_Table(QF_or_table,QF)
+        self.canvas.SR_model.jpeg_extractor_Y.Set_Q_Table(QF_or_table,QF)
+        self.canvas.SR_model.jpeg_compressor_Y_non_quantized.Set_Q_Table(QF_or_table,QF)
+        self.canvas.SR_model.jpeg_compressor_non_quantized.Set_Q_Table(QF_or_table,QF)
+        if self.real_JPEG_image:
+            self.QF_box.setMaximum(1000)
+            self.QF_box.setValue(self.canvas.SR_model.jpeg_compressor_Y.QF)
+        else:
+            self.Q_Tables = [T for T in self.canvas.SR_model.jpeg_extractor.Q_table.squeeze()[:2].data.cpu().numpy()]
+
+    def Update_QF(self,QF):
+        self.Assign_Q_Table(QF)
+        self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
+        self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(self.loaded_image)) / 255, 0, 1)
+        self.ReProcess()
+
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         if self.JPEG_GUI:
-            # chroma_input = None
-            # if 'SR_model' in self.canvas.__dict__:
-            #     chroma_input = 1*self.canvas.SR_model.chroma_input
             self.canvas.SR_model = create_model(self.opt, chroma_mode=True)
-            self.canvas.SR_model.jpeg_compressor.Set_QF(torch.tensor(10))
-            self.canvas.SR_model.jpeg_extractor.Set_QF(torch.tensor(10))
-            self.canvas.SR_model.jpeg_compressor_Y.Set_QF(torch.tensor(10))
-            self.canvas.SR_model.jpeg_extractor_Y.Set_QF(torch.tensor(10))
             self.canvas.SR_model.jpeg_compressor_Y_non_quantized = JPEG(compress=True,chroma_mode=False, downsample_and_quantize=False,block_size=8)\
                 .to(self.canvas.SR_model.device)
-            self.canvas.SR_model.jpeg_compressor_Y_non_quantized.Set_QF(torch.tensor(10))
             self.canvas.SR_model.jpeg_compressor_non_quantized = JPEG(compress=True,chroma_mode=True, downsample_and_quantize=False,block_size=self.opt['scale'])\
                 .to(self.canvas.SR_model.device)
-            self.canvas.SR_model.jpeg_compressor_non_quantized.Set_QF(torch.tensor(10))
-            # self.canvas.SR_model.chroma_input = chroma_input
-            self.statusBar.showMessage('Currently fixing QF to 10', INFO_MESSAGE_DURATION)
+            # self.Assign_Q_Table(10)
+            # self.statusBar.showMessage('Currently fixing QF to 10', INFO_MESSAGE_DURATION)
         else:
             self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
         self.canvas.Z_optimizer_Reset()
@@ -2145,6 +2169,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             return Z
 
+    def Decode_JPEG_input(self,loaded_rgb):
+        loaded_rgb *= 255
+        loaded_YCbCr = rgb2ycbcr(1*loaded_rgb,only_y=False)
+        loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+        self.Assign_Q_Table()
+        self.var_L = self.canvas.SR_model.jpeg_compressor_Y(loaded_YCbCr[:,0,...].unsqueeze(1))
+        chroma_input = self.canvas.SR_model.jpeg_extractor(self.canvas.SR_model.jpeg_compressor(loaded_YCbCr))[:,1:,...]
+        loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),chroma_input],1)
+        loaded_image = torch.clamp(util.Tensor_YCbCR2RGB(loaded_image),0,255).data[0].cpu().numpy().transpose((1,2,0))
+        mean_jpeg_deciphering_error = np.abs(loaded_image-loaded_rgb).mean()
+        self.statusBar.showMessage('Mean error %.3f gray-levels when deciphering JPEG coefficients'%(mean_jpeg_deciphering_error),INFO_MESSAGE_DURATION)
+        loaded_image = rgb2ycbcr(loaded_image,only_y=False)
+        self.loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+        self.chroma_input = self.loaded_image[:,1:,...]
+
     def open_file(self,path=None,HR_image=False,canvas_pos=None):
         """
         Open image file for editing, scaling the smaller dimension and cropping the remainder.
@@ -2152,7 +2191,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         loaded_image = None
         if path is None:
-            path, _ = QFileDialog.getOpenFileName(self,"Open HR file to be downsampled" if HR_image else "Open file", "",IMAGE_FILE_EXST_FILTER)
+            path, _ = QFileDialog.getOpenFileName(self,"Open HR file to be downsampled" if HR_image else "Open file", "",
+                'JPEG image files (*.jpg)' if (self.JPEG_GUI and not HR_image) else IMAGE_FILE_EXST_FILTER)
         if not path or not os.path.isfile(path):
             print('Not loading any image')
             return
@@ -2170,20 +2210,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 loaded_image = rgb2ycbcr(255 * loaded_image, only_y=False)
             loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             if self.JPEG_GUI:
-                self.var_L = self.canvas.SR_model.jpeg_compressor_Y(loaded_image[:,0,...].unsqueeze(1))
-                self.chroma_input = loaded_image[:,1:,...]
-                # self.canvas.SR_model.chroma_input =  loaded_image[:,1:,...]
-                # self.var_L = self.canvas.SR_model.jpeg_compressor(loaded_image)
+                self.real_JPEG_image = False
+                # self.QF_box.setEnabled(True)
+                self.QF_box.setValue(10)
+                self.Assign_Q_Table(10)
+                # self.QF_box.setMaximum(49)
+                self.loaded_image = loaded_image
+                self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
+                self.chroma_input = self.loaded_image[:,1:,...]
             else:
                 self.var_L = self.canvas.SR_model.netG.module.DownscaleOP(loaded_image)
                 self.LR_image = np.clip(255*self.var_L[0].data.cpu().numpy().transpose(1, 2, 0),0, 255).astype(np.uint8)
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(True)
         else:
-            self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
-            self.LR_image = (255*loaded_image).astype(np.uint8)
+            if self.JPEG_GUI:
+                self.real_JPEG_image = True
+                self.Q_Tables = {int(k): np.reshape(v,[8,8]).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
+                self.Decode_JPEG_input(loaded_image)
+                self.canvas.HR_size = list(self.loaded_image.size())[2:]
+            else:
+                self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+                self.LR_image = (255*loaded_image).astype(np.uint8)
+                self.canvas.HR_size = [self.opt['scale']*v for v in self.LR_image.shape[:2]]
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(False)
         if self.JPEG_GUI:
-            self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(loaded_image))/255,0, 1)
+            self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(self.loaded_image))/255,0, 1)
         else:
             # self.input_image = cv2.resize(self.LR_image,dsize=tuple(self.canvas.HR_size[::-1]), interpolation=cv2.INTER_NEAREST)
             self.input_image = torch.from_numpy(np.transpose(cv2.resize(self.LR_image, dsize=tuple(self.canvas.HR_size[::-1]),
@@ -2239,7 +2290,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.scribble_redo_list = deque(maxlen=Z_HISTORY_LENGTH)
         self.canvas.scribble_mask_redo_list = deque(maxlen=Z_HISTORY_LENGTH)
         self.canvas.current_display_index = 1*self.cur_Z_im_index
-        self.Initialize_SR_model(kernel='reset_2_default')
+        if self.JPEG_GUI:
+            self.canvas.Z_optimizer_Reset()
+            self.ReProcess()
+        else:
+            self.Initialize_SR_model(kernel='reset_2_default')
         self.saved_outputs_counter = 0
         self.DisplayedImageSelection_button.setCurrentIndex(self.cur_Z_im_index)
         self.no_Z_image = torch.from_numpy(np.transpose(2 * (resize(image=data_util.read_img(None,
@@ -2307,7 +2362,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if Z_image.shape[2]==8**2:
                     Z_image = util.Z_64channels2image(Z_image)
                 imageio.imsave(path%('_Z'),Z_image)
-            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),self.input_image.squeeze(0).data.cpu().numpy().transpose((1, 2, 0)))
+            input_im_4_saving = self.input_image.squeeze(0).data.cpu().numpy().transpose((1, 2, 0))
+            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),input_im_4_saving)
+            if self.JPEG_GUI:
+                input_im_4_saving = PIL_Image.fromarray((255*input_im_4_saving).astype(np.uint8))
+                jpeg_path = path.replace('_%d'%(self.saved_outputs_counter),'').replace('.png','.jpg') % ('_Comp')
+                # input_im_4_saving.save(jpeg_path,'jpeg',subsampling=2,qtables={0:list(self.Q_Tables[0].reshape([-1])),1:list(self.Q_Tables[1].reshape([-1]))})
+                input_im_4_saving.save(jpeg_path,'jpeg',subsampling=2,qtables={0:list(np.clip(self.Q_Tables[0],0,255).reshape([-1])),1:list(np.clip(self.Q_Tables[1],0,255).reshape([-1]))})
+                jpeg_MeanAbsErr = np.abs(np.array(PIL_Image.open(jpeg_path)).astype(np.float)-np.array(input_im_4_saving).astype(np.float)).mean()
+
             if ALSO_SAVE_GRAYSCALE:
                 imageio.imsave(path % '_gray',rgb2ycbcr(self.canvas.output_image_0_1[0].data.cpu().numpy().transpose(1,2,0)))
                 imageio.imsave(path % ('_gray_scribbled'), rgb2ycbcr(self.canvas.image_4_scribbling))
@@ -2324,8 +2387,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 data_2_save['estimated_kernel'] = self.estimated_kernel
             if len(data_2_save.keys())>0:
                 np.savez(path.replace('.png','.npz')%('_scribble_data'),**data_2_save)
-            print('Saved image %s'%(path%('')))
-            self.statusBar.showMessage('Saved image %s'%(path%('')),INFO_MESSAGE_DURATION)
+            print('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if self.JPEG_GUI else ''))
+            self.statusBar.showMessage('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if self.JPEG_GUI else ''),INFO_MESSAGE_DURATION)
             self.saved_outputs_counter += 1
 
 if __name__ == '__main__':

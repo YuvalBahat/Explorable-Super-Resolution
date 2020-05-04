@@ -208,9 +208,6 @@ class Ui_MainWindow(object):
         self.Define_Slider('sizeselect',tooltip='Set line width',range=[1,20],size=2,horizontal=True)
 
         if self.JPEG_GUI:
-        #     self.Define_Slider('H',tooltip='Hue',range=[-100*np.pi, 100*np.pi],position=0,size=3,parent=self.canvas,dial=True)
-        #     self.Define_Slider('S',tooltip='Saturation',range=[0, 100],position=50,size=3,parent=self.canvas,horizontal=False)
-        #     self.Define_Slider('V',tooltip='Value',range=[0, 100],position=50,size=3,parent=self.canvas,horizontal=False)
             self.Define_Button('H_clockwise',tooltip='Hue clockwise',action_not_push=True)
             self.Define_Button('H_counter_clockwise', tooltip='Hue counter-clockwise', action_not_push=True)
             self.Define_Button('S_up', tooltip='Increase saturation', action_not_push=True)
@@ -246,6 +243,18 @@ class Ui_MainWindow(object):
         self.input_display_index = self.DisplayedImageSelection_button.findText('Input')
 
         ######## Defining user input boxes:
+        if self.JPEG_GUI:
+        #     Quality-Factor selector
+            self.QF_box = QtWidgets.QDoubleSpinBox()
+            self.QF_box.setObjectName("QF_box")
+            self.QF_box.setValue(10)
+            # self.QF_box.setMaximum(49)
+            self.QF_box.setMinimum(5)
+            self.QF_box.setSingleStep(1)
+            self.Set_Button_Size(self.QF_box, [2, 1])
+            self.QF_box.setDecimals(0)
+            self.QF_box.setToolTip('JPEG Quality Factor')
+
         # Weight limiting random Z generated images, if enabled:
         self.randomLimitingWeightBox_Enabled = False
         if self.randomLimitingWeightBox_Enabled:
@@ -285,7 +294,9 @@ class Ui_MainWindow(object):
 
 
         ###### Defining layouts holding groups of buttons:
-        load_and_save = self.Define_Grid_layout(layout_name='Load & Save',buttons_list=[self.open_image_button,self.open_HR_image_button,self.Z_load_button,self.SaveImageAndData_button],layout_cols=4)
+        load_and_save = self.Define_Grid_layout(layout_name='Load & Save',
+            buttons_list=[self.open_image_button,self.open_HR_image_button,self.Z_load_button,self.SaveImageAndData_button]+([self.QF_box] if self.JPEG_GUI else []),
+            layout_cols=4)
         display_TB = self.Define_Grid_layout(layout_name='Display',buttons_list=[self.Zdisplay_button,self.IncreaseDisplayZoom_button,self.DecreaseDisplayZoom_button,
             self.DisplayedImageSelection_button,self.CopyFromAlternative_button,self.Copy2Alternative_button],layout_cols=4)
         uniform_Z_control_TB = self.Define_Grid_layout(layout_name='Uniform Z control',buttons_list=[self.canvas.Z0_slider,self.canvas.third_channel_slider, self.canvas.Z1_slider,

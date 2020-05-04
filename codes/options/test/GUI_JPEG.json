@@ -21,8 +21,8 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
-    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss/models/466154_G.pth"
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMapLoss/models/576521_G.pth"
+//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss/models/466154_G.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitD_multiScaleDS_inputConcat_SN_Z64structAndMap1e-3Loss/models/163741_G.pth"
   }
 
   , "network_G": {
