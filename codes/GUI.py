@@ -31,6 +31,7 @@ from data.util import rgb2ycbcr
 from JPEG_module.JPEG import JPEG
 from skimage.color import rgb2hsv,hsv2rgb
 from PIL import Image as PIL_Image
+from jpeg2dct.numpy import load as jpeg_load
 
 DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
@@ -1956,9 +1957,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cur_Z = Z_mask * new_Z + (1 - Z_mask) * self.cur_Z
 
     def SetZ_And_Display(self,value,index,dont_update_undo_list=False):
-        # if self.canvas.SR_model.num_latent_channels!=3:
-        #     self.statusBar.showMessage('Direct Z control is only supported when # control channels equals 3',INFO_MESSAGE_DURATION)
-        #     return
         self.SetZ(value,index)
         self.Recompose_cur_Z()
         self.ReProcess(dont_update_undo_list=dont_update_undo_list)
@@ -2109,8 +2107,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 .to(self.canvas.SR_model.device)
             self.canvas.SR_model.jpeg_compressor_non_quantized = JPEG(compress=True,chroma_mode=True, downsample_and_quantize=False,block_size=self.opt['scale'])\
                 .to(self.canvas.SR_model.device)
-            # self.Assign_Q_Table(10)
-            # self.statusBar.showMessage('Currently fixing QF to 10', INFO_MESSAGE_DURATION)
         else:
             self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
         self.canvas.Z_optimizer_Reset()
@@ -2169,20 +2165,63 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             return Z
 
-    def Decode_JPEG_input(self,loaded_rgb):
-        loaded_rgb *= 255
-        loaded_YCbCr = rgb2ycbcr(1*loaded_rgb,only_y=False)
-        loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
-        self.Assign_Q_Table()
-        self.var_L = self.canvas.SR_model.jpeg_compressor_Y(loaded_YCbCr[:,0,...].unsqueeze(1))
-        chroma_input = self.canvas.SR_model.jpeg_extractor(self.canvas.SR_model.jpeg_compressor(loaded_YCbCr))[:,1:,...]
-        loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),chroma_input],1)
-        loaded_image = torch.clamp(util.Tensor_YCbCR2RGB(loaded_image),0,255).data[0].cpu().numpy().transpose((1,2,0))
-        mean_jpeg_deciphering_error = np.abs(loaded_image-loaded_rgb).mean()
-        self.statusBar.showMessage('Mean error %.3f gray-levels when deciphering JPEG coefficients'%(mean_jpeg_deciphering_error),INFO_MESSAGE_DURATION)
-        loaded_image = rgb2ycbcr(loaded_image,only_y=False)
-        self.loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
-        self.chroma_input = self.loaded_image[:,1:,...]
+    def Decode_JPEG_input(self,path):
+        DIRECTLY_LOAD_DCT_COEFFS = True
+        if DIRECTLY_LOAD_DCT_COEFFS:
+            # This does not work as expected yet. Two major issues:
+            # 1.The DCT coeffs and the resulting images range is very small, approximately 255/3 smaller (that's whay I apply the approximate correction)
+            # 2.For some images, e.g. /home/ybahat/Dropbox/PhD/ExplorableSR/SharedTomerYuval/HR_images/15-tufted-duck.w700.h467.jpg, the unnormalized DCT coeffs do not match the normalized ones, when multiplied by the Quantization tables.
+            LOAD_NORMALIZED = True
+            def color_DCT_2_16pix_block_DCT_tensor(input_DCT):
+                input_shape = input_DCT.shape[:2]
+                output_tensor = 255/3*input_DCT.astype(np.int32)
+                # output_tensor = 1*input_DCT
+                if LOAD_NORMALIZED:
+                    output_tensor /= self.Q_Tables[1].reshape([1,1,64])
+                assert np.all(output_tensor.round() == output_tensor), 'Expected the DCT coefficients divided by the saved Q-table to be integers'
+                output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],1,8,1,8)
+                output_tensor = np.pad(output_tensor,((0,0),(0,0),(0,1),(0,0),(0,1),(0,0)))
+                output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],256)
+                return torch.from_numpy(output_tensor.transpose((2,0,1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            dct_y, dct_cb, dct_cr = jpeg_load(path,normalized=LOAD_NORMALIZED)
+            assert np.abs(np.array(dct_y.shape[:2])/2-np.array(dct_cb.shape[:2])).max()<=1/2,'Assuming chroma is downsampled in half in both axes'
+            for axis_num in range(2):
+                while np.any(dct_y.shape[axis_num]!=2*dct_cb.shape[axis_num]):
+                    if dct_y.shape[axis_num]>2*dct_cb.shape[axis_num]:
+                        dct_y = dct_y.take(np.arange(dct_y.shape[axis_num]-1),axis_num)
+                    else:
+                        dct_cb = dct_cb.take(np.arange(dct_cb.shape[axis_num] - 1), axis_num)
+                        dct_cr = dct_cr.take(np.arange(dct_cr.shape[axis_num] - 1), axis_num)
+
+            dct_y_input2model = 255/3*dct_y.astype(np.int32).transpose((2,0,1))
+            # dct_y_input2model = dct_y.transpose((2,0,1))
+            if LOAD_NORMALIZED:
+                dct_y_input2model /= self.Q_Tables[0].reshape([64,1,1])
+            assert np.all(dct_y_input2model.round()==dct_y_input2model),'Expected the DCT coefficients divided by the saved Q-table to be integers'
+            self.real_JPEG_image = True
+            self.Assign_Q_Table()
+            self.var_L = torch.from_numpy(dct_y_input2model).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            self.chroma_input = self.canvas.SR_model.jpeg_extractor(torch.cat([color_DCT_2_16pix_block_DCT_tensor(dct_cb),color_DCT_2_16pix_block_DCT_tensor(dct_cr)],1))
+            self.loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),self.chroma_input],1)
+        else:
+            self.real_JPEG_image = True
+            self.Assign_Q_Table()
+            loaded_rgb = data_util.read_img(None, path)
+            if loaded_rgb.ndim>2 and loaded_rgb.shape[2] == 3:
+                loaded_rgb = loaded_rgb[:, :, [2, 1, 0]]
+            loaded_rgb *= 255
+            loaded_YCbCr = rgb2ycbcr(1*loaded_rgb,only_y=False)
+            loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            loaded_YCbCr = loaded_YCbCr[:,:,:loaded_YCbCr.size(2)//16*16,:loaded_YCbCr.size(3)//16*16]
+            self.var_L = self.canvas.SR_model.jpeg_compressor_Y(loaded_YCbCr[:,0,...].unsqueeze(1))
+            chroma_input = self.canvas.SR_model.jpeg_extractor(self.canvas.SR_model.jpeg_compressor(loaded_YCbCr))[:,1:,...]
+            loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),chroma_input],1)
+            loaded_image = torch.clamp(util.Tensor_YCbCR2RGB(loaded_image),0,255).data[0].cpu().numpy().transpose((1,2,0))
+            mean_jpeg_deciphering_error = np.abs(loaded_image-loaded_rgb).mean()
+            self.statusBar.showMessage('Mean error %.3f gray-levels when deciphering JPEG coefficients'%(mean_jpeg_deciphering_error),INFO_MESSAGE_DURATION)
+            loaded_image = rgb2ycbcr(loaded_image,only_y=False)
+            self.loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            self.chroma_input = self.loaded_image[:,1:,...]
 
     def open_file(self,path=None,HR_image=False,canvas_pos=None):
         """
@@ -2224,10 +2263,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(True)
         else:
             if self.JPEG_GUI:
-                self.real_JPEG_image = True
-                self.Q_Tables = {int(k): np.reshape(v,[8,8]).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
-                self.Decode_JPEG_input(loaded_image)
-                self.canvas.HR_size = list(self.loaded_image.size())[2:]
+                try:
+                    # self.Q_Tables = {int(k): np.reshape(v,[8,8]).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
+                    self.Q_Tables = {int(k): util.zigzag_list_2_Q_table(list(v)).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
+                    self.Decode_JPEG_input(path)
+                    self.canvas.HR_size = list(self.loaded_image.size())[2:]
+                except Exception as e:
+                    self.statusBar.showMessage('%s loading failed: %s' % (path.split('/')[-1], e), ERR_MESSAGE_DURATION)
+                    print('%s loading failed: %s' % (path.split('/')[-1], e))
             else:
                 self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
                 self.LR_image = (255*loaded_image).astype(np.uint8)

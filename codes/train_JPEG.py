@@ -80,31 +80,12 @@ def main():
         model.step = 0
     else:
         model = create_model(opt,max_accumulation_steps,chroma_mode=opt['name'][:len('JPEG/chroma')]=='JPEG/chroma')
-    # if model.chroma_mode:
-    #     if USE_Y_GENERATOR_4_CHROMA:
-    #         opt_Y = option.parse(parser.parse_args().opt, is_train=False,batch_size_multiplier=len(available_GPUs),name='JPEG')
-    #         opt_Y = option.dict_to_nonedict(opt_Y)  # Convert to NoneDict, which return None for missing key.
-    #         opt_Y['Y_model'] = True
-    #         # opt_Y['train']['gan_weight'] = 0 # Prevent loading or creating of D for the Y channel
-    #         # opt_Y['train']['resume'] = 0 # Loading a pre-trained model whose exact path is specified, not like loading a partially trained model by looking for the highest step num in a certain folder.
-    #         opt_Y['path']['pretrain_model_G'] = opt['path']['Y_channel_model_G']
-    #         model_Y = create_model(opt_Y)
-    #     else:
-    #         raise Exception('Unsupported currently')
 
     # create logger
     logger = Logger(opt)
     # Save validation set results as image collage:
     SAVE_IMAGE_COLLAGE = True
-    # per_image_saved_patch = min([min(im['Uncomp'].shape[1:]) for im in val_loader.dataset])-2
-    # num_val_images = len(val_loader.dataset)
-    # val_images_collage_rows = int(np.floor(np.sqrt(num_val_images)))
-    # while val_images_collage_rows>1:
-    #     if np.round(num_val_images/val_images_collage_rows)==num_val_images/val_images_collage_rows:
-    #         break
-    #     val_images_collage_rows -= 1
     start_time = time.time()
-    # min_accumulation_steps = min([opt['train']['grad_accumulation_steps_G'],opt['train']['grad_accumulation_steps_D']])
     save_GT_Uncomp = True
     lr_too_low = False
     print('---------- Start training -------------')

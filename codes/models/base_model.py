@@ -179,11 +179,13 @@ class BaseModel():
             print('Warning: %d model weights were augmented with zeros to accommodate for larger inputs' % (zero_extended_weights_counter))
         return modified_state_dict
 
-    def plot_curves(self,steps,loss):
+    def plot_curves(self,steps,loss,extra_smoothed=False):
         SMOOTH_CURVES = True
         if SMOOTH_CURVES:
             steps_induced_upper_bound = np.ceil(1000/np.percentile(np.diff(steps),99)) if len(steps)>1 else 1
             smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
+            if extra_smoothed:
+                smoothing_win = np.minimum(len(loss)//3,smoothing_win*100)
             loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
             if steps is not None:
                 steps = np.convolve(steps, np.ones([smoothing_win]) / smoothing_win,'valid')
@@ -226,6 +228,9 @@ class BaseModel():
                     else:
                         series_avg = np.mean(self.log_dict[key])
                 cur_legend_string = [key + ' (%.2e)' % (series_avg)]
+                if len(cur_curve[0])>100:
+                    self.plot_curves(cur_curve[0],cur_curve[1],extra_smoothed=True)
+                    cur_legend_string.append(key+'_smoothed')
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
                     if (key+'_baseline') in self.log_dict.keys() and len(self.log_dict[key+'_baseline'])>0:

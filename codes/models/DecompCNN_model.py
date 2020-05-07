@@ -113,9 +113,10 @@ class DecompCNNModel(BaseModel):
                     self.netD.cuda()
                 self.netD.train()
             self.netG.train()
+            self.mixed_Y_4_training = self.D_exists and self.chroma_mode
         else:
             self.DCT_discriminator = False
-        self.mixed_Y_4_training = self.D_exists and self.is_train
+        # self.mixed_Y_4_training = self.D_exists and self.is_train and self.chroma_mode
         # define losses, optimizer and scheduler
         if self.is_train:
             # G pixel loss
@@ -346,6 +347,7 @@ class DecompCNNModel(BaseModel):
                 cur_Z = (cur_Z*torch.ones([1,1]+DCT_dims))#.type(self.var_Comp.type())
             if not torch.is_tensor(cur_Z):
                 cur_Z = torch.from_numpy(cur_Z)#.type(self.var_Comp.type())
+            self.Y_channel_is_fake = torch.ones([self.batch_size]).byte()
         else:
             cur_Z = None
         if 'Comp' in data.keys():
@@ -359,8 +361,8 @@ class DecompCNNModel(BaseModel):
                 self.Prepare_Input(GT_Y_channel,cur_Z)
                 self.test_Y(detach=detach_Y) # Use detach_Y=False here when, e.g., computing gradients with respect to Z, which should take into account the path going through netG_Y as well, so it should not be detached.
                 if self.mixed_Y_4_training and mixed_Y:#When training a chroma Discriminator (D), I want to prevent it from distinguishing based on the Y channel. To this end, Y channel of fake batches is a mix of real Y channels and the output of the Y generator, with arbitrary 1:1 ratio.
-                    self.Y_channel_is_fake = torch.zeros([self.batch_size]).byte()
-                    self.Y_channel_is_fake[torch.randperm(self.batch_size)[:self.batch_size//2]] = 1
+                    # self.Y_channel_is_fake = torch.zeros([self.batch_size]).byte()
+                    self.Y_channel_is_fake[torch.randperm(self.batch_size)[:self.batch_size//2]] = 0
                     self.y_channel_input[~self.Y_channel_is_fake] = GT_Y_channel[~self.Y_channel_is_fake].cuda()
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
             self.Prepare_Input(data['Uncomp'],latent_input=cur_Z)
