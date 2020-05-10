@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF5_50_CoarsestScaleDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64_structAndMap1e-3Loss" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF5_50_CoarsestScaleDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -14,7 +14,7 @@
       , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 0
+      , "n_workers": 20
       , "batch_size": 16
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16
@@ -36,10 +36,10 @@
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_LR1e-4/models/550142_G.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF5_50_G.pth"
-    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
     , "Y_channel_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
+    , "pretrain_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5_50_CoarsestScale/models/493051_G.pth"
 //    , "pretrain_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInput_SN_DCTnf160nb10QF5_50_verifiedD.pth"
@@ -78,7 +78,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -109,8 +109,8 @@
     , "pixel_weight": 0 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
-    , "latent_weight": 5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 1e-3 //0 //100
+    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+    , "optimalZ_loss_weight": 0 //1e-3 //0 //100
     , "range_weight": 1 //0 //5000
 
     //for wgan-gp

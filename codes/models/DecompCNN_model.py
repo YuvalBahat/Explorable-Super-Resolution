@@ -347,7 +347,7 @@ class DecompCNNModel(BaseModel):
                 cur_Z = (cur_Z*torch.ones([1,1]+DCT_dims))#.type(self.var_Comp.type())
             if not torch.is_tensor(cur_Z):
                 cur_Z = torch.from_numpy(cur_Z)#.type(self.var_Comp.type())
-            self.Y_channel_is_fake = torch.ones([self.batch_size]).byte()
+            self.Y_channel_is_fake = torch.ones([self.QF.size(0)]).byte()
         else:
             cur_Z = None
         if 'Comp' in data.keys():
@@ -361,7 +361,7 @@ class DecompCNNModel(BaseModel):
                 self.Prepare_Input(GT_Y_channel,cur_Z)
                 self.test_Y(detach=detach_Y) # Use detach_Y=False here when, e.g., computing gradients with respect to Z, which should take into account the path going through netG_Y as well, so it should not be detached.
                 if self.mixed_Y_4_training and mixed_Y:#When training a chroma Discriminator (D), I want to prevent it from distinguishing based on the Y channel. To this end, Y channel of fake batches is a mix of real Y channels and the output of the Y generator, with arbitrary 1:1 ratio.
-                    # self.Y_channel_is_fake = torch.zeros([self.batch_size]).byte()
+                    # self.Y_channel_is_fake = torch.ones([self.batch_size]).byte()
                     self.Y_channel_is_fake[torch.randperm(self.batch_size)[:self.batch_size//2]] = 0
                     self.y_channel_input[~self.Y_channel_is_fake] = GT_Y_channel[~self.Y_channel_is_fake].cuda()
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
@@ -428,7 +428,9 @@ class DecompCNNModel(BaseModel):
                     'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]})
                 if self.mixed_Y_4_training:
                     # In this case, fake_H has half the batch_size images, so the rest of the images (whose Y channel is real) should be loaded back.
+                    Y_channel_is_fake_copy = 1*self.Y_channel_is_fake #Y_channel_is_fake is going to be overidden during Z optimization
                     optimized_Z = self.Z_optimizer.optimize()
+                    self.Y_channel_is_fake = Y_channel_is_fake_copy
                     temp_Z = torch.zeros_like(optimized_Z).repeat([2,1,1,1])
                     temp_Z[self.Y_channel_is_fake] = optimized_Z
                     self.feed_data({'Uncomp':self.var_Uncomp,'QF':stored_QF,'Z':temp_Z}, need_GT=False)
