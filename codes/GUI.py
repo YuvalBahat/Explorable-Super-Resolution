@@ -2407,7 +2407,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 imageio.imsave(path%('_Z'),Z_image)
             input_im_4_saving = self.input_image.squeeze(0).data.cpu().numpy().transpose((1, 2, 0))
             imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),input_im_4_saving)
-            if self.JPEG_GUI:
+            SAVE_JPEG = self.JPEG_GUI and False
+            if SAVE_JPEG:
                 input_im_4_saving = PIL_Image.fromarray((255*input_im_4_saving).astype(np.uint8))
                 jpeg_path = path.replace('_%d'%(self.saved_outputs_counter),'').replace('.png','.jpg') % ('_Comp')
                 # input_im_4_saving.save(jpeg_path,'jpeg',subsampling=2,qtables={0:list(self.Q_Tables[0].reshape([-1])),1:list(self.Q_Tables[1].reshape([-1]))})
@@ -2430,8 +2431,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 data_2_save['estimated_kernel'] = self.estimated_kernel
             if len(data_2_save.keys())>0:
                 np.savez(path.replace('.png','.npz')%('_scribble_data'),**data_2_save)
-            print('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if self.JPEG_GUI else ''))
-            self.statusBar.showMessage('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if self.JPEG_GUI else ''),INFO_MESSAGE_DURATION)
+            print('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if SAVE_JPEG else ''))
+            self.statusBar.showMessage('Saved image %s'%(path%(''))+(' JPEG error: %.2f'%(jpeg_MeanAbsErr) if SAVE_JPEG else ''),INFO_MESSAGE_DURATION)
             self.saved_outputs_counter += 1
 
 if __name__ == '__main__':

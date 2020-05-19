@@ -6,6 +6,9 @@ import numpy as np
 import lmdb
 import torch
 import cv2
+import imagesize
+from tqdm import tqdm
+
 from skimage import io
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP','tif']
@@ -26,10 +29,21 @@ def _get_paths_from_images(path):
     # for dirpath, _, fnames in sorted(os.walk(path)):
     #     for fname in sorted(fnames):
     dirpath = path
-    for fname in os.listdir(dirpath):
+    for fname in tqdm(os.listdir(dirpath)):
         if is_image_file(fname):
             img_path = os.path.join(dirpath, fname)
             images.append(img_path)
+        elif 'imagenet' in dirpath and os.path.isdir(os.path.join(dirpath, fname)): # Added for the case of ImageNet:
+            PATCH_SIZE = 256
+            sub_dir = os.path.join(dirpath, fname)
+            if not os.path.isfile(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE))):
+                with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE)), 'w') as f:
+                    for fname_ in os.listdir(sub_dir):
+                        if all(np.array(imagesize.get(os.path.join(sub_dir,fname_))) >= PATCH_SIZE):
+                            f.write(os.path.join(sub_dir,fname_) + '\n')
+            with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE)),'r') as f:
+                images += [p.replace('\n','') for p in f.readlines()]
+
     assert images, '{:s} has no valid image file'.format(path)
     return images
 

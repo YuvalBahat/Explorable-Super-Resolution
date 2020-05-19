@@ -68,7 +68,7 @@ class DecompCNNModel(BaseModel):
             self.jpeg_extractor_Y = JPEG(compress=False,chroma_mode=False,block_size=8).to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
-                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
@@ -582,7 +582,8 @@ class DecompCNNModel(BaseModel):
                     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     self.optimizer_G.zero_grad()
-                    self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step = [],[],[],[],[],[]
+                    self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
+                        self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
                 if self.cri_pix:  # pixel loss
                     l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
@@ -601,10 +602,12 @@ class DecompCNNModel(BaseModel):
                     l_g_latent = self.cri_latent(latent_loss_dict)[self.Y_channel_is_fake]
                     l_g_total += self.l_latent_w * l_g_latent.mean()/self.grad_accumulation_steps_G
                     self.l_g_latent_grad_step.append([l.item() for l in l_g_latent.mean(0)])
-                if self.cri_optimalZ and first_dual_batch_step:  # optimized-Z reference image loss
+                if optimized_Z_step:
+                # if self.cri_optimalZ and first_dual_batch_step:  # optimized-Z reference image loss
                     l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
+                    self.Z_effect_grad_step.append()
 
                 # G gan + cls loss
                 if not self.D_exists:
@@ -650,6 +653,7 @@ class DecompCNNModel(BaseModel):
                             self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
+                        self.log_dict['Z_effect'].append((self.gradient_step_num, np.mean(self.Z_effect_grad_step)))
                     if self.cri_gan:
                         self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1

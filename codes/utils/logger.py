@@ -62,7 +62,7 @@ class Logger(object):
             if label in keys_ignore_list or '_baseline' in label:
                 continue
             if mode == 'train':
-                message += '{:s}: {:.2e} '.format(label, value)
+                message += '{:s}: {:.4e} '.format(label, value)
             elif mode == 'val':
                 message += '{:s}: {:.4e} '.format(label, value)
             # tensorboard logger

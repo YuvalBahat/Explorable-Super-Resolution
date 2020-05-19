@@ -8,10 +8,12 @@
 
   , "datasets": {
     "train": {
-      "name": "DIV2K"
+//      "name": "DIV2K"
+      "name": "ImageNet"
       , "mode": "JPEG"
       , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70] //10
-      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
+//      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
+      , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 5
@@ -21,7 +23,7 @@
       , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
-      , "scales": [0,0,1]
+//      , "scales": [0,0,1]
     }
     , "val": {
       "name": "val_set14_part"

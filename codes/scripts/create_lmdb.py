@@ -13,8 +13,13 @@ from utils.progress_bar import ProgressBar
 dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets'
 img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_HR/*')  # glob matching pattern
 lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_HR.lmdb')  # must end with .lmdb
+# img_folder = os.path.join(dataset_root_path,'imagenet/train')  # glob matching pattern
+# lmdb_save_path = os.path.join(dataset_root_path,'imagenet/train/imagenet_train_HR.lmdb')  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
+# img_list = []
+# for dir in os.listdir(img_folder):
+#     img_list += [os.path.join(img_folder,dir,file) for file in os.listdir(os.path.join(img_folder,dir)) if any([suffix in file for suffix in ['.png','.jpg','.JPEG','.bmp']])]
 dataset = []
 data_size = 0
 
