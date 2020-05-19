@@ -5,6 +5,7 @@ import cv2
 import torch
 import torch.utils.data as data
 import data.util as util
+# from tqdm import tqdm
 from CEM.imresize_CEM import imresize
 
 
@@ -44,7 +45,6 @@ class JpegDataset(data.Dataset):
             self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],opt['dataroot_Uncomp'])
             # self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],
             #     opt['dataroot_Uncomp'].replace('GrayScale','HRx4') if '_chroma' in opt['mode'] else opt['dataroot_Uncomp'])
-        assert self.paths_Uncomp, 'Error: Uncomp path is empty.'
         if opt['scales'] is not None:
             assert len(opt['scales'])==3
             new_paths_list = []
@@ -53,6 +53,7 @@ class JpegDataset(data.Dataset):
                     continue
                 new_paths_list += prob_ratio*[path for path in self.paths_Uncomp if '_scale%d_'%(scale_num) in path]
             self.paths_Uncomp = new_paths_list
+        assert self.paths_Uncomp, 'Error: Uncomp path is empty.'
         if self.opt['phase'] == 'train':
             assert not self.opt['patch_size']%8,'Training for JPEG compression artifacts removal - Training images should have an integer number of 8x8 blocks.'
         else:
