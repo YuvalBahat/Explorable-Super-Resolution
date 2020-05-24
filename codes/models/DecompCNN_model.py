@@ -81,7 +81,7 @@ class DecompCNNModel(BaseModel):
                     self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past','initial','initial_gradual',None]
-            self.D_verified = False
+            self.D_verified, self.verified_D_saved = False,False
             if self.D_verification=='convergence':
                 self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
@@ -517,20 +517,23 @@ class DecompCNNModel(BaseModel):
                                         and all([val[1] > self.opt['train']['min_mean_D_correct'] for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
                                     else:
                                         self.generator_step = False
-                                    if self.D_verification=='initial' and self.generator_step:
-                                        self.D_verified = True
-                                        self.save(self.gradient_step_num,first_verified_D=True)#D was approved in the current step
-                                    elif self.D_verification=='initial_gradual':
-                                        GRAD_WIN_LENGTH_FACTOR = 100
-                                        # Not saving D's state when D is verified because here this happens only after G had changed from its original state, so I cannot use this D for other models of G
-                                        if len(self.log_dict['l_g_gan'])>=GRAD_WIN_LENGTH_FACTOR:
-                                            self.D_verified = \
-                                                np.mean([val[1] for val in
-                                                self.log_dict['D_logits_diff'][-(GRAD_WIN_LENGTH_FACTOR*self.opt['train']['D_valid_Steps_4_G_update']):]])\
-                                                > np.log(self.opt['train']['min_D_prob_ratio_4_G']) and \
-                                                np.mean([val[1] for val in
-                                                 self.log_dict['Correctly_distinguished'][-(GRAD_WIN_LENGTH_FACTOR * self.opt['train']['D_valid_Steps_4_G_update']):]])\
-                                                > self.opt['train']['min_mean_D_correct']
+                                    if self.generator_step:
+                                        if not self.verified_D_saved:
+                                            self.save(self.gradient_step_num,first_verified_D=True)  # D was approved in the current step
+                                            self.verified_D_saved = True
+                                        if self.D_verification=='initial':
+                                            self.D_verified = True
+                                        elif self.D_verification=='initial_gradual':
+                                            GRAD_WIN_LENGTH_FACTOR = 100
+                                            # Not saving D's state when D is verified because here this happens only after G had changed from its original state, so I cannot use this D for other models of G
+                                            if len(self.log_dict['l_g_gan'])>=GRAD_WIN_LENGTH_FACTOR:
+                                                self.D_verified = \
+                                                    np.mean([val[1] for val in
+                                                    self.log_dict['D_logits_diff'][-(GRAD_WIN_LENGTH_FACTOR*self.opt['train']['D_valid_Steps_4_G_update']):]])\
+                                                    > np.log(self.opt['train']['min_D_prob_ratio_4_G']) and \
+                                                    np.mean([val[1] for val in
+                                                     self.log_dict['Correctly_distinguished'][-(GRAD_WIN_LENGTH_FACTOR * self.opt['train']['D_valid_Steps_4_G_update']):]])\
+                                                    > self.opt['train']['min_mean_D_correct']
                             elif self.D_verification=='convergence':
                                 if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
                                     std, slope = 0, 0
