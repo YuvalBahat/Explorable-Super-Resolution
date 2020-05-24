@@ -115,7 +115,7 @@ class DecompCNNModel(BaseModel):
             self.netG.train()
             self.mixed_Y_4_training = self.D_exists and self.chroma_mode
         else:
-            self.DCT_discriminator = False
+            self.DCT_discriminator,self.mixed_Y_4_training = False,False
         # self.mixed_Y_4_training = self.D_exists and self.is_train and self.chroma_mode
         # define losses, optimizer and scheduler
         if self.is_train:
@@ -710,6 +710,7 @@ class DecompCNNModel(BaseModel):
             per_image_saved_patch = min([min(im['Uncomp'].shape[1:]) for im in data_loader.dataset]) - 2
             GT_image_collage, quantized_image_collage = [], []
         QF_images_counter = {}
+        chroma_mode = 'YCbCr' if self.chroma_mode else 'Y'
         for val_data in tqdm.tqdm(data_loader):
             if save_images:
                 if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
@@ -721,8 +722,8 @@ class DecompCNNModel(BaseModel):
             self.test()
             # self.test(Y_already_computed=True) # I pass Y_already_computed because Y was computed inside feed_data, and self.model_input now comprises the computed Y generator output.
             visuals = self.get_current_visuals()
-            sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
-            gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)  # float32
+            sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
+            gt_img = util.tensor2img(visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
             avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
             if save_images:
                 if SAVE_IMAGE_COLLAGE:
@@ -730,8 +731,7 @@ class DecompCNNModel(BaseModel):
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                     if GT_and_quantized:  # Save GT Uncomp images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp),out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)
-                        # quantized_image = util.tensor2img(self.jpeg_extractor(self.jpeg_compressor(val_data['Uncomp'].to(self.device))),out_type=np.uint8, min_max=[0, 255],chroma_mode=self.chroma_mode)
+                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp),out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
                         quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1].copy(), str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,

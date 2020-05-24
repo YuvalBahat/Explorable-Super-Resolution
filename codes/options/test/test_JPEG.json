@@ -1,5 +1,5 @@
 {
-    "name": "256_channels_QF10"
+    "name": "nf320nb10_QF5_50_ImageNetDS"
   , "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -9,8 +9,8 @@
     "test_1": { // the 2nd test dataset
       "name": "LIVE"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 10
-      , "dataroot_Uncomp": "LIVE_release2/refimgs_Uncomp"
+      , "jpeg_quality_factor": 20
+      , "dataroot_Uncomp": "LIVE_release2/refimgs"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     } //,
 //    "test_1": { // the 2nd test dataset
@@ -36,6 +36,7 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS/models/727906_G.pth"
   }
 
   , "network_G": {
@@ -45,8 +46,8 @@
     , "latent_channels": 0
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "nf": 256
-    , "nb": 17
+    , "nf": 320
+    , "nb": 10
     , "in_nc": 64
     , "out_nc": 64
     , "gc": 32

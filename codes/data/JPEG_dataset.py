@@ -83,13 +83,14 @@ class JpegDataset(data.Dataset):
 
         # get Uncomp image
         Uncomp_path = self.paths_Uncomp[index]
-        img_Uncomp = 255*util.read_img(self.Uncomp_env, Uncomp_path)
+        img_Uncomp = util.read_img(self.Uncomp_env, Uncomp_path)
         # modcrop in the validation / test phase
         if self.opt['phase'] != 'train':
             img_Uncomp = util.modcrop(img_Uncomp, self.block_size)
         # change color space if necessary
-        img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if 'chroma' in self.opt['mode'] else 'y', [img_Uncomp])[0]
-        # if 'chroma' in self.opt['mode']:
+        img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if 'chroma' in self.opt['mode'] else 'y', [img_Uncomp])[0]
+        if 'chroma' in self.opt['mode'] and img_Uncomp.shape[2]==1: #For the case of loading a grayscale image in JPEG format during chroma training:
+            img_Uncomp = np.tile(img_Uncomp,[1,1,3])
         #     img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
 
         # randomly scale during training

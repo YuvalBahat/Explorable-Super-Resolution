@@ -79,7 +79,7 @@ def SVD_Symmetric_2x2(a,d,b):
 ####################
 # image convert
 ####################
-def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=False):
+def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=None):
     '''
     Converts a torch Tensor into an image Numpy array
     Input: 4D(B,(3/1),H,W), 3D(C,H,W), or 2D(H,W), any range, RGB channel order
@@ -92,18 +92,22 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=False):
     # tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # to range [0,1]
     n_dim = tensor.dim()
     if n_dim == 4:
-        assert not chroma_mode,'Unsupported yet'
+        assert chroma_mode is None,'Unsupported yet'
         n_img = len(tensor)
         img_np = make_grid(tensor, nrow=int(math.sqrt(n_img)), normalize=False).numpy()
         img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
     elif n_dim == 3:
+        assert chroma_mode in [None,'YCbCr'], '3-channels image input with %s chroma mode'%(chroma_mode)
         img_np = tensor.numpy()
         if chroma_mode: #input tensor is in YCbCr color space:
             img_np = ycbcr2rgb(np.transpose(img_np, (1, 2, 0)))[:,:,[2,1,0]]
         else:
             img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
     elif n_dim == 2:
+        assert chroma_mode in [None,'Y'], 'Single-channels image input with %s chroma mode'%(chroma_mode)
         img_np = tensor.numpy()
+        if chroma_mode: #input tensor is in Y color space:
+            img_np = 255/219*(img_np-16)
     else:
         raise TypeError(
             'Only support 4D, 3D and 2D tensor. But received with dimension: {:d}'.format(n_dim))

@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNetDS" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
+  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap5e-4Loss" //"nf160nb10_QF10_ZinjectD_SN_VerifInitGrad1_1DGprobRatio_noRefLoss_DCT_1e-4ZmapLoss" // "nf160nb10_QF10_MSEandHalfD_DlayerNorm_nf16nb8_GnoNorm_LR1e-4"
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -16,7 +16,7 @@
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 10
+      , "n_workers": 4
       , "batch_size": 16
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16
@@ -39,8 +39,8 @@
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF5_50_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
-//    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
-    , "Y_channel_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf320nb10QF5_50_ImageNet_G.pth"
+    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_SymmetricWGAN_DinputConcat_InitialVerific_noRefLoss_DCT_BatchInstanceNorm_fromMSE_lr1e-5/models/2000001_G.pth"
 //    , "pretrain_model_D": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_CoarsestScaleDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64_structAndMap1e-3Loss/models/469840_D_verified.pth"
 //    , "pretrain_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
