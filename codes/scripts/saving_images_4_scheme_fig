@@ -1,0 +1,15 @@
+import matplotlib.pyplot as plt
+plt.imsave('input.png',np.tile(np.expand_dims(np.expand_dims(input_im,-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
+DCT_im = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+plt.imsave('DCT.png',np.tile(np.expand_dims(np.expand_dims((DCT_im-DCT_im.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
+DCT_im_divided = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+plt.imsave('DCT_divided.png',np.tile(np.expand_dims(np.expand_dims((DCT_im_divided-DCT_im_divided.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
+DCT_im_rounded = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+plt.imsave('DCT_rounded.png',np.tile(np.expand_dims(np.expand_dims((DCT_im_rounded-DCT_im_rounded.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
+reconstructed_im=output[:,:,8:8+32,312:312+24].data.cpu().numpy().squeeze()
+plt.imsave('reconstructed.png',np.tile(np.expand_dims(np.expand_dims(reconstructed_im,-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
+Q_table=self.Q_table.data.cpu().numpy().squeeze()
+plt.imsave('Q_table_QF5.png',np.tile(np.expand_dims(np.expand_dims(Q_table,-1),1),[1,10,1,10]).reshape(80,80),cmap='gray')
+Quantized image (Should be edited:)
+util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=CHROMA)
+

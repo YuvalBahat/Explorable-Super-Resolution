@@ -100,14 +100,15 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=None):
         assert chroma_mode in [None,'YCbCr'], '3-channels image input with %s chroma mode'%(chroma_mode)
         img_np = tensor.numpy()
         if chroma_mode: #input tensor is in YCbCr color space:
-            img_np = ycbcr2rgb(np.transpose(img_np, (1, 2, 0)))[:,:,[2,1,0]]
+            img_np = 255*ycbcr2rgb(np.transpose(img_np/255, (1, 2, 0)))[:,:,[2,1,0]]
         else:
             img_np = np.transpose(img_np[[2, 1, 0], :, :], (1, 2, 0))  # HWC, BGR
     elif n_dim == 2:
         assert chroma_mode in [None,'Y'], 'Single-channels image input with %s chroma mode'%(chroma_mode)
         img_np = tensor.numpy()
         if chroma_mode: #input tensor is in Y color space:
-            img_np = 255/219*(img_np-16)
+            img_np = 255 * ycbcr2rgb(np.stack([img_np/255]+2*[128/255*np.ones_like(img_np)],-1))[:, :, [2, 1, 0]]
+            # img_np = 255/219*(img_np-16)
     else:
         raise TypeError(
             'Only support 4D, 3D and 2D tensor. But received with dimension: {:d}'.format(n_dim))

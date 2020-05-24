@@ -9,7 +9,7 @@
     "test_1": { // the 2nd test dataset
       "name": "LIVE"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 20
+      , "jpeg_quality_factor": 49
       , "dataroot_Uncomp": "LIVE_release2/refimgs"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     } //,
