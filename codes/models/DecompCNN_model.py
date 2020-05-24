@@ -610,7 +610,7 @@ class DecompCNNModel(BaseModel):
                     l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
-                    self.Z_effect_grad_step.append()
+                    self.Z_effect_grad_step.append(np.mean(np.diff(self.Z_optimizer.loss_values)))
 
                 # G gan + cls loss
                 if not self.D_exists:
