@@ -1337,11 +1337,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.show()
 
     def Manipulate_HSV(self,channel,increase):
+        STEP_SIZE = 0.1 # 0.01
         self.canvas.scribble_mode_entry_operations()
         existing_scribble_im = qimage2ndarray.rgb_view(self.canvas.pixmap().toImage())
         HSV_image = rgb2hsv(existing_scribble_im)
         multiplier = 1.01 if increase else 0.99
-        adder = 0.01 if increase else -0.01
+        adder = STEP_SIZE if increase else -1*STEP_SIZE
         if channel=='H':
             # HSV_image[:,:,0] = HSV_image[:,:,0]*(1-self.canvas.HR_mask_display_size)+np.mod(self.canvas.HR_mask_display_size*multiplier*HSV_image[:,:,0],1)
             HSV_image[:,:,0] = np.mod(HSV_image[:,:,0]+self.canvas.HR_mask_display_size*adder,1)
@@ -1797,7 +1798,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.canvas.Z_optimizer_logger.append(Logger(self.canvas.opt,tb_logger_suffix='_%s%s'%(objective,'_%d'%(i) if self.multiple_inits else '')))
             if self.JPEG_GUI:
                 data['Comp'] = data['LR']
-                data['QF'] = self.canvas.SR_model.jpeg_extractor.QF
+                data['QF'] = self.canvas.SR_model.jpeg_extractor.QF.view(1)
                 data['chroma_input'] = self.chroma_input
             self.canvas.Z_optimizer = Z_optimizer(objective=objective,Z_size=[val*self.canvas.SR_model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.SR_model,
                 Z_range=self.max_SVD_Lambda,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=self.iters_per_round,

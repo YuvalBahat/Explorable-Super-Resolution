@@ -69,7 +69,7 @@ class JPEG(nn.Module):
     def Set_Q_Table(self,QF_or_table,QF=True):
         if QF:
             self.QF = QF_or_table
-            condition = (QF_or_table < 50).to(self.device).type(torch.LongTensor)
+            condition = (QF_or_table < 50).to(self.device).type(self.QF.type())
             self.factor = (condition*(5000 / QF_or_table) + (1-condition)*(200 - 2 * QF_or_table))
             self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.synthetic_Q_table.dtype).to(self.device)
             self.Q_table = torch.clamp((self.factor * self.synthetic_Q_table).round(),0,255)

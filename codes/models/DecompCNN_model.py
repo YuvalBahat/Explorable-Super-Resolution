@@ -324,7 +324,7 @@ class DecompCNNModel(BaseModel):
         if self.DCT_discriminator:
             self.jpeg_non_quantized_compressor.Set_Q_Table(self.QF)
         if self.latent_input is not None:
-            input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else 8*np.array(data['Comp'].size())
+            input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else [1,1,8,8]*np.array(data['Comp'].size())
             DCT_dims = list(input_size[2:]//8)
             # DCT_dims = list(np.array(self.var_Comp.size())[2:]) # Spatial dimensions of the latent channel correspond to those of the Y channel DCT coefficients.
             # Z is downsampled for the chroma channels generator

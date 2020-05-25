@@ -1,5 +1,6 @@
 {
-    "name": "nf320nb10_QF5_50_ImageNetDS"
+//    "name": "nf320nb10_QF5_50_ImageNetDS"
+    "name": "Lean_QF5_50_ImageNetDS"
   , "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -9,7 +10,7 @@
     "test_1": { // the 2nd test dataset
       "name": "LIVE"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 49
+      , "jpeg_quality_factor": 10
       , "dataroot_Uncomp": "LIVE_release2/refimgs"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     } //,
@@ -46,8 +47,8 @@
     , "latent_channels": 0
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "nf": 320
-    , "nb": 10
+    , "nf": 94 //320
+    , "nb": 9 //10
     , "in_nc": 64
     , "out_nc": 64
     , "gc": 32

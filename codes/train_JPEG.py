@@ -85,7 +85,7 @@ def main():
     logger = Logger(opt)
     # Save validation set results as image collage:
     SAVE_IMAGE_COLLAGE = True
-    start_time = time.time()
+    start_time,start_time_gradient_step = time.time(),model.step // max_accumulation_steps
     save_GT_Uncomp = True
     lr_too_low = False
     print('---------- Start training -------------')
@@ -115,8 +115,8 @@ def main():
             if model.step > total_iters:
                 break
 
-            time_elapsed = time.time() - start_time
-            if not_within_batch:    start_time = time.time()
+            # time_elapsed = time.time() - start_time
+            # if not_within_batch:    start_time = time.time()
             # log
             if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
                 logs = model.get_current_log()
@@ -124,7 +124,9 @@ def main():
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = model.gradient_step_num
-                print_rlt['time'] = time_elapsed
+                # time_elapsed = time.time() - start_time
+                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
+                start_time, start_time_gradient_step = time.time(), model.gradient_step_num
                 for k, v in logs.items():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
@@ -160,12 +162,13 @@ def main():
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
                 else:
                     print('Skipping validation because generator is unchanged')
-                time_elapsed = time.time() - start_time
+                # time_elapsed = time.time() - start_time
                 # Save to log
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = model.gradient_step_num
-                print_rlt['time'] = time_elapsed
+                # print_rlt['time'] = time_elapsed
+                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
                 # model.display_log_figure()
                 # model.generator_changed = False
                 logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
