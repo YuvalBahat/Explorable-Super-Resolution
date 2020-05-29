@@ -148,8 +148,25 @@ def crop_nd_array(array,desired_mask_bounding_rect):
     return array[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1] + desired_mask_bounding_rect[3],
            desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0] + desired_mask_bounding_rect[2], ...]
 
-# def zero_pad_array(array,target_im_pad_sizes,mode='constant'):
-#     return np.pad(array, (tuple(target_im_pad_sizes[0]), tuple(target_im_pad_sizes[1]), (0, 0)), mode=mode)
+def IndexingHelper(index,negative=False):
+    if negative:
+        return index if index < 0 else None
+    else:
+        return index if index > 0 else None
+
+def Translation_2_Y_X_ranges(translation):
+    y_range, x_range = [IndexingHelper(translation[0]), IndexingHelper(translation[0], negative=True)], [
+        IndexingHelper(translation[1]), IndexingHelper(translation[1], negative=True)]
+    return y_range,x_range
+
+def Return_Translated_SubImage(image, translation):
+    y_range, x_range = Translation_2_Y_X_ranges(translation)
+    return image[:, :, y_range[0]:y_range[1], x_range[0]:x_range[1]]
+
+
+def Return_Interpolated_SubImage(image, grid):
+    return torch.nn.functional.grid_sample(image, grid.repeat([image.size(0), 1, 1, 1]))
+
 
 def pol2cart(rho, phi):
     x = rho * np.cos(phi)

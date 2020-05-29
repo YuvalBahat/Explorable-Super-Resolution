@@ -62,7 +62,10 @@ class DecompCNNModel(BaseModel):
         #     self.netG.module.dncnn,_ = util.convert_batchNorm_2_layerNorm(self.netG.module.dncnn,input=input)
         self.netG.to(self.device)
         if self.chroma_mode and USE_Y_GENERATOR_4_CHROMA:
-            self.netG_Y = networks.define_G(opt,num_latent_channels=self.num_latent_channels,chroma_mode=False).to(self.device).cuda()
+            netG_Y_opt = opt.copy()
+            if 'network_G_Y' in netG_Y_opt.keys():
+                netG_Y_opt['network_G'] = netG_Y_opt['network_G_Y']
+            self.netG_Y = networks.define_G(netG_Y_opt,num_latent_channels=self.num_latent_channels,chroma_mode=False).to(self.device).cuda()
             self.netG_Y.eval()
             self.jpeg_compressor_Y = JPEG(compress=True,chroma_mode=False, downsample_and_quantize=True,block_size=8).to(self.device)
             self.jpeg_extractor_Y = JPEG(compress=False,chroma_mode=False,block_size=8).to(self.device)
@@ -137,7 +140,7 @@ class DecompCNNModel(BaseModel):
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 # Dividing the batch size in 2 for the case of training a chroma Discriminator. See explanation for self.Y_channel_is_fake
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']))],
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/8)],
                     model=self,Z_range=1,max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size']//(2 if self.chroma_mode and self.D_exists else 1),
                     HR_unpadder=lambda x:x,jpeg_extractor=self.jpeg_extractor)
                 if self.optimalZ_loss_type == 'l2':
@@ -251,8 +254,6 @@ class DecompCNNModel(BaseModel):
             return self.output_image
 
     def Prepare_Input(self,im_input,latent_input,compressed_input=False):
-        # if self.chroma_mode:
-        #     Comp_image = torch.cat([Comp_image[:,0,...],Comp_image[:,1,:64,...],Comp_image[:,2,:64,...]],1)
         if compressed_input:
             self.var_Comp = im_input
         else:
@@ -263,6 +264,7 @@ class DecompCNNModel(BaseModel):
                 self.var_Comp = self.jpeg_compressor(im_input)
         if latent_input is not None:
             if self.var_Comp.size()[2:]!=latent_input.size()[2:]:
+                assert np.all(2*np.array(self.var_Comp.size()[2:])==np.array(latent_input.size()[2:])),'dimensions are not as expected' #Should happen due to differences in block size between chroma and Y models - There are twice as many blocks in Y, so spatial dimensions should be doubled.
                 latent_input = nn.functional.interpolate(latent_input, size=self.var_Comp.size()[2:], mode='bilinear', align_corners=True)
             self.model_input = torch.cat([latent_input.type(self.var_Comp.type()),self.var_Comp],dim=1)
         else:
@@ -270,8 +272,6 @@ class DecompCNNModel(BaseModel):
 
     def GetLatent(self):
         latent = 1*self.model_input[:,:self.num_latent_channels,...]
-        # if latent.size(1)!=self.num_latent_channels:
-        #     latent = latent.view([latent.size(0)]+[self.num_latent_channels]+[self.opt['scale']*val for val in list(latent.size()[2:])])
         return latent
 
     def Repeat_Z_3_channels(self,input_Z):
@@ -385,6 +385,7 @@ class DecompCNNModel(BaseModel):
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self):
+        Z_OPTIMIZATION_WHEN_D_UNVERIFIED = True
         # self.gradient_step_num = self.step//self.max_accumulation_steps
         first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
         last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
@@ -411,7 +412,7 @@ class DecompCNNModel(BaseModel):
             G_grads_retained = False
             for p in self.netG.parameters():
                 p.requires_grad = False
-        actual_dual_step_steps = int(self.optimalZ_loss_type is not None and self.generator_started_learning)+1 # 2 if I actually have an optimized-Z step, 1 otherwise
+        actual_dual_step_steps = int(self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED))+1 # 2 if I actually have an optimized-Z step, 1 otherwise
         for possible_dual_step_num in range(actual_dual_step_steps):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
             first_dual_batch_step = possible_dual_step_num==0
@@ -504,6 +505,8 @@ class DecompCNNModel(BaseModel):
                         # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
                         self.generator_step = self.generator_step and self.step % \
                                               self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+
+                        self.generator_Z_opt_only_step = Z_OPTIMIZATION_WHEN_D_UNVERIFIED and self.generator_step
                         if self.generator_step:
                             if self.D_verification in ['past','initial','initial_gradual'] and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
                                 if not self.D_verified:
@@ -571,7 +574,7 @@ class DecompCNNModel(BaseModel):
 
             # G step:
             l_g_total = 0
-            if self.generator_step:
+            if self.generator_step or self.generator_Z_opt_only_step:
                 self.generator_started_learning = True
                 if self.D_steps_since_G > 0:
                     self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
@@ -587,78 +590,79 @@ class DecompCNNModel(BaseModel):
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
-                if self.cri_pix:  # pixel loss
-                    l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
-                    l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_fea:  # feature loss
-                    real_fea = self.netF(self.var_Uncomp).detach()
-                    fake_fea = self.netF(self.output_image)
-                    l_g_fea = self.cri_fea(fake_fea, real_fea)
-                    l_g_total += self.l_fea_w * l_g_fea/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_range: #range loss
-                    l_g_range = self.cri_range(self.output_image)
-                    l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_latent and last_dual_batch_step:
-                    latent_loss_dict = {'Decomp':self.output_image,'Uncomp':self.var_Uncomp,'Z':static_Z}
-                    if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
-                        latent_loss_dict['SVD'] = self.SVD
-                    l_g_latent = self.cri_latent(latent_loss_dict)[self.Y_channel_is_fake]
-                    l_g_total += self.l_latent_w * l_g_latent.mean()/self.grad_accumulation_steps_G
-                    self.l_g_latent_grad_step.append([l.item() for l in l_g_latent.mean(0)])
                 if optimized_Z_step:
-                # if self.cri_optimalZ and first_dual_batch_step:  # optimized-Z reference image loss
                     l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
                     self.Z_effect_grad_step.append(np.mean(np.diff(self.Z_optimizer.loss_values)))
+                if self.generator_step:
+                    if self.cri_pix:  # pixel loss
+                        l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
+                        l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    if self.cri_fea:  # feature loss
+                        real_fea = self.netF(self.var_Uncomp).detach()
+                        fake_fea = self.netF(self.output_image)
+                        l_g_fea = self.cri_fea(fake_fea, real_fea)
+                        l_g_total += self.l_fea_w * l_g_fea/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    if self.cri_range: #range loss
+                        l_g_range = self.cri_range(self.output_image)
+                        l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    if self.cri_latent and last_dual_batch_step:
+                        latent_loss_dict = {'Decomp':self.output_image,'Uncomp':self.var_Uncomp,'Z':static_Z}
+                        if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
+                            latent_loss_dict['SVD'] = self.SVD
+                        l_g_latent = self.cri_latent(latent_loss_dict)[self.Y_channel_is_fake]
+                        l_g_total += self.l_latent_w * l_g_latent.mean()/self.grad_accumulation_steps_G
+                        self.l_g_latent_grad_step.append([l.item() for l in l_g_latent.mean(0)])
 
-                # G gan + cls loss
-                if not self.D_exists:
-                    l_g_gan = 0
-                else:
-                    pred_g_fake = self.netD(self.D_fake_input)
-
-                    if self.relativistic_D:
-                        pred_d_real = self.netD(self.var_ref).detach()
-                        l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
-                                                  self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    # G gan + cls loss
+                    if not self.D_exists:
+                        l_g_gan = 0
                     else:
-                        l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                        pred_g_fake = self.netD(self.D_fake_input)
 
-                l_g_total += l_g_gan
+                        if self.relativistic_D:
+                            pred_d_real = self.netD(self.var_ref).detach()
+                            l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                                                      self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                        else:
+                            l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+
+                    l_g_total += l_g_gan
+                else:
+                    last_dual_batch_step = True # When self.generator_step==False but self.generator_Z_opt_only_step==True, I don't have the second part of the generator step without the Z-optimization, so optimization step and logs saving should be done in the first part.
+                    self.generator_Z_opt_only_step = False#Avoid entering the generator step part in the second dual-batch step, because there is no loss there so optimizer step() and backward() commands shoudn't be called
                 l_g_total.backward()
-                if self.cri_pix:
-                    quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp), self.var_Uncomp)
-                    self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
-                if self.cri_fea:
-                    self.l_g_fea_grad_step.append(l_g_fea.item())
-                if self.cri_gan:
-                    self.l_g_gan_grad_step.append(l_g_gan.item())
-                if self.cri_range: #range loss
-                    self.l_g_range_grad_step.append(l_g_range.item())
+                if self.generator_step:
+                    if self.cri_pix:
+                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp), self.var_Uncomp)
+                        self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
+                    if self.cri_fea:
+                        self.l_g_fea_grad_step.append(l_g_fea.item())
+                    if self.cri_gan:
+                        self.l_g_gan_grad_step.append(l_g_gan.item())
+                    if self.cri_range: #range loss
+                        self.l_g_range_grad_step.append(l_g_range.item())
                 if last_grad_accumulation_step_G and last_dual_batch_step:
-                    # if self.latent_input and self.latent_grads_multiplier!=1:
-                    #     for p_num,p in enumerate(self.netG.parameters()):
-                    #         for channel_num in self.channels_idx_4_grad_amplification[p_num]:
-                    #             p.grad[:,channel_num,...] *= self.latent_grads_multiplier
                     self.optimizer_G.step()
                     self.generator_changed = True
                     # set log
-                    if self.cri_pix:
-                        self.log_dict['l_g_pix_log_rel'].append((self.gradient_step_num,np.mean(self.l_g_pix_grad_step)))
-                    if self.cri_fea:
-                        self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
-                    if self.cri_range:
-                        self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
-                    if self.cri_latent:
-                        for channel_num in range(3):
-                        # for channel_num in range(self.num_latent_channels):
-                            self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
+                    if self.generator_step:
+                        if self.cri_pix:
+                            self.log_dict['l_g_pix_log_rel'].append((self.gradient_step_num,np.mean(self.l_g_pix_grad_step)))
+                        if self.cri_fea:
+                            self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
+                        if self.cri_range:
+                            self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))
+                        if self.cri_latent:
+                            for channel_num in range(3):
+                            # for channel_num in range(self.num_latent_channels):
+                                self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
+                        if self.cri_gan:
+                            self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
                         self.log_dict['Z_effect'].append((self.gradient_step_num, np.mean(self.Z_effect_grad_step)))
-                    if self.cri_gan:
-                        self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
         self.step += 1
 
     def test_Y(self,detach=False):

@@ -248,7 +248,7 @@ class Ui_MainWindow(object):
             self.QF_box = QtWidgets.QDoubleSpinBox()
             self.QF_box.setObjectName("QF_box")
             self.QF_box.setValue(10)
-            # self.QF_box.setMaximum(49)
+            # self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
             self.QF_box.setMinimum(5)
             self.QF_box.setSingleStep(1)
             self.Set_Button_Size(self.QF_box, [2, 1])

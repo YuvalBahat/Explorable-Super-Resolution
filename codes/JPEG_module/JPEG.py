@@ -30,20 +30,24 @@ CHROMINANCE_QUANTIZATION_TABLE = np.array((
 
 
 class JPEG(nn.Module):
-    def __init__(self,compress,downsample_and_quantize=None,chroma_mode=False,block_size=8):
+    def __init__(self,compress,downsample_and_quantize=None,chroma_mode=False,block_size=8,downsample_only=False):
         # Performing JPEG-like DCT transformation when compress, or inverse DCT transform when not compress.
         #
         # For compress: Expecting input torch tensor of size [batch_size,num_channels,H,W], where currently only supporting num_channels==1. Returning a tensor of size [batch_size,64,H/8,W/8],
         # where dimension 1 corresponds to the DCT coefficients.
         # For not compress (extract): Expected input torch tensor size corresponds to size of output tensor of compress, and vice versa.
         # H and W should currently both be integer multiplications of 8.
+        # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_and_quantize=True
 
         super(JPEG, self).__init__()
-        # self.quality_factor =quality_factor
-        self.compress = compress # Compression or extraction module
-        self.downsample_and_quantize = downsample_and_quantize
         assert (compress ^ (downsample_and_quantize is None)),'Quantize argument should be passed iff in compress mode'
         assert FACTORIZE_CHROMA_HIGH_FREQS,'No longer supproting the other option, after dividing the Y channel high freq. coeffs. as well, as I think it would ease the generator''s mapping.'
+        if downsample_only:
+            assert chroma_mode and downsample_and_quantize
+            downsample_and_quantize = True
+        self.compress = compress # Compression or extraction module
+        self.downsample_and_quantize = downsample_and_quantize
+        self.downsample_only = downsample_only
         self.device = 'cuda'
         self.block_size = block_size
         self.chroma_mode = chroma_mode
@@ -136,7 +140,8 @@ class JPEG(nn.Module):
                     # Downsampling is done by wiping out DCT coefficients corresponding to higher frequencies (8 and up) in the chroma channels.
                     # Not quantizing y channel coefficients in this case. I'm going to discard these chroma high-frequency coefficients later anyway,
                     # so no need to wipe them out here.
-                    output[:, 1:, 0, :, 0, :, :, :] = torch.round(output[:, 1:, 0, :, 0, :, :, :])
+                    if not self.downsample_only:
+                        output[:, 1:, 0, :, 0, :, :, :] = torch.round(output[:, 1:, 0, :, 0, :, :, :])
                     output = torch.cat([output[:,0,...].contiguous().view(output.size(0),self.block_size**2,output.size(6),output.size(7)),
                                           output[:,1,0,:,0,...].contiguous().view(output.size(0),8**2,output.size(6),output.size(7)),
                                           output[:,2,0,:,0,...].contiguous().view(output.size(0),8**2,output.size(6),output.size(7))],1)

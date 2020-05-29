@@ -63,6 +63,7 @@ ERR_MESSAGE_DURATION = 1e4
 INFO_MESSAGE_DURATION = 5e3
 IMAGE_FILE_EXST_FILTER = "PNG image files (*.png);; JPEG image files (*.jpg);;BMP image files (*.bmp)"
 DISPLAY_ESRGAN_RESULTS = True
+MAXIMAL_JPEG_QF = 49
 
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
@@ -895,6 +896,12 @@ class Canvas(QLabel):
             return np.pad(array, (tuple(padding[0]), tuple(padding[1]))) if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)))
 
         target_coeffs = self.SR_model.jpeg_compressor_Y(torch.from_numpy(target_region).unsqueeze(0).unsqueeze(0))
+        originally_marked_rectangle_mask = 1 * self.desired_im_HR_mask_4_imprinting
+        original_desired_portion_of_rectangle = originally_marked_rectangle_mask[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],\
+            desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0]+desired_mask_bounding_rect[2]].mean()
+        # originally_marked_rectangle_mask = np.zeros_like(full_desired)
+        # originally_marked_rectangle_mask[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],\
+        #     desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0]+desired_mask_bounding_rect[2]] = 1
         optional_rects = [desired_mask_bounding_rect]
         offset_grids = [[i for i in range(-7,9,3)],[-1,0,1]]
         self.statusBar.showMessage('Automatically fine-tuning desired imprint borders...')
@@ -904,11 +911,21 @@ class Canvas(QLabel):
                 if rect_coord.size>1:
                     optional_coords = return_optional_coords(rect_coord[1:])
                 return [[rect_coord[0]+i]+suffix for i in offset_grids[scale_num] for suffix in optional_coords]
+            # Start by enumerating all possible shifts of each of the 4 coordinates:
             optional_desired_im_rect_coords = [return_optional_coords(rect) for rect in optional_rects]
+            # Turn coordinate foursomes into np arrays:
             optional_desired_im_rect_coords = [np.array(coords_) for coords in optional_desired_im_rect_coords for coords_ in coords]
+            # Discard foursomes that go beyond image boundaries:
             optional_desired_im_rect_coords = \
                 [coords for coords in optional_desired_im_rect_coords if (np.all(coords[:2]>=0) and \
                     np.all(coords[:2]+coords[2:]-1<=full_desired.shape[:2][::-1]) and np.all(coords[2:]>=4))]
+            # Discard foursomes corresponding to regions with less than MIN_OVERLAP_WITH_MARKED_RECTANGLE in common with the originaly marked rectangle, where
+            # MIN_OVERLAP_WITH_MARKED_RECTANGLE is first adjusted to account for non-rectangle masks, that cause the originally desired area to cover only part of the original rectangle.:
+            MIN_OVERLAP_WITH_MARKED_RECTANGLE = 0.5
+            MIN_OVERLAP_WITH_MARKED_RECTANGLE *= original_desired_portion_of_rectangle
+            optional_desired_im_rect_coords = \
+                [coords for coords in optional_desired_im_rect_coords if\
+                 np.mean(util.crop_nd_array(originally_marked_rectangle_mask, coords))>=MIN_OVERLAP_WITH_MARKED_RECTANGLE]
             optional_crops = [util.crop_nd_array(full_desired,coords) for coords in optional_desired_im_rect_coords]
             optional_masks = [util.crop_nd_array(self.desired_im_HR_mask_4_imprinting,coords) for coords in optional_desired_im_rect_coords]
             optional_imprints = []
@@ -944,7 +961,7 @@ class Canvas(QLabel):
         SIZE_MODIFICATION_STEP_SIZE = 1*self.display_zoom_factor  # if ALLOW_LR_SUBPIXEL_TARGET_SIZES else self.opt['scale']*self.display_zoom_factor
         explore_shifts = EXPLORE_SHIFTS and modification is None
         auto_location_press = self.imprinting_location_boundaries is not None
-        desired_mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.desired_image_HR_mask_vertices], 1).transpose()))
+        # desired_mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.desired_image_HR_mask_vertices], 1).transpose()))
         if self.last_pos and e is not None:
             # Clear up indicator.
             self.timer_cleanup()
@@ -960,10 +977,11 @@ class Canvas(QLabel):
             #     Handling the case of out-of-canvas bottom-right corner:
             self.target_imprinting_dimensions = np.minimum(self.target_imprinting_dimensions,self.HR_size-self.top_left_corner)
         if modification is None:
+            self.imprint_desired_mask_bounding_rect = np.array(cv2.boundingRect(np.stack([list(p) for p in self.desired_image_HR_mask_vertices], 1).transpose()))
             if self.desired_im_taken_from_same and not auto_location_press and (self.JPEG_GUI or (not (self.last_pos and e is not None) or np.any(self.target_imprinting_dimensions<self.opt['scale']))):
                 # If the desired image was taken from the one being edited, this means we want to place the desired image at its original location, to allow subtle region shifting.
-                self.top_left_corner = desired_mask_bounding_rect[:2][::-1]
-                self.target_imprinting_dimensions = desired_mask_bounding_rect[2:][::-1]
+                self.top_left_corner = self.imprint_desired_mask_bounding_rect[:2][::-1]
+                self.target_imprinting_dimensions = self.imprint_desired_mask_bounding_rect[2:][::-1]
             elif not self.JPEG_GUI and (not (self.last_pos and e is not None) or np.any(self.target_imprinting_dimensions<self.opt['scale'])): #target dimensions are smaller than 2 pixels in the LR image, probably pressed by mistake:
                 self.statusBar.showMessage('Attempting to imprint into a too small region. Please try again.',ERR_MESSAGE_DURATION)
                 self.reset_mode()
@@ -990,7 +1008,7 @@ class Canvas(QLabel):
                         self.reset_mode()
                         return
                     else:
-                        self.FindOptimalImprintingLocation(desired_mask_bounding_rect)
+                        self.FindOptimalImprintingLocation(self.imprint_desired_mask_bounding_rect)
                         self.statusBar.showMessage('Automatically determined optimal imprinting location',INFO_MESSAGE_DURATION)
                         self.imprinting_location_boundaries = None
             self.cur_loc_step_size = SIZE_MODIFICATION_STEP_SIZE // (2 * self.display_zoom_factor)
@@ -1037,12 +1055,15 @@ class Canvas(QLabel):
         relevant_existing_scribble_image = 255*crop_target_im_using_selected_rectangle(self.output_image_0_1[0].data.cpu().numpy().transpose(1, 2, 0))
 
         if modification is None and self.JPEG_GUI and auto_location_press: #Imprinting using the "auto-location" button:
-            desired_mask_bounding_rect = self.Find_Optimal_Desired_Imprint_Mask(desired_mask_bounding_rect,relevant_existing_scribble_image,target_im_pad_sizes)
+            original_rectangle = 1*self.imprint_desired_mask_bounding_rect
+            self.imprint_desired_mask_bounding_rect = self.Find_Optimal_Desired_Imprint_Mask(self.imprint_desired_mask_bounding_rect,relevant_existing_scribble_image,target_im_pad_sizes)
+            original_rectangle_mask = util.crop_nd_array(self.desired_im_HR_mask_4_imprinting,original_rectangle).astype(np.uint8)
+            self.desired_im_HR_mask_4_imprinting = np.zeros_like(self.desired_im_HR_mask_4_imprinting)
+            self.desired_im_HR_mask_4_imprinting[self.imprint_desired_mask_bounding_rect[1]:self.imprint_desired_mask_bounding_rect[1]+self.imprint_desired_mask_bounding_rect[3],\
+                self.imprint_desired_mask_bounding_rect[0]:self.imprint_desired_mask_bounding_rect[0]+self.imprint_desired_mask_bounding_rect[2]] =\
+                util.ResizeCategorialImage(original_rectangle_mask,tuple(self.imprint_desired_mask_bounding_rect[2:][::-1]))
 
-        crop_desired_im_using_bounding_rect = lambda array: util.crop_nd_array(array,desired_mask_bounding_rect)
-        # def crop_desired_im_using_bounding_rect(array):
-        #     return array[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],
-        #                         desired_mask_bounding_rect[0]:desired_mask_bounding_rect[0]+desired_mask_bounding_rect[2],...]
+        crop_desired_im_using_bounding_rect = lambda array: util.crop_nd_array(array,self.imprint_desired_mask_bounding_rect)
 
         IGNORE_DESIRED_MASK_4_COMBINATION = True
         cropped_desired_image = crop_desired_im_using_bounding_rect(self.desired_image[0])
@@ -1337,7 +1358,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.show()
 
     def Manipulate_HSV(self,channel,increase):
-        STEP_SIZE = 0.1 # 0.01
+        STEP_SIZE = 0.02 # 0.01
         self.canvas.scribble_mode_entry_operations()
         existing_scribble_im = qimage2ndarray.rgb_view(self.canvas.pixmap().toImage())
         HSV_image = rgb2hsv(existing_scribble_im)
@@ -1741,9 +1762,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Z_mask_4_later_merging = torch.from_numpy(self.canvas.Z_mask).type(self.canvas.output_image_0_1.dtype).to(self.cur_Z.device)
                 data['LR'] = self.var_L
                 # self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.Crop2BoundingRect(self.canvas.SR_model.GetLatent(),
-                #     self.bounding_rect_4_opt,HR=self.canvas.HR_Z))#Because I'm saving initial Z when initializing optimizer
-                self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.Crop2BoundingRect(self.canvas.SR_model.GetLatent(),
-                    self.bounding_rect_4_opt,SF=self.canvas.H_L_domains_ratio),compressed_input=True)#Because I'm saving initial Z when initializing optimizer
+                #     self.bounding_rect_4_opt,SF=self.canvas.H_L_domains_ratio),compressed_input=True)#Because I'm saving initial Z when initializing optimizer
+                self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.cur_Z,compressed_input=True)#Because I'm saving initial Z when initializing optimizer
             else:
                 self.optimizing_region = False
             self.iters_per_round = 1*ITERS_PER_OPT_ROUND
@@ -1990,11 +2010,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             getattr(self,'%s_button'%(mode)).setEnabled(not checked)
         self.Update_Image_Display()
 
-    def Change_Display_Zoom(self,increase):
+    def Change_Display_Zoom(self,increase=None,reset=False):
         # Save scribble data and mask currently on canvas before changing canvas size:
         self.Update_Scribble_Data()
         # Change display zoom factor:
-        self.canvas.display_zoom_factor += 1 if increase else -1
+        if reset:
+            self.canvas.display_zoom_factor = 1*DISPLAY_ZOOM_FACTOR
+        else:
+            self.canvas.display_zoom_factor += 1 if increase else -1
         self.DecreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
         self.IncreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
         # Resize saved data whose dimensions correspond to display size:
@@ -2081,7 +2104,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             QF = True
             self.QF_box.setEnabled(True)
-            self.QF_box.setMaximum(49)
+            self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
             QF_or_table = torch.tensor(QF_or_table)
         self.canvas.SR_model.jpeg_compressor.Set_Q_Table(QF_or_table,QF)
         self.canvas.SR_model.jpeg_extractor.Set_Q_Table(QF_or_table,QF)
@@ -2254,7 +2277,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # self.QF_box.setEnabled(True)
                 self.QF_box.setValue(10)
                 self.Assign_Q_Table(10)
-                # self.QF_box.setMaximum(49)
+                # self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
                 self.loaded_image = loaded_image
                 self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
                 self.chroma_input = self.loaded_image[:,1:,...]
@@ -2349,6 +2372,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.image_4_scribbling = None
         self.Reset_Image_4_Scribbling()
         # self.canvas.show()
+        self.Change_Display_Zoom(reset=True)
         self.Update_Canvas_Size_and_Title(canvas_pos)
 
     def Add_Z_2_history(self,clear_redo_list=True):

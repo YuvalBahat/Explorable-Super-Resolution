@@ -1,15 +1,25 @@
 import matplotlib.pyplot as plt
+coords = [1//2,39//2]
+input_im = input[:,:,coords[0]*8:coords[0]*8+32,coords[1]*8:(coords[1]*8+24)].data.cpu().numpy().squeeze()
 plt.imsave('input.png',np.tile(np.expand_dims(np.expand_dims(input_im,-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
-DCT_im = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+DCT_im = output[0,:,:,coords[0]:coords[0]+4,coords[1]:coords[1]+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
 plt.imsave('DCT.png',np.tile(np.expand_dims(np.expand_dims((DCT_im-DCT_im.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
-DCT_im_divided = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+DCT_im_divided = output[0,:,:,coords[0]:coords[0]+4,coords[1]:coords[1]+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
 plt.imsave('DCT_divided.png',np.tile(np.expand_dims(np.expand_dims((DCT_im_divided-DCT_im_divided.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
-DCT_im_rounded = output[0,:,:,1:1+4,39:39+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
+DCT_im_rounded = output[0,:,:,coords[0]:coords[0]+4,coords[1]:coords[1]+3].permute(2,0,3,1).contiguous().view(32,24).data.cpu().numpy().squeeze()
 plt.imsave('DCT_rounded.png',np.tile(np.expand_dims(np.expand_dims((DCT_im_rounded-DCT_im_rounded.min())/(DCT_im.max()-DCT_im.min()),-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
-reconstructed_im=output[:,:,8:8+32,312:312+24].data.cpu().numpy().squeeze()
+
+import matplotlib.pyplot as plt
+import cv2
+reconstructed_im=cv2.resize(output.data.cpu().numpy().squeeze(),(output.size(3)//2, output.size(2)//2), interpolation=cv2.INTER_LINEAR)
+reconstructed_im=reconstructed_im[coords[0]*8:coords[0]*8+32,coords[1]*8:coords[1]*8+24]
+
+reconstructed_im=output[:,:,coords[0]*8:coords[0]*8+32,coords[1]*8:coords[1]*8+24].data.cpu().numpy().squeeze()
 plt.imsave('reconstructed.png',np.tile(np.expand_dims(np.expand_dims(reconstructed_im,-1),1),[1,10,1,10]).reshape(320,240),cmap='gray')
 Q_table=self.Q_table.data.cpu().numpy().squeeze()
 plt.imsave('Q_table_QF5.png',np.tile(np.expand_dims(np.expand_dims(Q_table,-1),1),[1,10,1,10]).reshape(80,80),cmap='gray')
 Quantized image (Should be edited:)
 util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=CHROMA)
 
+16x16 Y DCT coefficients:
+plt.imsave('DCT16.png',np.tile(output[0,0,:,:,11:14,11:13].data.cpu().numpy().transpose(2,0,3,1).reshape(16*3,1,16*2,1),[1,10,1,10]).reshape([16*30,16*20]),cmap='gray')

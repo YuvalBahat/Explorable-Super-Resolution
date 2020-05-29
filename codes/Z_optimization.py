@@ -6,7 +6,7 @@ from scipy.signal import convolve2d
 import time
 from scipy.ndimage.morphology import binary_opening
 from sklearn.feature_extraction.image import extract_patches_2d
-
+from utils.util import IndexingHelper, Return_Translated_SubImage, Return_Interpolated_SubImage
 
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
@@ -411,8 +411,8 @@ class Z_optimizer():
                                     if y_shift in [0,1] and x_shift==0:
                                         continue
                                     point = np.array([y_shift,x_shift])
-                                    cur_mask = self.Return_Translated_SubImage(TV_loss_mask,point) * self.Return_Translated_SubImage(TV_loss_mask, -point)
-                                    loss = loss + (cur_mask * (self.Return_Translated_SubImage(produced_im,point) - self.Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
+                                    cur_mask = Return_Translated_SubImage(TV_loss_mask,point) * Return_Translated_SubImage(TV_loss_mask, -point)
+                                    loss = loss + (cur_mask * (Return_Translated_SubImage(produced_im,point) - Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
                         return loss
 
                     self.loss = Scribble_Loss
@@ -667,12 +667,12 @@ class Z_optimizer():
             self.model.fake_H = self.model.netG(self.model.model_input)
         return Z_2_return
 
-    def Return_Translated_SubImage(self,image, translation):
-        y_range, x_range = [IndexingHelper(translation[0]), IndexingHelper(translation[0], negative=True)], [IndexingHelper(translation[1]), IndexingHelper(translation[1], negative=True)]
-        return image[:, :, y_range[0]:y_range[1], x_range[0]:x_range[1]]
-
-    def Return_Interpolated_SubImage(self,image, grid):
-        return torch.nn.functional.grid_sample(image, grid.repeat([image.size(0),1,1,1]))
+    # def Return_Translated_SubImage(self,image, translation):
+    #     y_range, x_range = [IndexingHelper(translation[0]), IndexingHelper(translation[0], negative=True)], [IndexingHelper(translation[1]), IndexingHelper(translation[1], negative=True)]
+    #     return image[:, :, y_range[0]:y_range[1], x_range[0]:x_range[1]]
+    #
+    # def Return_Interpolated_SubImage(self,image, grid):
+    #     return torch.nn.functional.grid_sample(image, grid.repeat([image.size(0),1,1,1]))
 
     def PeriodicityLoss(self):
         loss = 0 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE else (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean()
@@ -680,22 +680,22 @@ class Z_optimizer():
         mask = self.image_mask.unsqueeze(0).unsqueeze(0)
         for point_num,point in enumerate(self.periodicity_points):
             if 'nonInt' in self.objective:
-                cur_mask = self.Return_Interpolated_SubImage(mask,point[0])*self.Return_Interpolated_SubImage(mask,point[1])
-                loss = loss + (cur_mask * (self.Return_Interpolated_SubImage(image, point[0]) - self.Return_Interpolated_SubImage(image,point[1])).abs()).mean(dim=(1, 2, 3))
+                cur_mask = Return_Interpolated_SubImage(mask,point[0])*Return_Interpolated_SubImage(mask,point[1])
+                loss = loss + (cur_mask * (Return_Interpolated_SubImage(image, point[0]) - Return_Interpolated_SubImage(image,point[1])).abs()).mean(dim=(1, 2, 3))
                 if 'Plus' in self.objective and not self.PLUS_MEANS_STD_INCREASE:
-                    cur_half_cycle_mask = self.Return_Interpolated_SubImage(mask,self.half_period_points[point_num][0])*self.Return_Interpolated_SubImage(mask,self.half_period_points[point_num][1])
-                    loss = loss - (cur_half_cycle_mask * (self.Return_Interpolated_SubImage(image, self.half_period_points[point_num][0]) -\
-                        self.Return_Interpolated_SubImage(image,self.half_period_points[point_num][1])).abs()).mean(dim=(1, 2, 3))
+                    cur_half_cycle_mask = Return_Interpolated_SubImage(mask,self.half_period_points[point_num][0])*Return_Interpolated_SubImage(mask,self.half_period_points[point_num][1])
+                    loss = loss - (cur_half_cycle_mask * (Return_Interpolated_SubImage(image, self.half_period_points[point_num][0]) -\
+                        Return_Interpolated_SubImage(image,self.half_period_points[point_num][1])).abs()).mean(dim=(1, 2, 3))
             else:
-                cur_mask = self.Return_Translated_SubImage(mask,point)*self.Return_Translated_SubImage(mask,-point)
-                loss = loss+(cur_mask*(self.Return_Translated_SubImage(image,point)-self.Return_Translated_SubImage(image,-point)).abs()).mean(dim=(1, 2, 3))
+                cur_mask = Return_Translated_SubImage(mask,point)*Return_Translated_SubImage(mask,-point)
+                loss = loss+(cur_mask*(Return_Translated_SubImage(image,point)-Return_Translated_SubImage(image,-point)).abs()).mean(dim=(1, 2, 3))
         return loss
 
     def ReturnStatus(self):
         return self.Z_model.PreTanhZ(),self.optimizer
 
-def IndexingHelper(index,negative=False):
-    if negative:
-        return index if index < 0 else None
-    else:
-        return index if index > 0 else None
+# def IndexingHelper(index,negative=False):
+#     if negative:
+#         return index if index < 0 else None
+#     else:
+#         return index if index > 0 else None
