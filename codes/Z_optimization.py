@@ -556,6 +556,7 @@ class Z_optimizer():
                 p.requires_grad = self.original_requires_grad_status[i]
 
     def optimize(self):
+        DETACH_Y_FOR_CHROMA_TRAINING = True
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
         self.Manage_Model_Grad_Requirements(disable=True)
@@ -582,7 +583,7 @@ class Z_optimizer():
             self.data['Z'] = self.Z_model()
             if self.model_training and 'Uncomp' in self.data.keys():
                 self.data['Uncomp'] = 1*Uncomp_batch
-            self.model.feed_data(self.data, need_GT=False,detach_Y=False)
+            self.model.feed_data(self.data, need_GT=False,detach_Y=DETACH_Y_FOR_CHROMA_TRAINING and self.model_training and self.data['Uncomp'].size(1)==3)
             self.model.test(prevent_grads_calc=False,chroma_input=self.data['chroma_input'] if 'chroma_input' in self.data.keys() else None)
             self.output_image = self.model.Output_Batch(within_0_1=True)
             if self.model_training:

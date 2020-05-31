@@ -181,7 +181,8 @@ def SVD_2_LatentZ(SVD_values,max_lambda=1):
                                   2*max_lambda*(SVD_values[:,0,...]*(torch.sin(SVD_values[:,-1,...])**2)+SVD_values[:,1,...]*(torch.cos(SVD_values[:,-1,...])**2))-max_lambda,#Normalizing range to have negative values as well,trying to match [-1,1]
                                   2*(SVD_values[:,0,...]-SVD_values[:,1,...])*torch.sin(SVD_values[:,-1,...])*torch.cos(SVD_values[:,-1,...])],1)
 
-def ResizeCategorialImage(image,dsize):
+def ResizeCategorialImage(image,dsize,inclusive=False):
+    # inclusive: Every pixel that is even partly touched in the resized mask is considered ON.
     LOWER_CATEGORY_OVERRULE = True #I preefer actual scribbles to rule over brightness manipulation and TV minimization regions.
     assert 'int' in str(image.dtype),'I suspect input image is not categorial, since pixel values are not integers'
     if np.all(image.shape[:2]==dsize):
@@ -190,8 +191,10 @@ def ResizeCategorialImage(image,dsize):
     categories_set = sorted(set(list(image.reshape([-1]))))
     if LOWER_CATEGORY_OVERRULE:
         categories_set = categories_set[::-1]
+    if inclusive:
+        categories_set = [c for c in categories_set if c!=0]# I assume 0 is the non-category, with respect to which all other categories should be inclusive. Perhaps interpolating 0 is unnecessary anyway.
     for category in categories_set:
-        cur_category_image = cv2.resize((image==category).astype(image.dtype),dsize=dsize[::-1],interpolation=cv2.INTER_LINEAR)>0.5
+        cur_category_image = cv2.resize((image==category).astype(float if inclusive else image.dtype),dsize=dsize[::-1],interpolation=cv2.INTER_LINEAR)>(0 if inclusive else 0.5)
         output_image = np.logical_not(cur_category_image)*output_image+cur_category_image*category
     return output_image
 

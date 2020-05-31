@@ -3,8 +3,9 @@
 //  "name": "nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss",
 //  "name": "nf160nb10_QF10_DinputConcat_Verif0_85correct_noRefLoss_DCT",
 //  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_ZwithoutLoss",
-  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss",
+//  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss",
 //  "name": "nf160nb10_QF5_50_LR1e-4",
+  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss",
   "suffix": ""
   , "model": "dncnn"
   , "scale": 4

@@ -425,8 +425,12 @@ class DecompCNNModel(BaseModel):
                     static_Z = None
             if optimized_Z_step:
                 stored_QF = 1*self.QF
-                self.Z_optimizer.feed_data({'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],
-                    'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]})
+                data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
+                # data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake,0].unsqueeze(1),
+                #     'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
+                # if self.chroma_mode:
+                #     data_dict['chroma_input'] = self.var_Uncomp[self.Y_channel_is_fake,1:]
+                self.Z_optimizer.feed_data(data_dict)
                 if self.mixed_Y_4_training:
                     # In this case, fake_H has half the batch_size images, so the rest of the images (whose Y channel is real) should be loaded back.
                     Y_channel_is_fake_copy = 1*self.Y_channel_is_fake #Y_channel_is_fake is going to be overidden during Z optimization
@@ -457,16 +461,16 @@ class DecompCNNModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
                 if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num > -self.D_init_iters:
-                    if self.G_steps_since_D>0:
-                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1/self.G_steps_since_D))
-                    else:
-                        self.D_steps_since_G += 1
-                    self.G_steps_since_D = 0
                     for p in self.netD.parameters():
                         p.requires_grad = True
                     for p in self.netG.parameters():
                         p.requires_grad = False
                     if first_grad_accumulation_step_D and first_dual_batch_step:
+                        if self.G_steps_since_D > 0:
+                            self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1 / self.G_steps_since_D))
+                        else:
+                            self.D_steps_since_G += 1
+                        self.G_steps_since_D = 0
                         self.optimizer_D.zero_grad()
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step,self.D_G_prob_ratio_grad_step\
                             = [],[],[],[],[],[]
@@ -576,17 +580,17 @@ class DecompCNNModel(BaseModel):
             l_g_total = 0
             if self.generator_step or self.generator_Z_opt_only_step:
                 self.generator_started_learning = True
-                if self.D_steps_since_G > 0:
-                    self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
-                else:
-                    self.G_steps_since_D += 1
-                self.D_steps_since_G = 0
                 if self.D_exists:
                     for p in self.netD.parameters():
                         p.requires_grad = False
                 for p in self.netG.parameters():
                     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
+                    if self.D_steps_since_G > 0:
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
+                    else:
+                        self.G_steps_since_D += 1
+                    self.D_steps_since_G = 0
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
@@ -670,14 +674,14 @@ class DecompCNNModel(BaseModel):
         if detach:
             self.y_channel_input = self.y_channel_input.detach()
 
-    def test_(self,chroma_input=None):
+    def test_(self,chroma_input=None,detach_Y=False,chroma_Z=None):
         self.netG.eval()
         # if self.chroma_mode and not Y_already_computed:
         if chroma_input is not None:
-            self.test_Y()
+            self.test_Y(detach=detach_Y)
             if chroma_input.size(0)!=self.y_channel_input.size(0):
                 chroma_input = chroma_input.repeat([self.y_channel_input.size(0)]+[1]*(chroma_input.ndimension()-1))
-            self.Prepare_Input(torch.cat([self.y_channel_input,chroma_input],1),self.GetLatent())
+            self.Prepare_Input(torch.cat([self.y_channel_input,chroma_input],1),self.GetLatent() if chroma_Z is None else chroma_Z)
         self.fake_H = self.netG(self.model_input)
         self.output_image = self.jpeg_extractor(self.fake_H)
         if self.chroma_mode:
