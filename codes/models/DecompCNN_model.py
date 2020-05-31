@@ -425,8 +425,12 @@ class DecompCNNModel(BaseModel):
                     static_Z = None
             if optimized_Z_step:
                 stored_QF = 1*self.QF
-                data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],
+                if self.chroma_mode:
+                    data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],
                              'desired':torch.clamp(util.Tensor_YCbCR2RGB(self.var_Uncomp[self.Y_channel_is_fake]/255),0,1),'QF':self.QF[self.Y_channel_is_fake]}
+                else:
+                    data_dict = {'Uncomp': self.var_Uncomp[self.Y_channel_is_fake],'desired': torch.clamp(self.var_Uncomp[self.Y_channel_is_fake] / 255, 0, 1),'QF': self.QF[self.Y_channel_is_fake]}
+
                 # data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake,0].unsqueeze(1),
                 #     'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
                 # if self.chroma_mode:
