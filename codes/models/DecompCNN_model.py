@@ -246,7 +246,7 @@ class DecompCNNModel(BaseModel):
         if within_0_1:
             # return torch.clamp(self.jpeg_extractor(self.fake_H) / 255, 0, 1)
             if self.output_image.size(1) == 3:
-                return torch.clamp(util.Tensor_YCbCR2RGB(self.output_image) / 255, 0, 1)
+                return torch.clamp(util.Tensor_YCbCR2RGB(self.output_image/ 255) , 0, 1)
             else:
                 return torch.clamp(self.output_image / 255, 0, 1)
         else:
@@ -425,7 +425,8 @@ class DecompCNNModel(BaseModel):
                     static_Z = None
             if optimized_Z_step:
                 stored_QF = 1*self.QF
-                data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
+                data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake],
+                             'desired':torch.clamp(util.Tensor_YCbCR2RGB(self.var_Uncomp[self.Y_channel_is_fake]/255),0,1),'QF':self.QF[self.Y_channel_is_fake]}
                 # data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake,0].unsqueeze(1),
                 #     'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
                 # if self.chroma_mode:
@@ -460,7 +461,7 @@ class DecompCNNModel(BaseModel):
             if not self.D_exists:
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
-                if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num > -self.D_init_iters:
+                if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num >= -self.D_init_iters:
                     for p in self.netD.parameters():
                         p.requires_grad = True
                     for p in self.netG.parameters():

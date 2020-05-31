@@ -37,7 +37,7 @@
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_ImageNetDS/models/500001_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
-//    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf160nb10QF5_50_G.pth"
+    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/chroma_nf160nb10_QF5_50_LR1e-4/models/2000001_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
 //    , "pretrain_model_G": "../pretrained_models/chroma_DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
@@ -94,7 +94,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-5 //1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9

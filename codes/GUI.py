@@ -2395,7 +2395,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.HR_size = list(self.GT_HR.size()[2:])
             if self.JPEG_GUI:
                 # loaded_image = np.expand_dims(rgb2ycbcr(255*loaded_image,only_y=True),-1)
-                loaded_image = rgb2ycbcr(255 * loaded_image, only_y=False)
+                loaded_image = 255 * rgb2ycbcr(loaded_image, only_y=False)
             loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             if self.JPEG_GUI:
                 self.real_JPEG_image = False
