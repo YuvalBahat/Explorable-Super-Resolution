@@ -243,7 +243,6 @@ def ReturnPatchExtractionMat(mask,patch_size,device,patches_overlap=1,return_non
         randomized_patches_indexes = np.random.permutation(patches_indexes.shape[0])
         oredered_patches_indexes = randomized_patches_indexes if RANDOM_PATCHES_SELECTION else np.arange(patches_indexes.shape[0])
         for patch_num in oredered_patches_indexes:
-        # for patch_num, patch in enumerate(patches_indexes):
             if (patches_overlap==0 and np.any(index_taken_indicator[patches_indexes[patch_num,:] - min_index - 1]))\
                     or np.mean(index_taken_indicator[patches_indexes[patch_num,:] - min_index - 1])>patches_overlap:
                 valid_patches[patch_num] = False
@@ -288,7 +287,6 @@ class Optimizable_Z(torch.nn.Module):
         if Z_range is not None:
             self.tanh = torch.nn.Tanh()
 
-
     def forward(self):
         if self.Z_range is not None:
             self.Z.data = torch.min(torch.max(self.Z,torch.tensor(-torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device)),torch.tensor(torch.finfo(self.Z.dtype).max).type(self.Z.dtype).to(self.Z.device))
@@ -311,7 +309,6 @@ class Optimizable_Z(torch.nn.Module):
             torch.nn.init.xavier_uniform_(self.Z.data,gain=100)
         else:
             torch.nn.init.xavier_uniform_(self.Z.data[1:], gain=100)
-            # self.Z.data[1] = 1 * self.Z.data[3]
 
     def Return_Detached_Z(self):
         return self.forward().detach()
@@ -327,7 +324,7 @@ class Z_optimizer():
     MIN_LR = 1e-5
     PATCH_SIZE_4_STD = 7
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
-                 batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False,jpeg_extractor=None):
+                 batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False,jpeg_extractor=None,non_local_Z_optimization=False):
         self.data_keys = {'reconstructed':'SR'} if jpeg_extractor is None else {'reconstructed':'Decomp'}
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
             if initial_Z is None:
@@ -338,6 +335,10 @@ class Z_optimizer():
 
         else:
             initial_pre_tanh_Z = None
+        self.non_local_Z_optimization = non_local_Z_optimization and image_mask is not None and image_mask.mean()<1
+        self.initial_output = model.Output_Batch(within_0_1=True)
+        if self.non_local_Z_optimization:
+            Z_mask = np.ones_like(Z_mask)
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_pre_tanh_Z=initial_pre_tanh_Z,Z_mask=Z_mask,
             random_perturbations=(random_Z_inits and 'random' not in objective) or ('random' in objective and 'limited' in objective))
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
@@ -360,6 +361,11 @@ class Z_optimizer():
             self.initial_Z = 1.*model.GetLatent()
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
+            if self.non_local_Z_optimization:
+                self.constraining_mask = 1-self.image_mask
+                def constraining_loss(produced_im):
+                    return torch.nn.functional.l1_loss(input=produced_im * self.constraining_mask,target=self.initial_output * self.constraining_mask)
+                self.constraining_loss = constraining_loss
         if 'local' in objective:#Used in relative STD change and periodicity objective cases:
             desired_overlap = 1 if 'STD' in objective else 0.5
             self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
@@ -387,7 +393,7 @@ class Z_optimizer():
                                                              np.ones([SMOOTHING_MARGIN*2+1,SMOOTHING_MARGIN*2+1])/((SMOOTHING_MARGIN*2+1)**2),mode='valid')
                         L1_loss_mask = loss_mask*((scribble_mask_tensor>0)*(scribble_mask_tensor<4)).float()
                         TV_loss_masks = [loss_mask*(scribble_mask_tensor==id).float().unsqueeze(0).unsqueeze(0) for id in torch.unique(scribble_mask_tensor*loss_mask) if id>3]
-                        cur_HSV = rgb2hsv(np.clip(255*self.model.output_image[0].data.cpu().numpy().transpose((1,2,0)).copy(),0,255))
+                        cur_HSV = rgb2hsv(np.clip(255*self.initial_output[0].data.cpu().numpy().transpose((1,2,0)).copy(),0,255))
                         cur_HSV[:,:,2] = cur_HSV[:,:,2]* scribble_multiplier
                         desired_RGB = hsv2rgb(cur_HSV)
                         desired_RGB = np.expand_dims(desired_RGB.transpose((2,0,1)),0)/255
@@ -414,14 +420,17 @@ class Z_optimizer():
                                     cur_mask = Return_Translated_SubImage(TV_loss_mask,point) * Return_Translated_SubImage(TV_loss_mask, -point)
                                     loss = loss + (cur_mask * (Return_Translated_SubImage(produced_im,point) - Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
                         return loss
-
+                    if len(TV_loss_masks)==0: #No local TV minimization performed
+                        self.constraining_loss_weight = 0.1#255/10*Z_loss.item()
+                    #     I need to check what the appropriate normalizer when using local TV minimization
                     self.loss = Scribble_Loss
                 # scheduler_threshold = 1e-2
             elif 'Mag' in objective:
-                self.desired_patches = torch.sparse.mm(self.patch_extraction_map, self.model.output_image.mean(dim=1).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1])
+                self.desired_patches = torch.sparse.mm(self.patch_extraction_map, self.initial_output.mean(dim=1).view([-1, 1])).view([self.PATCH_SIZE_4_STD ** 2, -1])
                 desired_STD = torch.max(torch.std(self.desired_patches,dim=0,keepdim=True),torch.tensor(1/255).to(self.device))
                 self.desired_patches = (self.desired_patches-torch.mean(self.desired_patches,dim=0,keepdim=True))/desired_STD*\
                     (desired_STD+data['STD_increment']*(1 if 'increase' in objective else -1))+torch.mean(self.desired_patches,dim=0,keepdim=True)
+                self.constraining_loss_weight = 255/10*data['STD_increment']**2
             elif 'desired_SVD' in objective:
                 self.loss = FilterLoss(latent_channels='SVDinNormedOut_structure_tensor',constant_Z=data['desired_Z'],
                                        reference_images={'min':data['reference_image_min'],'max':data['reference_image_max']},masks={'LR':self.Z_mask,'HR':self.image_mask})
@@ -429,17 +438,18 @@ class Z_optimizer():
                 assert self.objective.replace('local_','') in ['max_STD', 'min_STD','STD_increase','STD_decrease']
                 if any([phrase in objective for phrase in ['increase','decrease']]):
                     STD_CHANGE_FACTOR = 1.05
-                    STD_CHANGE_INCREMENT = data['STD_increment']
+                    # STD_CHANGE_INCREMENT = data['STD_increment']
                     self.desired_STD = self.initial_STD
-                    if STD_CHANGE_INCREMENT is None:#Using multiplicative desired STD factor:
+                    if data['STD_increment'] is None:#Using multiplicative desired STD factor:
                         self.desired_STD *= STD_CHANGE_FACTOR if 'increase' in objective else 1/STD_CHANGE_FACTOR
                     else:#Using an additive increment:
-                        self.desired_STD += STD_CHANGE_INCREMENT if 'increase' in objective else -STD_CHANGE_INCREMENT
+                        self.desired_STD += data['STD_increment'] if 'increase' in objective else -data['STD_increment']
+                    self.constraining_loss_weight = 255/10*data['STD_increment']**2
             elif 'periodicity' in objective:
                 self.STD_PRESERVING_WEIGHT = 20#0.2 if 'Plus' in objective else 20
                 self.PLUS_MEANS_STD_INCREASE = True
                 if 'nonInt' in objective:
-                    image_size = list(self.model.output_image.size()[2:])
+                    image_size = list(self.initial_output.size()[2:])
                     self.periodicity_points,self.half_period_points = [],[]
                     if 'Plus' in objective and self.PLUS_MEANS_STD_INCREASE:
                         self.desired_STD = self.initial_STD + data['STD_increment']
@@ -464,10 +474,10 @@ class Z_optimizer():
                                 grid = np.meshgrid(*ranges)
                                 if half_period_round:
                                     self.half_period_points[-1].append(torch.from_numpy(np.stack(grid, -1)).view([1] + list(grid[0].shape) + [2]).type(
-                                        self.model.output_image.dtype).to(self.model.output_image.device))
+                                        self.initial_output.dtype).to(self.initial_output.device))
                                 else:
                                     self.periodicity_points[-1].append(torch.from_numpy(np.stack(grid,-1)).view([1]+list(grid[0].shape)+[2]).type(
-                                        self.model.output_image.dtype).to(self.model.output_image.device))
+                                        self.initial_output.dtype).to(self.initial_output.device))
                 else:
                     self.periodicity_points = [np.array(point) for point in data['periodicity_points']]
             elif 'VGG' in objective and 'random' not in objective:
@@ -505,6 +515,7 @@ class Z_optimizer():
                     desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,input_im_HR_mask=self.image_mask,
                     gray_scale=True,patch_size=6 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective,
                     no_patch_DC='noDC' in objective,no_patch_STD='no_localSTD' in objective)
+                self.constraining_loss_weight = 10 if 'no_localSTD' in objective else 0.1 # Empirically set, based on empirically measured loss.
             elif 'Adversarial' in objective:
                 self.netD = model.netD
                 self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)
@@ -556,7 +567,7 @@ class Z_optimizer():
                 p.requires_grad = self.original_requires_grad_status[i]
 
     def optimize(self):
-        DETACH_Y_FOR_CHROMA_TRAINING = True
+        DETACH_Y_FOR_CHROMA_TRAINING = False
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
         self.Manage_Model_Grad_Requirements(disable=True)
@@ -642,6 +653,10 @@ class Z_optimizer():
             if not self.model_training:
                 self.latest_Z_loss_values = [val.item() for val in Z_loss]
             Z_loss = Z_loss.mean()
+            if self.non_local_Z_optimization:
+                # if z_iter==self.cur_iter: #First iteration:
+                #     self.constraining_loss_weight = 255/10*Z_loss.item()
+                Z_loss = Z_loss+self.constraining_loss_weight*self.constraining_loss(self.output_image.to(self.device))
             Z_loss.backward()
             self.loss_values.append(Z_loss.item())
             self.optimizer.step()

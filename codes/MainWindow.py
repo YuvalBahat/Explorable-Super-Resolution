@@ -197,6 +197,10 @@ class Ui_MainWindow(object):
         for button_num,button in enumerate(imprint_stretches):
             self.Define_Button(button+'_imprinting', tooltip='Make imprinting '+button,action_not_push=False, disabled=True)
 
+        imprint_rotations = ['clockwise','counter_clockwise']
+        for button_num,button in enumerate(imprint_rotations):
+            self.Define_Button(button+'_imprinting', tooltip='Make imprinting '+button,action_not_push=False, disabled=True)
+
         self.auto_hist_temperature_mode_Enabled = False
         if self.auto_hist_temperature_mode_Enabled:
             self.Define_Button('auto_hist_temperature_mode', tooltip='Automatic histogram temperature',action_not_push=False, checkable=True)
@@ -321,7 +325,7 @@ class Ui_MainWindow(object):
         scribble_B_TB = self.Define_Grid_layout('Manage scribble',buttons_list=[self.dropper_button,self.scribble_reset_button,self.undo_scribble_button,self.canvas.color_button,
             self.apply_scribble_button,self.redo_scribble_button,self.canvas.cycleColorState_button,self.loop_apply_scribble_button],layout_cols=3)
         imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[self.imprinting_button,self.imprinting_auto_location_button,None,None]+\
-            [getattr(self,button+'_imprinting_button') for button in (imprint_stretches+imprint_translations)],layout_cols=4)
+            [getattr(self,button+'_imprinting_button') for button in (imprint_stretches+imprint_translations+imprint_rotations)],layout_cols=4)
 
 
         #### Assemble layouts together to form GUI:
