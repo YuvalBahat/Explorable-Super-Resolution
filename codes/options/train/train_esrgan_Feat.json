@@ -115,7 +115,7 @@
     // , "D_update_ratio": 1
      , "D_init_iters": 0
      , "E_init_iters": 40000
-     , "gp_weigth": 10
+     , "gp_weight": 10
 
     , "manual_seed": 0
     , "niter": 200000 //510000

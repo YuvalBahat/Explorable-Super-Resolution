@@ -86,7 +86,7 @@ class SRGANModel(BaseModel):
                 self.random_pt = torch.Tensor(1, 1, 1, 1).to(self.device)
                 # gradient penalty loss
                 self.cri_gp = GradientPenaltyLoss(device=self.device).to(self.device)
-                self.l_gp_w = train_opt['gp_weigth']
+                self.l_gp_w = train_opt['gp_weight']
 
             # optimizers
             # G

@@ -109,7 +109,7 @@
     // , "D_update_ratio": 1
      , "D_init_iters": 0
      , "E_init_iters": 40000
-     , "gp_weigth": 10
+     , "gp_weight": 10
 
     , "manual_seed": 0
     , "niter": 510000 //23532 //500100 //5e5

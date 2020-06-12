@@ -129,7 +129,8 @@ class DnCNN(nn.Module):
         padding = kernel_size//2
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
-        if latent_input is None or 'all_layers' not in latent_input or num_latent_channels is None:
+        # if latent_input is None or 'all_layers' not in latent_input or num_latent_channels is None:
+        if latent_input not in ['all_layers','first_layer'] or num_latent_channels is None:
             self.num_latent_channels = 0
 
         layers = []
@@ -144,7 +145,7 @@ class DnCNN(nn.Module):
             if self.discriminator_net and layer_num>=num_padded_layers:
                 expected_input_size -= (kernel_size-1)
                 padding = 0
-            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'), out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
             if spectral_norm:
                 layers[-1] = SN.spectral_norm(layers[-1])
             if norm_type=='batch':
@@ -158,7 +159,7 @@ class DnCNN(nn.Module):
         if self.discriminator_net and layer_num >= num_padded_layers:
             expected_input_size -= (kernel_size - 1)
             padding = 0
-        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels, out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'), out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
         if spectral_norm:
             layers[-1] = SN.spectral_norm(layers[-1])
         if self.discriminator_net:
@@ -180,7 +181,8 @@ class DnCNN(nn.Module):
             latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
             x = 1*quantized_coeffs
             for i, module in enumerate(self.dncnn):
-                if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
+                if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
+                # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
                     if self.discriminator_net and latent_input.size(2)!=x.size(2):
                         x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
                     else:

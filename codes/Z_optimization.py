@@ -7,6 +7,7 @@ import time
 from scipy.ndimage.morphology import binary_opening
 from sklearn.feature_extraction.image import extract_patches_2d
 from utils.util import IndexingHelper, Return_Translated_SubImage, Return_Interpolated_SubImage
+from cv2 import dilate
 
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
@@ -336,9 +337,17 @@ class Z_optimizer():
         else:
             initial_pre_tanh_Z = None
         self.non_local_Z_optimization = non_local_Z_optimization and image_mask is not None and image_mask.mean()<1
-        self.initial_output = model.Output_Batch(within_0_1=True)
+        self.model_training = HR_unpadder is not None
+        assert not (self.non_local_Z_optimization and self.model_training),'Shouldn''t happen...'
+        if not self.model_training:
+            self.initial_output = model.Output_Batch(within_0_1=True)
         if self.non_local_Z_optimization:
-            Z_mask = np.ones_like(Z_mask)
+            print('Temporary fix, should be revisited. I want to prevent strong effects outside the optimized_region (when working with a large image), while using the off-mask constraint.')
+            new_Z_mask = np.zeros_like(Z_mask)
+            new_Z_mask[2:-2,2:-2] = 1
+            dilated_im_mask = np.max(np.max(dilate(image_mask, np.ones([16, 16])).reshape([Z_mask.shape[0],8,Z_mask.shape[1],8]),-1),1)
+            Z_mask *= new_Z_mask
+            Z_mask = np.minimum(1,Z_mask+dilated_im_mask)
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_pre_tanh_Z=initial_pre_tanh_Z,Z_mask=Z_mask,
             random_perturbations=(random_Z_inits and 'random' not in objective) or ('random' in objective and 'limited' in objective))
         assert (initial_LR is not None) or (existing_optimizer is not None),'Should either supply optimizer from previous iterations or initial LR for new optimizer'
@@ -347,7 +356,6 @@ class Z_optimizer():
         self.device = torch.device('cuda')
         self.jpeg_extractor = jpeg_extractor
         self.model = model
-        self.model_training = HR_unpadder is not None
         if image_mask is None:
             if 'fake_H' in model.__dict__.keys():
                 self.image_mask = torch.ones(list(model.fake_H.size()[2:])).type(model.fake_H.dtype).to(self.device)

@@ -69,6 +69,7 @@ USE_LOADED_IM_SIZE = True
 LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS = True
 Z_OPTIMIZATION_TIME_LIMIT = 30  # seconds
 NON_LOCAL_Z_OPTIMIZATION = True #When True, optimizing over the entire region passed to the optimizer (depends on MARGINS_AROUND_REGION_OF_INTEREST), while penalizing for changes in the masked regions.
+AUTO_MASK_GRAPHICAL_INPUT = True and NON_LOCAL_Z_OPTIMIZATION#When NON_LOCAL_Z_OPTIMIZATION is on, would automatically surround scribble mask by dilation to automatically create mask.
 
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
@@ -1917,6 +1918,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print('Initializing Z optimizer...')
             # For the random_l1_limited objective, I want to have L1 differences with respect to the current non-modified image, in case I currently display another image:
             self.canvas.output_image_0_1 = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
+            if AUTO_MASK_GRAPHICAL_INPUT and 'scribble' in objective:
+                # Experimental: In scribble/imprinting mode while using AUTO_MASK_GRAPHICAL_INPUT, automatically mask out the non-scribbled area within the the selected editing region.
+                # Apply dilation on the scribble mask, to allow pixels adjacent to the scribble to change, while constraining the rest to remain close to the current output.
+                saved_image_mask = 1*self.canvas.HR_selected_mask
+                saved_bounding_rect =  1*self.canvas.mask_bounding_rect
+                self.canvas.HR_selected_mask = self.canvas.HR_selected_mask * cv2.dilate(self.canvas.current_scribble_mask, np.ones([5, 5]))
+                assert self.JPEG_GUI,'Should see in which dimensions the new_bounding_rect should live for the SR case'
+                new_bounding_rect = np.array(cv2.boundingRect(np.argwhere(self.canvas.HR_selected_mask)[:,[1,0]]))
+                new_bounding_rect[2:] += new_bounding_rect[:2]
+                new_bounding_rect = new_bounding_rect/8
+                new_bounding_rect = np.concatenate([np.floor(new_bounding_rect[:2]),np.ceil(new_bounding_rect[2:])]).astype(int)
+                new_bounding_rect[2:] -= new_bounding_rect[:2]
+                self.canvas.mask_bounding_rect = new_bounding_rect
+
             if not np.all(self.canvas.HR_selected_mask) and self.canvas.contained_Z_mask:#Cropping an image region to be optimized, to save on computations and allow adversarial loss
                 self.optimizing_region = True
                 if objective == 'Adversarial':
@@ -1940,6 +1955,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.optimizing_region = False
             self.iters_per_round = 1*ITERS_PER_OPT_ROUND
+            # image_mask = 1*self.canvas.HR_selected_mask
             if any([phrase in objective for phrase in ['hist','dict','l12GT']]):
                 data['desired'] = [torch.from_numpy(np.ascontiguousarray(np.transpose(hist_im, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0) for hist_im in self.canvas.desired_image]
                 if 'l1' in objective and self.optimizing_region:
@@ -2000,6 +2016,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 jpeg_extractor=self.canvas.SR_model.jpeg_extractor if self.JPEG_GUI else None,non_local_Z_optimization=NON_LOCAL_Z_OPTIMIZATION)
             if self.optimizing_region:
                 self.MasksStorage(False)
+            if AUTO_MASK_GRAPHICAL_INPUT and 'scribble' in objective:
+                # Restoring the saved image mask:
+                self.canvas.HR_selected_mask,self.canvas.mask_bounding_rect = 1*saved_image_mask,1*saved_bounding_rect
+
         elif 'random' in objective:
             self.canvas.Z_optimizer.cur_iter = 0
         num_looping_iters = 30 if loop else 1

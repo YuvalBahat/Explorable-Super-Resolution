@@ -155,7 +155,7 @@ Click for detailed explanations for each json file.
     //for wgan-gp
     // , "D_update_ratio": 1
     // , "D_init_iters": 0
-    // , "gp_weigth": 10
+    // , "gp_weight": 10
 
     , "manual_seed": 0
     , "niter": 5e5 // total training iteration
@@ -234,7 +234,7 @@ Click for detailed explanations for each json file.
     //for wgan-gp
     // , "D_update_ratio": 1
     // , "D_init_iters": 0
-    // , "gp_weigth": 10
+    // , "gp_weight": 10
 
     , "manual_seed": 0
     , "niter": 6e5 // total training iteration

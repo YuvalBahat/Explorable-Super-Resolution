@@ -25,12 +25,12 @@ from models.modules.loss import Latent_channels_desc_2_num_channels
 SPECIFIC_DEBUG = False
 # Parameters:
 SAVE_IMAGE_COLLAGE = False
-TEST_LATENT_OUTPUT = None#'GIF','video',None,'stats'
+TEST_LATENT_OUTPUT = 'stats'#'GIF','video',None,'stats'
 # Parameters for GIF:
 LATENT_DISTRIBUTION = 'rand_Uniform'#'Uniform'#'rand_Uniform','Gaussian','Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','UnitCircle','Desired_Im_hist
 NUM_Z_ITERS = 250
 NON_ARBITRARY_Z_INPUTS = ['Input_Z_Im','Desired_Im','max_STD','min_STD','UnDesired_Im','Desired_Im_VGG','UnDesired_Im_VGG','Desired_Im_hist'] #
-LATENT_RANGE = 1
+LATENT_RANGE = 0.25
 NUM_SAMPLES = 50#Must be odd for a collage to be saved
 INPUT_Z_IM_PATH = os.path.join('/home/ybahat/Dropbox/PhD/DataTermEnforcingArch/Results/SRGAN/NoiseInput',LATENT_DISTRIBUTION)
 if 'Desired_Im' in LATENT_DISTRIBUTION:
@@ -40,6 +40,8 @@ LATENT_CHANNEL_NUM = 0#Overridden when UnitCircle
 OTHER_CHANNELS_VAL = 0
 SAVE_QUANTIZED = True
 CHROMA = False
+OUTPUT_STD = False
+SAVE_AVG_METRICS_WHEN_LATENT = True
 # options
 parser = argparse.ArgumentParser()
 parser.add_argument('-opt', type=str, required=True, help='Path to options JSON file.')
@@ -47,8 +49,7 @@ parser.add_argument('-single_GPU', action='store_true', help='Utilize only one G
 if parser.parse_args().single_GPU:
     util.Assign_GPU()
 opt = option.parse(parser.parse_args().opt, is_train=False,name='JPEG'+('_chroma' if CHROMA else ''))
-util.mkdirs((path for key, path in opt['path'].items
-() if not key == 'pretrain_model_G'))
+util.mkdirs((path for key, path in opt['path'].items() if not key == 'pretrain_model_G'))
 opt = option.dict_to_nonedict(opt)
 if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
     LATENT_CHANNEL_NUM = None
@@ -115,7 +116,7 @@ for test_loader in test_loaders:
             Z_latent = list(np.linspace(start=-LATENT_RANGE,stop=0,num=np.ceil(NUM_SAMPLES/2)))[:-1]
             Z_latent = Z_latent+[0]+[-z for z in Z_latent[::-1]]
         elif LATENT_DISTRIBUTION == 'rand_Uniform':
-            if opt['network_G']['latent_channels'] == 0 or dataset_opt['dataroot_HR'] is None:#Using single Z=0 when there are no latent channels or in the realistic LR images experiment
+            if opt['network_G']['latent_channels'] == 0:#Using single Z=0 when there are no latent channels
                 Z_latent = np.zeros(1)
             else:
                 Z_latent = np.random.uniform(low=-LATENT_RANGE,high=LATENT_RANGE,
@@ -227,7 +228,7 @@ for test_loader in test_loaders:
                 if z_sample_num==0:
                     # gt_img = util.tensor2img(1*visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
                     gt_img = util.tensor2img(1*gt_im_YCbCr, out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
-                    if opt['network_G']['latent_channels']>0:
+                    if OUTPUT_STD and opt['network_G']['latent_channels']>0:
                         img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
                         gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
                         HR_STD = np.std(gt_orthogonal_component,axis=(0,1)).mean()
@@ -235,10 +236,10 @@ for test_loader in test_loaders:
                     else:
                         HR_STD = 0
                 if TEST_LATENT_OUTPUT=='stats':
-                    if opt['network_G']['latent_channels']>0:
+                    if OUTPUT_STD and opt['network_G']['latent_channels']>0:
                         image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
                     if z_sample_num==(len(Z_latent)-1):
-                        if opt['network_G']['latent_channels']>0:
+                        if OUTPUT_STD and opt['network_G']['latent_channels']>0:
                             pixels_STDs.append(np.std(np.stack(image_high_freq_versions),0))
                             pixel_STD = np.mean(pixels_STDs[-1])
                         else:
@@ -248,15 +249,16 @@ for test_loader in test_loaders:
                         # util.save_img((util.tensor2img(visuals['HR'],out_type=np.uint8,min_max=[0,255])),
                         #               os.path.join(dataset_dir, img_name + '_HR_STD%.3f_Decomp_STD%.3f.png'%(HR_STD,pixel_STD)))
                 # sr_img *= 255.
-                if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0:
-                    quantized_image = util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
-                    # quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(data['Uncomp'])), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
-                    if SAVE_QUANTIZED:
-                        util.save_img(quantized_image,os.path.join(dataset_dir+'_Quant', img_name + suffix + '.png'))
+                if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0 or SAVE_AVG_METRICS_WHEN_LATENT:
+                    if z_sample_num==0:
+                        quantized_image = util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
+                        # quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(data['Uncomp'])), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
+                        if SAVE_QUANTIZED:
+                            util.save_img(quantized_image,os.path.join(dataset_dir+'_Quant', img_name + suffix + '.png'))
+                        test_results['psnr_quantized'].append(util.calculate_psnr(quantized_image,gt_img))
+                        test_results['ssim_quantized'].append(util.calculate_ssim(quantized_image,gt_img))
                     psnr = util.calculate_psnr(sr_img, gt_img)
-                    test_results['psnr_quantized'].append(util.calculate_psnr(quantized_image,gt_img))
                     ssim = util.calculate_ssim(sr_img, gt_img)
-                    test_results['ssim_quantized'].append(util.calculate_ssim(quantized_image,gt_img))
                     test_results['psnr'].append(psnr)
                     test_results['ssim'].append(ssim)
                 if SAVE_IMAGE_COLLAGE:
@@ -285,7 +287,7 @@ for test_loader in test_loaders:
                 if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:
                     cur_collage = cv2.putText(cur_collage, '%.2f'%(cur_channel_cur_Z), (0, 50),cv2.FONT_HERSHEY_SCRIPT_COMPLEX, fontScale=2.0, color=(255, 255, 255))
                 frames.append(cur_collage)
-    if need_Uncomp and ((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_OUTPUT):  # metrics
+    if need_Uncomp and (((LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS and cur_channel_cur_Z==0) or not TEST_LATENT_OUTPUT) or SAVE_AVG_METRICS_WHEN_LATENT):  # metrics
         # Average PSNR/SSIM results
         ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
         ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
@@ -301,7 +303,7 @@ for test_loader in test_loaders:
             os.rename(dataset_dir+'_Quant', dataset_dir+'_Quant' + '_PSNR{:.3f}'.format(ave_psnr_quantized))
         else:
             os.rename(dataset_dir, dataset_dir + '_PSNR{:.3f}to{:.3f}'.format(ave_psnr_quantized,ave_psnr))
-    if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0:
+    if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0 and OUTPUT_STD:
         pixels_STDs = [v.reshape([-1,3]) for v in pixels_STDs]
         with open(os.path.join(dataset_dir,'stats.txt'),'w') as f:
             f.write('STD of per-image mean pixels STD: %.4f\n' % (np.std(np.stack([np.mean(v) for v in pixels_STDs]))))

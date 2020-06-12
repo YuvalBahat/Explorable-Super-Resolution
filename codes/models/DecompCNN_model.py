@@ -19,6 +19,7 @@ import cv2
 from data.util import rgb2ycbcr
 
 USE_Y_GENERATOR_4_CHROMA = True
+ADDITIONALLY_SAVED_ATTRIBUTES = ['D_verified','verified_D_saved','lr_G','lr_D']
 
 class DecompCNNModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None,chroma_mode=False,**kwargs):
@@ -57,9 +58,6 @@ class DecompCNNModel(BaseModel):
         G_kernel_sizes = [l.kernel_size[0] for l in next(self.netG.module.children()) if isinstance(l,nn.Conv2d)]
         G_receptive_filed = G_kernel_sizes[0]+sum([k-1 for k in G_kernel_sizes[1:]])
         print('Receptive field of G: %d = 8*%d'%(8*G_receptive_filed,G_receptive_filed))
-        # if train_opt['gan_type'] == 'wgan-gp':
-        #     input = torch.zeros([1, self.opt['network_G']['in_nc']] + 2 * [opt['datasets']['train']['patch_size']]).to(next(self.netG.parameters()).device)
-        #     self.netG.module.dncnn,_ = util.convert_batchNorm_2_layerNorm(self.netG.module.dncnn,input=input)
         self.netG.to(self.device)
         if self.chroma_mode and USE_Y_GENERATOR_4_CHROMA:
             netG_Y_opt = opt.copy()
@@ -104,13 +102,7 @@ class DecompCNNModel(BaseModel):
                 if self.DCT_discriminator:
                     self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
                 if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
-                    # if self.DCT_discriminator:
-                    #     input = torch.zeros([1, 64] + 2 * [opt['datasets']['train']['patch_size'] // 8]).to(next(self.netD.parameters()).device)
-                    # else:
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
-                    # if 'DnCNN' in str(self.netD.module.__class__):
-                    #     self.netD.module,_ = util.convert_batchNorm_2_layerNorm(self.netD.module,input=input)
-                    # else:
                     self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
                     self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
                     self.netD.cuda()
@@ -139,9 +131,11 @@ class DecompCNNModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
+                if not isinstance(self.opt['train']['Num_Z_iterations'],list):
+                    self.opt['train']['Num_Z_iterations'] = list(self.opt['train']['Num_Z_iterations'])
                 # Dividing the batch size in 2 for the case of training a chroma Discriminator. See explanation for self.Y_channel_is_fake
                 self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/8)],
-                    model=self,Z_range=1,max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size']//(2 if self.chroma_mode and self.D_exists else 1),
+                    model=self,Z_range=1,max_iters=self.opt['train']['Num_Z_iterations'][0],initial_LR=1,batch_size=opt['datasets']['train']['batch_size']//(2 if self.chroma_mode and self.D_exists else 1),
                     HR_unpadder=lambda x:x,jpeg_extractor=self.jpeg_extractor)
                 if self.optimalZ_loss_type == 'l2':
                     self.cri_optimalZ = nn.MSELoss().to(self.device)
@@ -190,7 +184,7 @@ class DecompCNNModel(BaseModel):
                     self.random_pt = torch.Tensor(1, 1, 1, 1).to(self.device)
                     # gradient penalty loss
                     self.cri_gp = GradientPenaltyLoss(device=self.device).to(self.device)
-                    self.l_gp_w = train_opt['gp_weigth']
+                    self.l_gp_w = train_opt['gp_weight']
             else:
                 print('Remove GAN loss')
                 self.cri_gan = None
@@ -206,18 +200,18 @@ class DecompCNNModel(BaseModel):
                     optim_params.append(v)
                 else:
                     print('WARNING: params [{:s}] will not optimize.'.format(k))
-            if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
-                lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
-                lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
-            else:
-                lr_G = train_opt['lr_G']
-                lr_D = train_opt['lr_D']
-            self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G,weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
+            # if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
+            #     lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
+            #     lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
+            # else:
+            self.lr_G = train_opt['lr_G']
+            self.lr_D = train_opt['lr_D']
+            self.optimizer_G = torch.optim.Adam(optim_params, lr=self.lr_G,weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
             self.optimizers.append(self.optimizer_G)
             # D
             if self.D_exists:
                 wd_D = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
-                self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr_D, \
+                self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.lr_D, \
                     weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
                 self.optimizers.append(self.optimizer_D)
             # schedulers
@@ -237,6 +231,16 @@ class DecompCNNModel(BaseModel):
                 self.netD = networks.define_D(opt).to(self.device)
                 self.netD.eval()
         self.load()
+        if self.is_train:
+            self.D_verified,self.verified_D_saved = bool(self.D_verified),bool(self.verified_D_saved)
+            if self.D_exists:
+                for param_group in self.optimizer_D.param_groups:
+                    param_group['lr'] = self.lr_D
+                if self.verified_D_saved:# When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
+                    self.lr_G = 1*self.lr_D
+                    self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
+            for param_group in self.optimizer_G.param_groups:
+                param_group['lr'] = self.lr_G
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -383,10 +387,13 @@ class DecompCNNModel(BaseModel):
                 if self.Z_injected_2_D:
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             self.var_ref = input_ref.to(self.device)
+    def Set_Require_Grad_Status(self,network,status):
+        for p in network.parameters():
+            p.requires_grad = status
 
     def optimize_parameters(self):
-        Z_OPTIMIZATION_WHEN_D_UNVERIFIED = True
-        # self.gradient_step_num = self.step//self.max_accumulation_steps
+        Z_OPTIMIZATION_WHEN_D_UNVERIFIED = len(self.opt['train']['Num_Z_iterations'])>1
+        SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP = True
         first_grad_accumulation_step_G = self.step%self.grad_accumulation_steps_G==0
         last_grad_accumulation_step_G = self.step % self.grad_accumulation_steps_G == (self.grad_accumulation_steps_G-1)
         first_grad_accumulation_step_D = self.step%self.grad_accumulation_steps_D==0
@@ -395,6 +402,8 @@ class DecompCNNModel(BaseModel):
         if first_grad_accumulation_step_D:
             if self.global_D_update_ratio>0:
                 self.cur_D_update_ratio = self.global_D_update_ratio
+                if SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP and not self.verified_D_saved:
+                    self.cur_D_update_ratio = 1
             elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
                 self.cur_D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
             else:#Varying update ratio:
@@ -406,12 +415,14 @@ class DecompCNNModel(BaseModel):
         # G
         if first_grad_accumulation_step_D or self.generator_step:
             G_grads_retained = True
-            for p in self.netG.parameters():
-                p.requires_grad = True
+            self.Set_Require_Grad_Status(self.netG,True)
+            # for p in self.netG.parameters():
+            #     p.requires_grad = True
         else:
             G_grads_retained = False
-            for p in self.netG.parameters():
-                p.requires_grad = False
+            self.Set_Require_Grad_Status(self.netG, False)
+            # for p in self.netG.parameters():
+            #     p.requires_grad = False
         actual_dual_step_steps = int(self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED))+1 # 2 if I actually have an optimized-Z step, 1 otherwise
         for possible_dual_step_num in range(actual_dual_step_steps):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
@@ -466,10 +477,12 @@ class DecompCNNModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
                 if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num >= -self.D_init_iters:
-                    for p in self.netD.parameters():
-                        p.requires_grad = True
-                    for p in self.netG.parameters():
-                        p.requires_grad = False
+                    self.Set_Require_Grad_Status(self.netD, True)
+                    self.Set_Require_Grad_Status(self.netG, False)
+                    # for p in self.netD.parameters():
+                    #     p.requires_grad = True
+                    # for p in self.netG.parameters():
+                    #     p.requires_grad = False
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         if self.G_steps_since_D > 0:
                             self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1 / self.G_steps_since_D))
@@ -492,7 +505,7 @@ class DecompCNNModel(BaseModel):
 
                     l_d_total += (l_d_real + l_d_fake) / 2
 
-                    if self.opt['train']['gan_type'] == 'wgan-gp':
+                    if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
                         batch_size = self.var_ref.size(0)
                         if self.random_pt.size(0) != batch_size:
                             self.random_pt.resize_(batch_size, 1, 1, 1)
@@ -532,7 +545,13 @@ class DecompCNNModel(BaseModel):
                                     if self.generator_step:
                                         if not self.verified_D_saved:
                                             self.save(self.gradient_step_num,first_verified_D=True)  # D was approved in the current step
+                                            # When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
+                                            self.lr_G = 1 * self.lr_D
+                                            for param_group in self.optimizer_G.param_groups:
+                                                param_group['lr'] = self.lr_G
                                             self.verified_D_saved = True
+                                            self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
+                                            self.save_log()
                                         if self.D_verification=='initial':
                                             self.D_verified = True
                                         elif self.D_verification=='initial_gradual':
@@ -572,7 +591,7 @@ class DecompCNNModel(BaseModel):
                             self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
                             self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
                             self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
-                            if self.opt['train']['gan_type'] == 'wgan-gp':
+                            if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
                                 self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
                             # D outputs
                             self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
@@ -586,10 +605,12 @@ class DecompCNNModel(BaseModel):
             if self.generator_step or self.generator_Z_opt_only_step:
                 self.generator_started_learning = True
                 if self.D_exists:
-                    for p in self.netD.parameters():
-                        p.requires_grad = False
-                for p in self.netG.parameters():
-                    p.requires_grad = True
+                    self.Set_Require_Grad_Status(self.netD, False)
+                    # for p in self.netD.parameters():
+                    #     p.requires_grad = False
+                self.Set_Require_Grad_Status(self.netG, True)
+                # for p in self.netG.parameters():
+                #     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     if self.D_steps_since_G > 0:
                         self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
@@ -834,7 +855,8 @@ class DecompCNNModel(BaseModel):
                         return True
             lr_decrease_dict = {'lr_G':self.optimizer_G.param_groups[0]['lr'],'lr_D':self.optimizer_D.param_groups[0]['lr']}
             print('LR(D) reduced to %.2e, LR(G) reduced to %.2e.'%(self.optimizer_D.param_groups[0]['lr'],self.optimizer_G.param_groups[0]['lr']))
-            np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            # np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            self.lr_G,self.lr_D = self.optimizer_G.param_groups[0]['lr'],self.optimizer_D.param_groups[0]['lr']
             self.log_dict['LR_decrease'].append([self.step//self.max_accumulation_steps,lr_decrease_dict])
         return False
 
@@ -850,7 +872,8 @@ class DecompCNNModel(BaseModel):
 
     def save_log(self):
         dict_2_save = self.log_dict.copy()
-        dict_2_save['D_verified'] = self.D_verified
+        for attr in ADDITIONALLY_SAVED_ATTRIBUTES:
+            dict_2_save[attr] = getattr(self,attr)
         np.savez(os.path.join(self.log_path,'logs.npz'), ** dict_2_save)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
@@ -866,9 +889,12 @@ class DecompCNNModel(BaseModel):
         for key in loaded_log.files:
             if key=='psnr_val':
                 self.log_dict[key] = ([tuple(val) for val in old_log[key]] if PREPEND_OLD_LOG else [])+[tuple(val) for val in loaded_log[key]]
-            elif key=='D_verified':
-                self.D_verified = bool(loaded_log[key])
+            elif key in ADDITIONALLY_SAVED_ATTRIBUTES:
+                setattr(self,key,loaded_log[key])
                 continue
+            # elif key=='D_verified':
+            #     self.D_verified = bool(loaded_log[key])
+            #     continue
             else:
                 self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
                 if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
@@ -977,11 +1003,11 @@ class DecompCNNModel(BaseModel):
             self.load_network(self.opt['path']['Y_channel_model_G'], self.netG_Y)
 
     def save(self, iter_label,first_verified_D=False):
-        if first_verified_D:
-            self.save_network(self.save_dir, self.netD, 'D_verified', iter_label, self.optimizer_D)
-            return
+        # if first_verified_D:
+        #     self.save_network(self.save_dir, self.netD, 'D_verified', iter_label, self.optimizer_D)
+        #     return
         if self.D_exists:
-            self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
-        saving_path = self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
+            self.save_network(self.save_dir, self.netD, 'D'+('_verified' if first_verified_D else ''), iter_label,self.optimizer_D)
+        saving_path = self.save_network(self.save_dir, self.netG, 'G'+('_verified' if first_verified_D else ''), iter_label,self.optimizer_G)
         return saving_path
 
