@@ -314,7 +314,8 @@ class Ui_MainWindow(object):
         periodicity_TB = self.Define_Grid_layout('Periodicity',buttons_list=[self.IncreasePeriodicity_1D_button,self.periodicity_mag_1_button,
               self.IncreasePeriodicity_2D_button, self.periodicity_mag_2_button,self.indicatePeriodicity_button],layout_cols=6)
         general_TB = self.Define_Grid_layout('Reference & General',
-            buttons_list=[self.desiredAppearanceMode_button,self.undoZ_button,self.special_behavior_button,self.desiredExternalAppearanceMode_button,self.redoZ_button,self.estimatedKenrel_button],layout_cols=3)
+            buttons_list=[self.desiredAppearanceMode_button,self.undoZ_button,self.special_behavior_button,self.desiredExternalAppearanceMode_button,
+                          self.redoZ_button]+([self.estimatedKenrel_button] if not self.JPEG_GUI else []),layout_cols=3)
         optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[self.IncreaseSTD_button,self.DecreaseSTD_button,self.DecreaseTV_button,
             self.ImitateHist_button,self.ImitatePatchHist_button,self.FoolAdversary_button,self.STD_increment,self.ProcessRandZ_button,
             self.ProcessLimitedRandZ_button]+([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else []),layout_cols=4)

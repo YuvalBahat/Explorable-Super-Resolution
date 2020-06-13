@@ -39,7 +39,6 @@ class SoftHistogramLoss(torch.nn.Module):
             self.image_Z = image_Z
         else:
             self.temperature = torch.tensor(self.temperature).type(torch.cuda.DoubleTensor)
-            # self.temperature = self.temperature*self.bin_width*85 # 0.006 was calculated for pixels range [0,1] with 85 bins. So I adjust it acording to actual range and n_bins, manifested in self.bin_width
         self.bin_centers = torch.linspace(min,max,bins)
         self.gray_scale = gray_scale
         self.patch_size = patch_size
@@ -326,7 +325,8 @@ class Z_optimizer():
     PATCH_SIZE_4_STD = 7
     def __init__(self,objective,Z_size,model,Z_range,max_iters,data=None,loggers=None,image_mask=None,Z_mask=None,initial_Z=None,initial_LR=None,existing_optimizer=None,
                  batch_size=1,HR_unpadder=None,auto_set_hist_temperature=False,random_Z_inits=False,jpeg_extractor=None,non_local_Z_optimization=False):
-        self.data_keys = {'reconstructed':'SR'} if jpeg_extractor is None else {'reconstructed':'Decomp'}
+        self.jpeg_mode = jpeg_extractor is not None
+        self.data_keys = {'reconstructed':'SR'} if not self.jpeg_mode else {'reconstructed':'Decomp'}
         if (initial_Z is not None or 'cur_Z' in model.__dict__.keys()):
             if initial_Z is None:
                 initial_Z = 1*model.GetLatent()
@@ -342,11 +342,18 @@ class Z_optimizer():
         if not self.model_training:
             self.initial_output = model.Output_Batch(within_0_1=True)
         if self.non_local_Z_optimization:
-            print('Temporary fix, should be revisited. I want to prevent strong effects outside the optimized_region (when working with a large image), while using the off-mask constraint.')
+            # Z Manipulation is allowed in all locations meeting ANY of the following:
+            # - The entire Z, except for a margin of 16 pixels on each side in the optimized region (for large images) or image (for small images)
+            # - The dilated version of image_mask (using a 16x16 square structural element).
             new_Z_mask = np.zeros_like(Z_mask)
-            new_Z_mask[2:-2,2:-2] = 1
-            dilated_im_mask = np.max(np.max(dilate(image_mask, np.ones([16, 16])).reshape([Z_mask.shape[0],8,Z_mask.shape[1],8]),-1),1)
-            Z_mask *= new_Z_mask
+            if self.jpeg_mode:
+                new_Z_mask[2:-2,2:-2] = 1
+                dilated_im_mask = np.max(np.max(dilate(image_mask, np.ones([16, 16])).reshape([Z_mask.shape[0],8,Z_mask.shape[1],8]),-1),1)
+            else:
+                new_Z_mask[16:-16,16:-16] = 1
+                dilated_im_mask = dilate(image_mask, np.ones([16, 16]))
+            # Z_mask *= new_Z_mask
+            Z_mask = 1*new_Z_mask
             Z_mask = np.minimum(1,Z_mask+dilated_im_mask)
         self.Z_model = Optimizable_Z(Z_shape=[batch_size,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_pre_tanh_Z=initial_pre_tanh_Z,Z_mask=Z_mask,
             random_perturbations=(random_Z_inits and 'random' not in objective) or ('random' in objective and 'limited' in objective))
@@ -370,10 +377,11 @@ class Z_optimizer():
             self.image_mask.requires_grad = False
             self.Z_mask.requires_grad = False
             if self.non_local_Z_optimization:
-                self.constraining_mask = 1-self.image_mask
+                self.constraining_mask = (1-(self.image_mask>0)).type(self.image_mask.type())
                 def constraining_loss(produced_im):
                     return torch.nn.functional.l1_loss(input=produced_im * self.constraining_mask,target=self.initial_output * self.constraining_mask)
                 self.constraining_loss = constraining_loss
+                self.constraining_loss_weight = 0.1 # Setting a default weight, that should probably be adjusted for each different tool
         if 'local' in objective:#Used in relative STD change and periodicity objective cases:
             desired_overlap = 1 if 'STD' in objective else 0.5
             self.patch_extraction_map,self.non_covered_indexes_extraction_mat = ReturnPatchExtractionMat(mask=image_mask,
@@ -390,7 +398,7 @@ class Z_optimizer():
                 if self.image_mask is None:
                     self.loss = torch.nn.L1Loss().to(torch.device('cuda'))
                 else:
-                    loss_mask = self.image_mask
+                    loss_mask = (self.image_mask>0).type(self.image_mask.type())
                     SMOOTHING_MARGIN = 1
                     if 'scribble' in objective:
                         scribble_mask_tensor = torch.from_numpy(data['scribble_mask']).type(loss_mask.dtype).to(loss_mask.device)
@@ -428,9 +436,9 @@ class Z_optimizer():
                                     cur_mask = Return_Translated_SubImage(TV_loss_mask,point) * Return_Translated_SubImage(TV_loss_mask, -point)
                                     loss = loss + (cur_mask * (Return_Translated_SubImage(produced_im,point) - Return_Translated_SubImage(produced_im, -point)).abs()).mean(dim=(1, 2, 3))
                         return loss
-                    if len(TV_loss_masks)==0: #No local TV minimization performed
-                        self.constraining_loss_weight = 0.1#255/10*Z_loss.item()
+                    # if len(TV_loss_masks)==0: #No local TV minimization performed
                     #     I need to check what the appropriate normalizer when using local TV minimization
+                    self.constraining_loss_weight = 1#255/10*Z_loss.item()
                     self.loss = Scribble_Loss
                 # scheduler_threshold = 1e-2
             elif 'Mag' in objective:
@@ -523,7 +531,7 @@ class Z_optimizer():
                     desired_hist_image_mask=data['Desired_Im_Mask'] if self.data is not None else None,input_im_HR_mask=self.image_mask,
                     gray_scale=True,patch_size=6 if 'patch' in objective else 1,temperature=optimal_temperature,dictionary_not_histogram='dict' in objective,
                     no_patch_DC='noDC' in objective,no_patch_STD='no_localSTD' in objective)
-                self.constraining_loss_weight = 10 if 'no_localSTD' in objective else 0.1 # Empirically set, based on empirically measured loss.
+                self.constraining_loss_weight = 10# if 'no_localSTD' in objective else 0.1 # Empirically set, based on empirically measured loss.
             elif 'Adversarial' in objective:
                 self.netD = model.netD
                 self.loss = GANLoss('wgan-gp', 1.0, 0.0).to(self.device)

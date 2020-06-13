@@ -152,7 +152,10 @@ class CEMnet:
         return  HR_input-HR_projected_2_h_subspace+LR_source
 
     def Project_2_ortho_2_NS(self,HR_input):
-        return self.DT_Satisfying_Upscale(imresize(HR_input,scale_factor=[1/self.ds_factor]))
+        downscaled_input = imresize(HR_input,scale_factor=[1/self.ds_factor])
+        if downscaled_input.ndim<HR_input.ndim:#In case input was of size self.ds_factor in at least one of its axes:
+            downscaled_input = np.reshape(downscaled_input,list(HR_input.shape[:2]//self.ds_factor)+([HR_input.shape[2]] if HR_input.ndim>2 else []))
+        return self.DT_Satisfying_Upscale(downscaled_input)
 
     def Supplement_Pseudo_CEM(self,input_t):
         return self.Learnable_Upscale_OP(self.Conv_LR_with_Learnable_OP(self.Learnable_DownscaleOP(input_t)))

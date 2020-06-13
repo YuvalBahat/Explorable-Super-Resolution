@@ -33,6 +33,6 @@ data_samples/samples_result
 /pretrained_models/
 /codes/baboon.png
 /codes/face.png
-/codes/face_GT_HR.png
+/Samples/face_GT_HR.png
 /codes/GT.png
 /.idea/

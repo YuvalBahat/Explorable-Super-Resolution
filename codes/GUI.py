@@ -4,7 +4,6 @@ from PyQt5.QtCore import *
 from MainWindow import Ui_MainWindow
 import os
 import argparse
-import random
 
 # Explorable SR imports:
 from models import create_model
@@ -18,13 +17,14 @@ import torch
 import qimage2ndarray
 import cv2
 import imageio
-# import matplotlib
 from skimage.transform import resize
 from scipy.signal import find_peaks
-from CEM.imresize_CEM import imresize
 import time
 from collections import deque
+
+# Explorable SR imports:
 from KernelGAN import train as KernelGAN
+from CEM.imresize_CEM import imresize
 
 # Explorable JPEG imports:
 from data.util import rgb2ycbcr
@@ -33,48 +33,63 @@ from skimage.color import rgb2hsv,hsv2rgb
 from PIL import Image as PIL_Image
 from jpeg2dct.numpy import load as jpeg_load
 
+# General parameters:
+Z_HISTORY_LENGTH = 10
+IMAGE_FILE_EXST_FILTER = "PNG image files (*.png);; JPEG image files (*.jpg);;BMP image files (*.bmp)"
+
+# Display options:
 DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
-DOWNSCALED_HIST_VERSIONS = False#0.9
-MIN_DOWNSCALING_4_HIST = 0.75
-VERBOSITY = False
+DISPLAY_INDUCED_LR = False
+HORIZ_MAINWINDOW_OFFSET = 67+15 #67+5#When initializing the GUI, the OS horizontally shifts the main window by this amount compared to the desired set position. This value can be modified in case it varies from one OS to another, affecting the intial image canvas location.
+ERR_MESSAGE_DURATION = 1e4
+INFO_MESSAGE_DURATION = 5e3
+
+# Optimization over Z signals space:
 Z_OPTIMIZER_INITIAL_LR = 1e-1
 Z_OPTIMIZER_INITIAL_LR_4_RANDOM = 1e-1
-NUM_RANDOM_ZS = 1
-VGG_RANDOM_DOMAIN = False
-DISPLAY_INDUCED_LR = False
-DICTIONARY_REPLACES_HISTOGRAM = True
-L1_REPLACES_HISTOGRAM = False
-NO_DC_IN_PATCH_HISTOGRAM = True
-RELATIVE_STD_OPT = True
-LOCAL_STD_4_OPT = True
 ONLY_MODIFY_MASKED_AREA_WHEN_OPTIMIZING = False
-D_EXPECTED_LR_SIZE = 64
 ITERS_PER_OPT_ROUND = 5
 HIGH_OPT_ITERS_LIMIT = True
 MARGINS_AROUND_REGION_OF_INTEREST = 30
 RANDOM_OPT_INITS = False
-MULTIPLE_OPT_INITS = False
-AUTO_CYCLE_LENGTH_4_PERIODICITY = True
-Z_HISTORY_LENGTH = 10
-LR_INTERPOLATION_4_SAVING = 'NN'
-HORIZ_MAINWINDOW_OFFSET = 67+15 #67+5#When initializing the GUI, the OS horizontally shifts the main window by this amount compared to the desired set position. This value can be modified in case it varies from one OS to another, affecting the intial image canvas location.
-ERR_MESSAGE_DURATION = 1e4
-INFO_MESSAGE_DURATION = 5e3
-IMAGE_FILE_EXST_FILTER = "PNG image files (*.png);; JPEG image files (*.jpg);;BMP image files (*.bmp)"
-DISPLAY_ESRGAN_RESULTS = True
-MAXIMAL_JPEG_QF = 49
-TRACK_ADDED_SCRIBLES = True
-USE_LOADED_IM_SIZE = True
+MULTIPLE_OPT_INITS = False # When True, using random initializations in Z space in addition to the initialization with the current Z, when performing optimization in Z space (when using the variance, imprinting and all other Z optimization tools).
 LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS = True
+TRACK_ADDED_SCRIBLES = True # When True, using the recent modification that allows modifying drawing locations like imprints can be moved, rotated or resized.
 Z_OPTIMIZATION_TIME_LIMIT = 30  # seconds
 NON_LOCAL_Z_OPTIMIZATION = True #When True, optimizing over the entire region passed to the optimizer (depends on MARGINS_AROUND_REGION_OF_INTEREST), while penalizing for changes in the masked regions.
 AUTO_MASK_GRAPHICAL_INPUT = True and NON_LOCAL_Z_OPTIMIZATION#When NON_LOCAL_Z_OPTIMIZATION is on, would automatically surround scribble mask by dilation to automatically create mask.
 
+# For the "desired dictionary of patches" tool, allowing multi-scale dictionary:
+DOWNSCALED_HIST_VERSIONS = False#0.9
+MIN_DOWNSCALING_4_HIST = 0.75
+DICTIONARY_REPLACES_HISTOGRAM = True
+L1_REPLACES_HISTOGRAM = False
+NO_DC_IN_PATCH_HISTOGRAM = True
+
+# The random diverse alternatives tool:
+NUM_RANDOM_ZS = 1
+VGG_RANDOM_DOMAIN = False
+
+# The variance manipulation tool:
+RELATIVE_STD_OPT = True
+LOCAL_STD_4_OPT = True
+
+# The adversary tool:
+D_EXPECTED_LR_SIZE = 64
+
+# Periodicity encouraging tool:
+AUTO_CYCLE_LENGTH_4_PERIODICITY = True
+
+# SR-only parameters:
+DISPLAY_ESRGAN_RESULTS = True
+
+# JPEG-only tools:
+MAXIMAL_JPEG_QF = 49
+
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
-# JPEG_HSV_MODES = ['H_clockwise','H_counter_clockwise','S_up','S_down','V_up','V_down']
-JPEG_HSV_MODES = [] #Temporary. I suspect JPEG_HSV_MODES can be removed alltogether.
+# Technical defenitions:
 SCRIBBLE_MODES = ['pencil','line', 'polygon','ellipse', 'rect','imprinting','imprinting_auto_location']
 MODES = ['selectpoly', 'selectrect','indicatePeriodicity','dropper',]+SCRIBBLE_MODES
 LOCAL_TV_MASK_IDENTIFIERS_RANGE = [3,50]
@@ -303,12 +318,13 @@ class Canvas(QLabel):
 
     def mousePressEvent(self, e):
         if (self.mode in self.scribble_modes) and not self.within_drawing and not self.in_picking_desired_hist_mode:
-            self.scribble_mode_entry_operations(imprinting='imprint' in self.mode)
+            # self.scribble_mode_entry_operations(imprinting='imprint' in self.mode)
+            self.scribble_mode_entry_operations(drawing='imprint' not in self.mode and self.color_state==0)
         fn = getattr(self, "%s_mousePressEvent" % self.mode, None)
         if fn:
             return fn(e)
 
-    def scribble_mode_entry_operations(self,imprinting=False):
+    def scribble_mode_entry_operations(self,drawing=True):
         self.Z_optimizer_Reset()
         self.SelectImage2Display(self.scribble_display_index)
         self.Add_scribble_2_Undo_list()
@@ -316,10 +332,9 @@ class Canvas(QLabel):
         if self.color_state == 3:  # Advancing the local_TV_identifier cycle by 1:
             self.local_TV_identifier = np.mod(self.local_TV_identifier + 1 - LOCAL_TV_MASK_IDENTIFIERS_RANGE[0],np.diff(LOCAL_TV_MASK_IDENTIFIERS_RANGE)[0]) + \
                                        LOCAL_TV_MASK_IDENTIFIERS_RANGE[0]
-        if TRACK_ADDED_SCRIBLES and not imprinting:
+        if TRACK_ADDED_SCRIBLES and drawing:
             self.saved_scribble_canvas = 1*qimage2ndarray.rgb_view(self.pixmap().toImage())
             self.saved_scribble_mask_canvas = 1*qimage2ndarray.rgb_view(self.scribble_mask_canvas.pixmap().toImage())
-            # self.setPixmap(QPixmap(qimage2ndarray.array2qimage(np.zeros_like(self.saved_scribble_canvas))))
             self.scribble_mask_canvas.setPixmap(QPixmap(qimage2ndarray.array2qimage(np.zeros_like(self.saved_scribble_mask_canvas))))
 
     def mouseMoveEvent(self, e):
@@ -335,11 +350,15 @@ class Canvas(QLabel):
         if fn:
             returnable =  fn(e)
             if self.mode in self.scribble_modes and not self.within_drawing:
-                self.scribble_mode_exit_operations(imprinting='imprint' in self.mode)
+                self.scribble_mode_exit_operations(drawing='imprint' not in self.mode and self.color_state==0)
+                # self.scribble_mode_exit_operations(enable_loc_modification='imprint' not in self.mode,consistently_embed=self.color_state==0)
             return returnable
 
-    def scribble_mode_exit_operations(self,imprinting=False):
-        if TRACK_ADDED_SCRIBLES and not imprinting:
+    def scribble_mode_exit_operations(self,drawing=True):
+    # def scribble_mode_exit_operations(self, enable_loc_modification=True,consistently_embed=True):
+        # Input would only be consistently embedded if both enable_loc_modification and consistently_embed are set to True
+        if TRACK_ADDED_SCRIBLES and drawing:
+        # if TRACK_ADDED_SCRIBLES and enable_loc_modification:
             self.desired_graphic_input_rotation = 0
             self.desired_graphic_input = (qimage2ndarray.rgb_view(self.pixmap().toImage())/255).astype(np.float32)
             self.desired_im_HR_mask_4_imprinting = qimage2ndarray.rgb_view(self.scribble_mask_canvas.pixmap().toImage())[:,:,0]
@@ -355,18 +374,21 @@ class Canvas(QLabel):
             self.imprint_desired_mask_bounding_rect = self.imprint_desired_mask_bounding_rect[list([1,0,3,2])]
             self.scribble_mask_canvas.setPixmap(QPixmap(qimage2ndarray.array2qimage(self.saved_scribble_mask_canvas)))
             self.setPixmap(QPixmap(qimage2ndarray.array2qimage(self.saved_scribble_canvas)))
-            self.embed_graphical_input(auto_location=False and self.special_behavior_button.isChecked())
-            # merged_mask = 1*self.saved_scribble_mask_canvas[:,:,0]
-            # added_locations = (1*self.desired_im_HR_mask_4_imprinting).astype(bool)
-            # merged_mask[added_locations] = 1*self.desired_im_HR_mask_4_imprinting[added_locations]
-            # self.scribble_mask_canvas.setPixmap(QPixmap(qimage2ndarray.array2qimage(np.tile(np.expand_dims(self.saved_scribble_mask_canvas,-1),[1,1,3]))))
-            # # merged_canvas = 1*self.saved_scribble_canvas
-            # # merged_canvas[added_locations] = self.desired_graphic_input[added_locations]
-            # self.setPixmap(QPixmap(qimage2ndarray.array2qimage(self.saved_scribble_canvas)))
+            if True: #Currently no supporting modifying location of non-drawing scribble tools (brightness manipulation and local-TV minimization), so I commented out unfinished code ment to support it.
+            # if consistently_embed:
+                self.embed_graphical_input(auto_location=False and self.special_behavior_button.isChecked())
+            else:
+                merged_mask = 1*self.saved_scribble_mask_canvas[:,:,0]
+                added_locations = (1*self.desired_im_HR_mask_4_imprinting).astype(bool)
+                merged_mask[added_locations] = 1*self.desired_im_HR_mask_4_imprinting[added_locations]
+                self.scribble_mask_canvas.setPixmap(QPixmap(qimage2ndarray.array2qimage(np.tile(np.expand_dims(merged_mask,-1),[1,1,3]))))
+                merged_canvas = 1*self.saved_scribble_canvas
+                # added_locations = np.tile(np.expand_dims(added_locations, -1), [1, 1, 3])
+                merged_canvas[added_locations] = 255*self.desired_graphic_input[added_locations]
+                self.setPixmap(QPixmap(qimage2ndarray.array2qimage(self.saved_scribble_canvas)))
+                self.imprinting_arrows_enabling(True)
+                self.reset_mode()
         self.safe_scribble_apply_buttons_enabling()
-        # any_scribble_within_mask = self.any_scribbles_within_mask()
-        # self.apply_scribble_button.setEnabled(any_scribble_within_mask)
-        # self.loop_apply_scribble_button.setEnabled(any_scribble_within_mask)
 
     def safe_scribble_apply_buttons_enabling(self):
         any_scribble_within_mask = self.any_scribbles_within_mask()
@@ -379,7 +401,8 @@ class Canvas(QLabel):
         if fn:
             returnable =  fn(e)
             if self.mode in self.scribble_modes and not self.within_drawing:
-                self.scribble_mode_exit_operations(imprinting='imprint' in self.mode)
+                self.scribble_mode_exit_operations(drawing='imprint' not in self.mode and self.color_state==0)
+                # self.scribble_mode_exit_operations(enable_loc_modification='imprint' not in self.mode,consistently_embed=self.color_state==0)
             return returnable
 
     # Generic events (shared by brush-like tools)
@@ -420,7 +443,7 @@ class Canvas(QLabel):
             self.update_mask_bounding_rect()
         # I used to use HR mask that is pixel-algined in the LR domain, now changed to make sure it is pixel-aligned only in the HR domain (avoiding subpixel shifts due to self.display_zoom_factor):
         # self.HR_mask_vertices = [(coord[0]*self.H_L_domains_ratio,coord[1]*self.H_L_domains_ratio) for coord in self.LR_mask_vertices]
-        if self.in_picking_desired_hist_mode and self.using_external_image and USE_LOADED_IM_SIZE:
+        if self.in_picking_desired_hist_mode and self.using_external_image:
             self.HR_mask_vertices = [(int(np.round(p.x())), int(np.round(p.y()))) for p in (self.history_pos + [self.current_pos])]
         else:
             self.HR_mask_vertices = [(int(np.round(p.x()/self.display_zoom_factor)),int(np.round(p.y()/self.display_zoom_factor)))
@@ -440,8 +463,6 @@ class Canvas(QLabel):
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
             self.safe_scribble_apply_buttons_enabling()
-            # self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
-            # self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
 
     def update_HR_mask_display_size(self):
         self.HR_mask_display_size = util.ResizeCategorialImage(self.HR_selected_mask.astype(np.int16),
@@ -560,7 +581,7 @@ class Canvas(QLabel):
             self.update_mask_bounding_rect()
         # I used to use HR mask that is pixel-algined in the LR domain, now changed to make sure it is pixel-aligned only in the HR domain (avoiding subpixel shifts due to self.display_zoom_factor):
         # self.HR_mask_vertices = [(coord[0]*self.H_L_domains_ratio,coord[1]*self.H_L_domains_ratio) for coord in self.LR_mask_vertices]
-        if self.in_picking_desired_hist_mode and self.using_external_image and USE_LOADED_IM_SIZE:
+        if self.in_picking_desired_hist_mode and self.using_external_image:
             self.HR_mask_vertices = [(int(np.round(p.x())), int(np.round(p.y()))) for p in [self.origin_pos, self.current_pos]]
         else:
             self.HR_mask_vertices = [(int(np.round(p.x()/self.display_zoom_factor)),int(np.round(p.y()/self.display_zoom_factor))) for p in [self.origin_pos, self.current_pos]]
@@ -577,12 +598,9 @@ class Canvas(QLabel):
             self.Z_optimizer_Reset()
         self.selectrect_button.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
         self.timer_cleanup(display_selection=True)
-        # self.reset_mode()
         self.Avoid_Scribble_Display(False)
         if not self.in_picking_desired_hist_mode:
             self.safe_scribble_apply_buttons_enabling()
-            # self.apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
-            # self.loop_apply_scribble_button.setEnabled(self.any_scribbles_within_mask())
 
     def Z_optimizer_Reset(self):
         self.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR
@@ -593,8 +611,6 @@ class Canvas(QLabel):
         return np.sum(map*self.Z_mask)/np.sum(self.Z_mask)
 
     def Update_Z_Sliders(self):
-        # if self.SR_model.num_latent_channels!=3:
-        #     return
         z0_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[0].data.cpu().numpy())
         Z1_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[1].data.cpu().numpy())
         third_channel_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[2].data.cpu().numpy())
@@ -681,7 +697,6 @@ class Canvas(QLabel):
             if self.config['fill']:
                 p.setBrush(QBrush(self.Scribble_Color()))
                 scribble_mask.setBrush(QBrush(self.Scribble_Mask_Color()))
-                # p.setBrush(QBrush(self.secondary_color))
             getattr(p, self.active_shape_fn)(QRect(self.origin_pos, e.pos()), *self.active_shape_args)
             getattr(scribble_mask, self.active_shape_fn)(QRect(self.origin_pos, e.pos()), *self.active_shape_args)
             self.scribble_mask_canvas.update()
@@ -945,12 +960,9 @@ class Canvas(QLabel):
         fixed_im_coeffs = self.SR_model.jpeg_compressor_Y(torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
         original_rectangle = 1 * desired_mask_bounding_rect
         if scribble_mode:
-            # original_desired_portion_of_rectangle = desired_im_mask[org_choice_rectangle[1]:org_choice_rectangle[1] +org_choice_rectangle[3], \
-            #                                         org_choice_rectangle[0]:org_choice_rectangle[0] +org_choice_rectangle[2]].mean()
             originally_marked_rectangle_mask = np.zeros_like(desired_im_mask)
             originally_marked_rectangle_mask[org_choice_rectangle[1]:org_choice_rectangle[1] +org_choice_rectangle[3], \
                                                     org_choice_rectangle[0]:org_choice_rectangle[0] +org_choice_rectangle[2]] = 1
-            # original_desired_portion_of_rectangle = desired_im_mask.sum() / originally_marked_rectangle_mask.sum()
         else:
             originally_marked_rectangle_mask = 1 * desired_im_mask
         original_desired_portion_of_rectangle = originally_marked_rectangle_mask[desired_mask_bounding_rect[1]:desired_mask_bounding_rect[1]+desired_mask_bounding_rect[3],\
@@ -1050,7 +1062,7 @@ class Canvas(QLabel):
             if self.desired_graphic_input_rotation==0:
                 self.non_rotated_desired_graphic_input = 1*self.desired_graphic_input
                 self.non_rotated_desired_im_HR_mask_4_imprinting = 1*self.desired_im_HR_mask_4_imprinting
-            self.desired_graphic_input_rotation += -1 if 'counter' in modification else 1
+            self.desired_graphic_input_rotation += 1 if 'counter' in modification else -1
             mask_centor_of_mass = np.argwhere(self.non_rotated_desired_im_HR_mask_4_imprinting).mean(0)
             padding_lengths = [np.maximum(0,(self.non_rotated_desired_im_HR_mask_4_imprinting.shape[i]-2*mask_centor_of_mass[i])*np.array([1,-1])).astype(int) for i in range(2)]
             padded_mask = PIL_Image.fromarray(255*np.pad(self.non_rotated_desired_im_HR_mask_4_imprinting,(tuple(padding_lengths[0]),tuple(padding_lengths[1]))))
@@ -1063,12 +1075,9 @@ class Canvas(QLabel):
             new_bounding_rect = np.array([np.min(rotated_mask_indecis[1]),np.min(rotated_mask_indecis[0])])
             self.imprint_desired_mask_bounding_rect = np.concatenate([new_bounding_rect,np.array([np.max(rotated_mask_indecis[1]), np.max(rotated_mask_indecis[0])])-new_bounding_rect+1])
 
-
-
         self.embed_graphical_input(auto_location=False)
 
     def finalize_imprinting(self, e=None,transparent_mask=False):
-        # SIZE_MODIFICATION_STEP_SIZE = 1*self.display_zoom_factor  # if ALLOW_LR_SUBPIXEL_TARGET_SIZES else self.opt['scale']*self.display_zoom_factor
         auto_location_press = self.imprinting_location_boundaries is not None
         if self.last_pos and e is not None:
             # Clear up indicator.
@@ -1114,7 +1123,6 @@ class Canvas(QLabel):
                 self.imprinting_location_boundaries.append((origin_y, origin_x, e_y, e_x))
                 if len(self.imprinting_location_boundaries) == 1:
                     self.statusBar.showMessage('Registered outer imprinting location bounds',INFO_MESSAGE_DURATION)
-                    # print('Registered outer imprinting location bounds')
                     self.Undo_scribble(add_2_redo_list=False) #Remove the scribble that was just unnecessarily added to the undo list
                     self.reset_mode()
                     return
@@ -1140,6 +1148,7 @@ class Canvas(QLabel):
         else:
             existing_im_2_add_2 = 1*self.output_image_0_1[0].data.cpu().numpy().transpose(1, 2, 0)
 
+
         def padding_params(org_dimensions,org_top_left):
             extended_dimensions = (np.ceil(org_dimensions/self.opt['scale'])*self.opt['scale']).astype(np.uint32)
             if self.JPEG_GUI: # In this case, I need to align the target location with the JPEG blocks grid (the chroma ones). So I want the top left corner to be aligned:
@@ -1147,8 +1156,12 @@ class Canvas(QLabel):
                 # This pre-padding may lead to negative post-padding values, so I need to extend the extended target dimensions in this case:
                 extended_dimensions += (self.opt['scale']*(extended_dimensions-org_dimensions-target_im_pad_sizes<0)).astype(extended_dimensions.dtype)
             else:
+                # Calculating pre-padding:
                 target_im_pad_sizes = (extended_dimensions - org_dimensions) // 2
-                # Here there is an issue when the target region is very close to canvas borders: As the padding is arbitrary, it may cause the extended location to fall outside the canvas. Didn't take care of it, as it reuqires some thought and it rarely happens.
+                # Transfering padding from post to pre in case image dimensions don't allow a big enough post-padding:
+                maximal_possible_post_paddings = np.array(existing_im_2_add_2.shape[:2])-org_dimensions-org_top_left
+                target_im_pad_sizes += np.maximum([0,0],extended_dimensions - org_dimensions-target_im_pad_sizes-maximal_possible_post_paddings)
+            # Here there is an issue when the target region is very close to canvas borders: As the padding is arbitrary, it may cause the extended location to fall outside the canvas. Didn't take care of it, as it reuqires some thought and it rarely happens.
             actual_top_left_corner = np.maximum([0, 0], org_top_left -target_im_pad_sizes)
             target_im_pad_sizes = np.stack([target_im_pad_sizes,extended_dimensions-org_dimensions-target_im_pad_sizes],-1)
             return extended_dimensions,actual_top_left_corner,target_im_pad_sizes
@@ -1177,7 +1190,6 @@ class Canvas(QLabel):
             extended_dimensions, actual_top_left_corner, target_im_pad_sizes = padding_params(self.target_imprinting_dimensions, self.top_left_corner)
             relevant_existing_scribble_image,relevant_existing_scribble_image_mask = \
                 crop_im_and_mask(im=existing_im_2_add_2,mask=model_size_scribble_mask)
-        # if modification is None and self.JPEG_GUI and auto_location_press: #Imprinting using the "auto-location" button:
         if self.JPEG_GUI and auto_location:  # Imprinting using the "auto-location" button:
             if scribble_mode:
                 extended_dims_of_desired, top_left_of_desired, desired_im_pad_sizes = \
@@ -1193,21 +1205,6 @@ class Canvas(QLabel):
                         desired_im_mask=self.desired_im_HR_mask_4_imprinting,padding=desired_im_pad_sizes,scribble_mode=True,
                         org_choice_rectangle=np.concatenate([self.top_left_corner[::-1],self.target_imprinting_dimensions[::-1]]))
                 self.top_left_corner,self.target_imprinting_dimensions = modified_target_bounding_rect[:2][::-1],modified_target_bounding_rect[2:][::-1]
-                # extended_dimensions, actual_top_left_corner, target_im_pad_sizes = padding_params(  self.target_imprinting_dimensions, self.top_left_corner)
-                # relevant_existing_scribble_image, relevant_existing_scribble_image_mask = \
-                #     crop_im_and_mask(im=self.output_image_0_1[0].data.cpu().numpy().transpose(1, 2, 0),mask=model_size_scribble_mask)
-                # rescaled_cropped_desired_image = util.ResizeScribbleImage(desired_scribble_image, dsize=tuple(  self.target_imprinting_dimensions))
-                # rescaled_cropped_desired_image_mask = np.expand_dims(   util.ResizeCategorialImage(desired_scribble_image_mask.astype(np.uint8),
-                #                                dsize=tuple(self.target_imprinting_dimensions), inclusive=True), -1)
-                # self.desired_graphic_input = np.zeros_like(self.desired_graphic_input)
-                # self.desired_graphic_input[top_left_of_desired[0]:top_left_of_desired[0] + extended_dims_of_desired[0],
-                # top_left_of_desired[1]:top_left_of_desired[1] + extended_dims_of_desired[1],
-                # ...] = desired_scribble_image
-                # self.desired_im_HR_mask_4_imprinting = np.zeros_like(self.desired_im_HR_mask_4_imprinting)
-                # self.desired_im_HR_mask_4_imprinting[
-                # top_left_of_desired[0]:top_left_of_desired[0] + extended_dims_of_desired[0],
-                # top_left_of_desired[1]:top_left_of_desired[1] + extended_dims_of_desired[
-                #     1]] = desired_scribble_image_mask
             else:
                 self.imprint_desired_mask_bounding_rect,self.desired_im_HR_mask_4_imprinting = \
                     self.Find_Optimal_Desired_Imprint_Mask(desired_mask_bounding_rect=self.imprint_desired_mask_bounding_rect,
@@ -1231,25 +1228,15 @@ class Canvas(QLabel):
             rescaled_cropped_desired_image = rescaled_cropped_desired_image*rescaled_cropped_desired_image_mask+relevant_existing_scribble_image*(1-rescaled_cropped_desired_image_mask)
         combined_image_2_input = np.clip(255*util.ResizeScribbleImage(self.Enforce_Consistency_on_Image_Pair(relevant_existing_scribble_image/255,
             rescaled_cropped_desired_image/255),dsize=tuple(relevant_existing_scribble_image.shape[:2])),0,255)
-        # INTEGRATING_SCRIBBLE_IN_MODEL_SIZE = False
         def integrate_patch_into_image(patch,image):
-            # f = 1 if INTEGRATING_SCRIBBLE_IN_MODEL_SIZE else self.display_zoom_factor
             f = self.display_zoom_factor
             image[f*actual_top_left_corner[0]:f*actual_top_left_corner[0]+f*extended_dimensions[0],f*actual_top_left_corner[1]:f*actual_top_left_corner[1]+f*extended_dimensions[1],...] = patch
             return image
-        # if INTEGRATING_SCRIBBLE_IN_MODEL_SIZE:
-        #     new_scribble_image = integrate_patch_into_image(combined_image_2_input,255*self.output_image_0_1[0].data.cpu().numpy().transpose(1, 2, 0))
-        #     new_scribble_image = util.ResizeScribbleImage(new_scribble_image,dsize=tuple([s*self.display_zoom_factor for s in new_scribble_image.shape[:2]]))
-        # else:
         combined_image_2_input = util.ResizeScribbleImage(combined_image_2_input,dsize=tuple([s*self.display_zoom_factor for s in combined_image_2_input.shape[:2]]))
         new_scribble_image = integrate_patch_into_image(combined_image_2_input,qimage2ndarray.rgb_view(self.pixmap().toImage()))
         self.setPixmap(QPixmap(qimage2ndarray.array2qimage(new_scribble_image)))
 
         combined_image_mask_2_input = rescaled_cropped_desired_image_mask+(1-rescaled_cropped_desired_image_mask)*relevant_existing_scribble_image_mask
-        # if INTEGRATING_SCRIBBLE_IN_MODEL_SIZE:
-        #     new_scribble_image_mask = integrate_patch_into_image(combined_image_mask_2_input,existing_scribble_mask)
-        #     new_scribble_image_mask = util.ResizeCategorialImage(new_scribble_image_mask[:,:,0],dsize=tuple([s*self.display_zoom_factor for s in new_scribble_image_mask.shape[:2]]))
-        # else:
         combined_image_mask_2_input = util.ResizeCategorialImage(combined_image_mask_2_input[:,:,0],dsize=tuple([s*self.display_zoom_factor for s in combined_image_mask_2_input.shape[:2]]),inclusive=True)
         new_scribble_image_mask = integrate_patch_into_image(combined_image_mask_2_input, existing_scribble_mask[:,:,0])
         self.scribble_mask_canvas.setPixmap(QPixmap(qimage2ndarray.array2qimage(np.repeat(np.expand_dims(new_scribble_image_mask,-1),3,-1))))
@@ -1325,8 +1312,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             opt_name = 'JPEG_chroma'
             self.display_ESRGAN = False
             self.real_JPEG_image = False
-            # if parser.parse_args().chroma:
-            #     opt_name += '_chroma'
+
         util.Assign_GPU()
         self.num_random_Zs = NUM_RANDOM_ZS
         self.canvas = Canvas()
@@ -1337,7 +1323,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.setMouseTracking(True)
         # Enable focus to capture key inputs.
         self.canvas.setFocusPolicy(Qt.StrongFocus)
-        # parser.add_argument('-chroma', action='store_true', help='Exploring chroma channels as well')
         self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
         self.opt = option.dict_to_nonedict(self.opt)
         if DISPLAY_INDUCED_LR:
@@ -1350,7 +1335,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.timer.timeout.connect(self.canvas.on_timer)
         self.timer.setInterval(100)
         self.timer.start()
-        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
         # Initializing some variables:
         self.auto_set_hist_temperature = False
@@ -1382,14 +1366,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             'apply_scribble','loop_apply_scribble','DisplayedImageSelection']+[b+'_imprinting' for b in (IMPRINT_SIZE_CHANGES+IMPRINT_LOCATION_CHANGES+IMPRINT_ROTATIONS)]
         for button in button_handles_required_by_canvas:
             setattr(self.canvas,button+'_button',getattr(self,button+'_button'))
-        self.canvas.scribble_modes = SCRIBBLE_MODES+(JPEG_HSV_MODES if self.JPEG_GUI else [])
+        self.canvas.scribble_modes = SCRIBBLE_MODES
         self.canvas.Update_Image_Display = self.Update_Image_Display
         self.canvas.SelectImage2Display = self.SelectImage2Display
         if self.JPEG_GUI:
-            # self.open_image_button.setEnabled(False)
             self.estimatedKenrel_button.setEnabled(False)
             self.FoolAdversary_button.setEnabled(False)
-        # else:
+            self.open_image_button.setEnabled(False) #Loading existing jpg files is not yet enabled
         self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.SR_model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
         self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
         self.canvas.statusBar = self.statusBar
@@ -1403,12 +1386,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SaveImageAndData_button.clicked.connect(self.save_file_and_Z_map)
         if self.JPEG_GUI:
             self.QF_box.valueChanged.connect(lambda s: self.Update_QF(s))
-            # self.Z_load_button.setEnabled(False) #Unsupported yet.
         # Display:
         self.Zdisplay_button.clicked.connect(self.ToggleDisplay_Z_Image)
-        self.DecreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
         self.DecreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=False))
-        self.IncreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
+        self.Safely_Enable_Zoom_Buttons(True)
         self.IncreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=True))
         self.CopyFromAlternative_button.pressed.connect(self.CopyAlternative2Default)
         self.Copy2Alternative_button.pressed.connect(self.CopyDefault2Alternative)
@@ -1424,7 +1405,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.estimatedKenrel_button.pressed.connect(self.Change_kernel_in_use)
         # Scribbling:
         self.sizeselect_slider.valueChanged.connect(lambda s: self.canvas.set_config('size', s))
-        for mode in (MODES+(JPEG_HSV_MODES if self.JPEG_GUI else [])):
+        for mode in MODES:
             btn = getattr(self, '%s_button' % mode)
             btn.pressed.connect(lambda mode=mode: self.canvas.set_mode(mode))
         # Manage scrible:
@@ -1446,14 +1427,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.shorter_imprinting_button.clicked.connect(lambda s: self.canvas.modify_graphical_input_location(modification='shorter'))
         self.clockwise_imprinting_button.clicked.connect(lambda s: self.canvas.modify_graphical_input_location(modification='clockwise'))
         self.counter_clockwise_imprinting_button.clicked.connect(lambda s: self.canvas.modify_graphical_input_location(modification='counter_clockwise'))
-        # self.up_imprinting_button.clicked.connect(lambda s:self.canvas.finalize_imprinting(modification='up'))
-        # self.down_imprinting_button.clicked.connect(lambda s:self.canvas.finalize_imprinting(modification='down'))
-        # self.right_imprinting_button.clicked.connect(lambda s:self.canvas.finalize_imprinting(modification='right'))
-        # self.left_imprinting_button.clicked.connect(lambda s:self.canvas.finalize_imprinting(modification='left'))
-        # self.wider_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_imprinting(modification='wider'))
-        # self.taller_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_imprinting(modification='taller'))
-        # self.narrower_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_imprinting(modification='narrower'))
-        # self.shorter_imprinting_button.clicked.connect(lambda s: self.canvas.finalize_imprinting(modification='shorter'))
         # Optimize Z:
         self.IncreaseSTD_button.clicked.connect(lambda x:self.Optimize_Z('STD_increase' if RELATIVE_STD_OPT else 'max_STD', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.DecreaseSTD_button.clicked.connect(lambda x:self.Optimize_Z('STD_decrease' if RELATIVE_STD_OPT else 'min_STD', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
@@ -1497,7 +1470,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setGeometry(QRect(0,0,self.sizeHint().width(),self.sizeHint().height()))
 
         # Loading and downsampling an initial demo HR image:
-        sample_image_folder = './'
+        sample_image_folder = '../Samples'
         example_image = [f for f in os.listdir(sample_image_folder) if any([ext in f for ext in ['.png','.jpg','.bmp']])][0]
         self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
@@ -1546,7 +1519,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.estimatedKenrel_button.setChecked(use_estimated)
         if self.using_estimated_kernel:
             if self.estimated_kernel is None: #estimate the SR kernel, using the KernelGAN method
-                self.statusBar.showMessage('Estimating the SR kernel with the KernelGAN method...')
+                self.statusBar.showMessage('Estimating SR kernel using the KernelGAN method. Please hold on...')
                 # print()
                 KernelGAN_conf = KernelGAN.Config().parse(['--X4'] if self.canvas.opt['scale']==4 else [])
                 KernelGAN_conf.LR_image = self.LR_image
@@ -1575,6 +1548,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.in_picking_desired_hist_mode = 1*checked
         self.canvas.using_external_image = 1*another_image
         if checked:
+            self.Safely_Enable_Zoom_Buttons(False)
             self.MasksStorage(True)
             self.canvas.selection_display_timer_cleanup(clear_data=True)
             self.canvas.desired_im_taken_from_same = not another_image
@@ -1588,21 +1562,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         self.canvas.desired_image = self.canvas.desired_image[:, :, [2, 1, 0]]
                     else:
                         self.canvas.desired_image = np.repeat(self.canvas.desired_image.reshape([self.canvas.desired_image.shape[0],self.canvas.desired_image.shape[1],1]), 3, 2)
-                    if USE_LOADED_IM_SIZE:
-                        if self.JPEG_GUI:
-                            self.canvas.desired_image = self.canvas.desired_image[:self.canvas.desired_image.shape[0]//16*16,
-                                                        :self.canvas.desired_image.shape[1]//16*16,...]
-                        current_geometry = self.canvas.geometry().getCoords()
-                        self.canvas.setGeometry(QRect(current_geometry[0], current_geometry[1],self.canvas.desired_image.shape[1],self.canvas.desired_image.shape[0]))
-                        self.canvas.setWindowTitle('Importing from %s'%(path.split('/')[-1]))
-                        # self.canvas.show()
-                        im_2_display = 1*self.canvas.desired_image
-                    else:
-                        # A patch fix - I resize the loaded image to match the HR image dimensions, or else it would change the canvas size irreversibally:
-                        self.canvas.desired_image = util.ResizeScribbleImage(self.canvas.desired_image,dsize=tuple(self.canvas.HR_size))
-                        im_2_display = 1*self.canvas.desired_image
-                        if self.canvas.display_zoom_factor > 1:
-                            im_2_display = imresize(im_2_display, self.canvas.display_zoom_factor)
+                    if self.JPEG_GUI:
+                        self.canvas.desired_image = self.canvas.desired_image[:self.canvas.desired_image.shape[0]//16*16,
+                                                    :self.canvas.desired_image.shape[1]//16*16,...]
+                    current_geometry = self.canvas.geometry().getCoords()
+                    self.canvas.setGeometry(QRect(current_geometry[0], current_geometry[1],self.canvas.desired_image.shape[1],self.canvas.desired_image.shape[0]))
+                    self.canvas.setWindowTitle('Importing from %s'%(path.split('/')[-1]))
+                    # self.canvas.show()
+                    im_2_display = 1*self.canvas.desired_image
                     pixmap = QPixmap()
                     pixmap.convertFromImage(qimage2ndarray.array2qimage(255*im_2_display))
                     self.canvas.setPixmap(pixmap)
@@ -1615,6 +1582,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.LR_mask_vertices = [(0, 0), tuple(self.canvas.LR_size[::-1])]
             self.canvas.HR_mask_vertices = [(0, 0), tuple(self.canvas.HR_size[::-1])]
         else:
+            self.Safely_Enable_Zoom_Buttons(True)
             self.canvas.desired_graphic_input_rotation = 0
             self.canvas.desired_image_HR_mask = 1*self.canvas.HR_selected_mask
             self.canvas.desired_image_HR_mask_vertices = self.canvas.HR_mask_vertices
@@ -1883,15 +1851,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 cur_attr_size = list(cur_attr.size()[2:])
             size_factor = [self.canvas.HR_size[i]/cur_attr_size[i] for i in range(2)]
-            # assert size_factor[0]==size_factor[1] and all([f in ([1,self.canvas.H_L_domains_ratio]+([self.opt['scale']] if self.JPEG_GUI else [])) for f in size_factor]),'Unrecognized attribute dimensions'
             assert size_factor[0]==size_factor[1],'Unisotropic scale factor'
-            # Set_Inner_Attr(key, self.Crop2BoundingRect(cur_attr, bounding_rect=bounding_rect, HR=size_factor[0]==1))
             Set_Inner_Attr(key, self.Crop2BoundingRect(cur_attr, bounding_rect=bounding_rect, SF=size_factor[0]))
-
-        # for key in HR_keys:
-        #     Set_Inner_Attr(key,self.Crop2BoundingRect(Return_Inner_Attr(key),bounding_rect=bounding_rect,HR=True))
-        # for key in LR_keys:
-        #     Set_Inner_Attr(key,self.Crop2BoundingRect(Return_Inner_Attr(key),bounding_rect=bounding_rect,HR=False))
 
     def Optimize_Z(self,objective,loop=False):
         if self.special_behavior_button.isChecked():
@@ -1919,15 +1880,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # For the random_l1_limited objective, I want to have L1 differences with respect to the current non-modified image, in case I currently display another image:
             self.canvas.output_image_0_1 = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
             if AUTO_MASK_GRAPHICAL_INPUT and 'scribble' in objective:
-                # Experimental: In scribble/imprinting mode while using AUTO_MASK_GRAPHICAL_INPUT, automatically mask out the non-scribbled area within the the selected editing region.
+                # Experimental: In scribble/imprinting mode while using AUTO_MASK_GRAPHICAL_INPUT, automatically mask out the non-scribbled area within the selected editing region.
                 # Apply dilation on the scribble mask, to allow pixels adjacent to the scribble to change, while constraining the rest to remain close to the current output.
                 saved_image_mask = 1*self.canvas.HR_selected_mask
                 saved_bounding_rect =  1*self.canvas.mask_bounding_rect
                 self.canvas.HR_selected_mask = self.canvas.HR_selected_mask * cv2.dilate(self.canvas.current_scribble_mask, np.ones([5, 5]))
-                assert self.JPEG_GUI,'Should see in which dimensions the new_bounding_rect should live for the SR case'
                 new_bounding_rect = np.array(cv2.boundingRect(np.argwhere(self.canvas.HR_selected_mask)[:,[1,0]]))
                 new_bounding_rect[2:] += new_bounding_rect[:2]
-                new_bounding_rect = new_bounding_rect/8
+                new_bounding_rect = new_bounding_rect/(8 if self.JPEG_GUI else self.opt['scale'])
                 new_bounding_rect = np.concatenate([np.floor(new_bounding_rect[:2]),np.ceil(new_bounding_rect[2:])]).astype(int)
                 new_bounding_rect[2:] -= new_bounding_rect[:2]
                 self.canvas.mask_bounding_rect = new_bounding_rect
@@ -1949,29 +1909,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Crop_masks_2_BoundingRect(bounding_rect=self.bounding_rect_4_opt)
                 self.Z_mask_4_later_merging = torch.from_numpy(self.canvas.Z_mask).type(self.canvas.output_image_0_1.dtype).to(self.cur_Z.device)
                 data['LR'] = self.var_L
-                # self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.Crop2BoundingRect(self.canvas.SR_model.GetLatent(),
-                #     self.bounding_rect_4_opt,SF=self.canvas.H_L_domains_ratio),compressed_input=True)#Because I'm saving initial Z when initializing optimizer
                 self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.cur_Z,compressed_input=True)#Because I'm saving initial Z when initializing optimizer
             else:
                 self.optimizing_region = False
             self.iters_per_round = 1*ITERS_PER_OPT_ROUND
-            # image_mask = 1*self.canvas.HR_selected_mask
             if any([phrase in objective for phrase in ['hist','dict','l12GT']]):
                 data['desired'] = [torch.from_numpy(np.ascontiguousarray(np.transpose(hist_im, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0) for hist_im in self.canvas.desired_image]
                 if 'l1' in objective and self.optimizing_region:
                     data['desired'] = [self.Crop2BoundingRect(hist_im,self.bounding_rect_4_opt,HR=True) for hist_im in data['desired']]
                 data['Desired_Im_Mask'] = self.canvas.desired_image_HR_mask
-            # elif 'desired_SVD' in objective:
-            #     data['desired_Z'] = util.SVD_2_LatentZ(self.canvas.control_values.unsqueeze(0),max_lambda=self.max_SVD_Lambda)
-            #     self.SVD_ValuesStorage(True)
-            #     if self.optimizing_region:
-            #         data['desired_Z'] = self.Crop2BoundingRect(data['desired_Z'],self.bounding_rect_4_opt,HR=self.canvas.HR_Z)
-            #         self.canvas.control_values = self.Crop2BoundingRect(self.canvas.control_values.unsqueeze(0),self.bounding_rect_4_opt,HR=self.canvas.HR_Z).squeeze(0)
-            #     self.Set_Extreme_SVD_Values(min_not_max=True)
-            #     data['reference_image_min'] = 1*self.canvas.output_image_0_1
-            #     self.Set_Extreme_SVD_Values(min_not_max=False)
-            #     data['reference_image_max'] = 1*self.canvas.output_image_0_1
-            #     self.SVD_ValuesStorage(False)
             elif 'periodicity' in objective:
                 for p_num in range(len(self.canvas.periodicity_points)):
                     self.canvas.periodicity_points[p_num] = self.canvas.periodicity_points[p_num]*getattr(self,'periodicity_mag_%d_button'%(p_num+1)).value()/np.linalg.norm(self.canvas.periodicity_points[p_num])
@@ -1982,7 +1928,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.JPEG_GUI:
                     data['scribble_mask'] = util.SmearMask2JpegBlocks(data['scribble_mask'])
                 data['brightness_factor'] = self.STD_increment.value()#For the brightness increase/decrease functionality
-                # self.iters_per_round *= 3
             if any([phrase in objective for phrase in ['STD','Mag']]):
                 data['STD_increment'] = self.STD_increment.value()
             initial_Z = 1 * self.cur_Z
@@ -2109,7 +2054,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.Z_optimizer = None
             # Optimization already caused backpropagation through the current fake_H without recomputing it. So it needs to be recomputed to allow another backpropagation:
             self.Feed_n_Run_model(self.cur_Z)
-            # self.canvas.SR_model.fake_H = self.canvas.SR_model.netG(self.canvas.SR_model.model_input)
         if decrease_LR:
             self.canvas.Z_optimizer_initial_LR /= 5
             print('Loss decreased too little relative to beginning, decreasing learning rate to %.3e' % (
@@ -2118,8 +2062,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.statusBar.showMessage('%s optimization is done.' % (objective), INFO_MESSAGE_DURATION)
 
     def DeriveControlValues(self):
-        # if self.canvas.SR_model.num_latent_channels != 3:
-        #     return
         normalized_Z = self.Z_2_three_channels(1*self.cur_Z.squeeze(0))
         normalized_Z = (normalized_Z+self.max_SVD_Lambda)/2/self.max_SVD_Lambda
         normalized_Z[2] /= 2
@@ -2135,8 +2077,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.update_HR_mask_display_size()
         if 'current_scribble_mask' in self.canvas.__dict__.keys():
             self.canvas.safe_scribble_apply_buttons_enabling()
-            # self.canvas.apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
-            # self.canvas.loop_apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
         self.canvas.LR_mask_vertices = [(0,0),tuple(self.canvas.LR_size[::-1])]
         self.canvas.HR_mask_vertices = [(0,0),tuple(self.canvas.HR_size[::-1])]
         self.canvas.update_mask_bounding_rect()
@@ -2170,10 +2110,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.derived_controls_indicator = (self.canvas.Z_mask*0+(1-self.canvas.Z_mask)*self.canvas.derived_controls_indicator).astype(np.bool)
 
     def Recompose_cur_Z(self):
-        # print('cur_Z size:',self.cur_Z.size())
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         new_Z = self.canvas.control_values.unsqueeze(0)
-        # if self.canvas.SR_model.num_latent_channels==3:
         new_Z = util.SVD_2_LatentZ(new_Z,max_lambda=self.max_SVD_Lambda).to(self.cur_Z.device)
         new_Z = self.Repeat_Z_3_channels(new_Z)
         self.cur_Z = Z_mask * new_Z + (1 - Z_mask) * self.cur_Z
@@ -2193,12 +2131,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         masked_new_values = Z_mask *(value * (1 - derived_controls_indicator) + derived_controls_indicator * additive_values)
         self.canvas.control_values[index] =  masked_new_values + (1 - Z_mask) * self.canvas.control_values[index].to(derived_controls_indicator.device)
         self.canvas.previous_sliders_values[index] = (1-self.canvas.Z_mask)*self.canvas.previous_sliders_values[index]+self.canvas.ReturnMaskedMapAverage(self.canvas.control_values[index].data.cpu().numpy())
-        if VERBOSITY:
-            self.latent_mins = torch.min(torch.cat([self.cur_Z,self.latent_mins],0),dim=0,keepdim=True)[0]
-            self.latent_maxs = torch.max(torch.cat([self.cur_Z,self.latent_maxs],0),dim=0,keepdim=True)[0]
-            print(self.canvas.lambda0,self.canvas.lambda1,self.canvas.theta)
-            print('mins:',[z.item() for z in self.latent_mins.view([-1])])
-            print('maxs:', [z.item() for z in self.latent_maxs.view([-1])])
 
     def Update_Default_Z_Image(self):
         if 'random_Z_images' in self.canvas.__dict__.keys():
@@ -2220,8 +2152,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.canvas.display_zoom_factor += 1 if increase else -1
         self.canvas.cur_loc_step_size = self.canvas.display_zoom_factor // (2 * self.canvas.display_zoom_factor)
-        self.DecreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
-        self.IncreaseDisplayZoom_button.setEnabled(self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
+        self.Safely_Enable_Zoom_Buttons(True)
         # Resize saved data whose dimensions correspond to display size:
         self.canvas.image_4_scribbling_display_size = \
             util.ResizeScribbleImage(self.canvas.image_4_scribbling_display_size,dsize=tuple([self.canvas.display_zoom_factor * val for val in self.canvas.HR_size]))
@@ -2231,6 +2162,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Update_Image_Display()
         # Update canvas window size and title:
         self.Update_Canvas_Size_and_Title()
+
+    def Safely_Enable_Zoom_Buttons(self,enable):
+        self.DecreaseDisplayZoom_button.setEnabled(enable and self.canvas.display_zoom_factor>DISPLAY_ZOOM_FACTORS_RANGE[0])
+        self.IncreaseDisplayZoom_button.setEnabled(enable and self.canvas.display_zoom_factor <DISPLAY_ZOOM_FACTORS_RANGE[1])
 
     def Update_Canvas_Size_and_Title(self,canvas_pos=None):
         if canvas_pos is None:
@@ -2250,7 +2185,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     im_2_display = util.ResizeScribbleImage(im_2_display,tuple(self.canvas.HR_size))
                 elif im_2_display.shape[2] == 8**2:
                     im_2_display = util.Z_64channels2image(im_2_display)
-                    # im_2_display = np.reshape(im_2_display,list(im_2_display.shape[:2])+[8,8]).transpose((0,2,1,3)).reshape(list(8*np.array(im_2_display.shape[:2]))+[1])
                 else:
                     raise Exception('Unsupported # of Z channels for display')
         else:
@@ -2295,8 +2229,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.canvas.Update_Z_Sliders()
             self.canvas.Z_optimizer_Reset()
             self.canvas.safe_scribble_apply_buttons_enabling()
-            # self.canvas.apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
-            # self.canvas.loop_apply_scribble_button.setEnabled(self.canvas.any_scribbles_within_mask())
 
     def Assign_Q_Table(self,QF_or_table=None):
         if self.real_JPEG_image:
@@ -2480,15 +2412,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.GT_HR = torch.from_numpy(np.transpose(loaded_image, (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             self.canvas.HR_size = list(self.GT_HR.size()[2:])
             if self.JPEG_GUI:
-                # loaded_image = np.expand_dims(rgb2ycbcr(255*loaded_image,only_y=True),-1)
                 loaded_image = 255 * rgb2ycbcr(loaded_image, only_y=False)
             loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             if self.JPEG_GUI:
                 self.real_JPEG_image = False
-                # self.QF_box.setEnabled(True)
                 self.QF_box.setValue(10)
                 self.Assign_Q_Table(10)
-                # self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
                 self.loaded_image = loaded_image
                 self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
                 self.chroma_input = self.loaded_image[:,1:,...]
@@ -2499,7 +2428,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             if self.JPEG_GUI:
                 try:
-                    # self.Q_Tables = {int(k): np.reshape(v,[8,8]).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
                     self.Q_Tables = {int(k): util.zigzag_list_2_Q_table(list(v)).astype(np.float32) for k, v in PIL_Image.open(path).quantization.items()}
                     self.Decode_JPEG_input(path)
                     self.canvas.HR_size = list(self.loaded_image.size())[2:]
@@ -2514,7 +2442,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.JPEG_GUI:
             self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(self.loaded_image)/255),0, 1)
         else:
-            # self.input_image = cv2.resize(self.LR_image,dsize=tuple(self.canvas.HR_size[::-1]), interpolation=cv2.INTER_NEAREST)
             self.input_image = torch.from_numpy(np.transpose(cv2.resize(self.LR_image, dsize=tuple(self.canvas.HR_size[::-1]),
                                       interpolation=cv2.INTER_NEAREST)/255,(2,0,1))).float().unsqueeze(0)
         if self.display_ESRGAN:
@@ -2551,14 +2478,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SetZ(0.5*self.max_SVD_Lambda, 1)
         self.SetZ(0.5, 2)
         self.Recompose_cur_Z()
-        if VERBOSITY:
-            self.latent_mins = 100 * torch.ones([1, 3, 1, 1])
-            self.latent_maxs = -100 * torch.ones([1, 3, 1, 1])
         # Reset some stuff:
         if self.using_estimated_kernel: # Need to reset model to default kernel:
             self.using_estimated_kernel = False
             self.estimatedKenrel_button.setChecked(False)
-            # self.Initialize_SR_model(kernel='reset_2_default',reprocess=False) #Not recomputing just for efficiency, as ReProcess is called soon.
         self.estimatedKenrel_button.setEnabled((not HR_image) and (self.canvas.opt['scale'] in [2,4])) #KernelGAN only supprot 2x and 4x SR. For synthetically downscaled HR images, there is no need to estimated the kernel.
         self.estimated_kernel = None
         self.Z_history = deque(maxlen=Z_HISTORY_LENGTH)
@@ -2620,7 +2543,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Save active canvas and cur_Z map to image file.
         :return:
         """
-        ALSO_SAVE_GRAYSCALE = self.JPEG_GUI and True
+        ALSO_SAVE_GRAYSCALE = self.JPEG_GUI and False
         self.saved_outputs_counter = 0
         while True:
             i,path = 0,[]
@@ -2630,7 +2553,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 path.append(self.canvas.opt['path']['results_root'].split('/')[i])
                 i += 1
             path = os.path.join('/'.join(path),'GUI_outputs','%s_%d%s.png'%(self.image_name+('_QF%d'%(self.QF_box.value()) if self.JPEG_GUI else ''),self.saved_outputs_counter,'%s'))
-            # path = os.path.join('/'.join(self.canvas.opt['path']['results_root'].split('/')[:-2]),'GUI_outputs','%s_%d%s.png'%(self.image_name,self.saved_outputs_counter,'%s'))
             if not os.path.isfile(path%('')):
                 break
             self.saved_outputs_counter += 1
