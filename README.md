@@ -8,10 +8,12 @@ Official PyTorch implementation of the paper "Explorable Super Resolution" by Yu
 3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
 
 ### BibTex
-
-    @article{bahat2019explorable, title={Explorable Super Resolution},
+    @inproceedings{bahat2020explorable,
+      title={Explorable Super Resolution},
       author={Bahat, Yuval and Michaeli, Tomer},
-      journal={arXiv preprint arXiv:1912.01839}, year={2019}
+      booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+      pages={2716--2725},
+      year={2020}
     }
     
 ## Table of Contents
