@@ -87,17 +87,11 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
     opt_net['latent_input'] = opt_net['latent_input'] if opt_net['latent_input']!="None" else None
-    # if opt['network_G']['CEM_arch']:#Prevent a bug when using CEM, due to inv_hTh tensor residing on a different device (GPU) than the input tensor
-    #     import os
-    #     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     if which_model == 'sr_resnet':  # SRResNet
         netG = arch.SRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
             nb=opt_net['nb'], upscale=opt_net['scale'], norm_type=opt_net['norm_type'], \
             act_type='relu', mode=opt_net['mode'], upsample_mode='pixelshuffle')
-
-    elif which_model == 'sft_arch':  # SFT-GAN
-        netG = sft_arch.SFT_Net()
 
     elif which_model == 'RRDB_net':  # RRDB
         netG = arch.RRDBNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'],
@@ -105,7 +99,6 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
             act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
-        # chroma_mode = opt['name'][:len('JPEG/chroma')]=='JPEG/chroma'
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         assert opt_net['in_nc']==64 and opt_net['out_nc']==64
         in_nc = opt['scale']**2+2*64 if chroma_mode else 64
@@ -201,29 +194,3 @@ def define_F(opt, use_bn=False,**kwargs):
         netF = nn.DataParallel(netF)
     netF.eval()  # No need to train
     return netF
-
-def define_E(input_nc, output_nc, ndf, net_type,init_type='xavier', init_gain=0.02, gpu_ids=[], vaeLike=False):#,norm='batch', nl='lrelu'):
-    netE = None
-    norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-    nl = 'lrelu'  # use leaky relu for E
-    nl_layer = functools.partial(nn.LeakyReLU, negative_slope=0.2, inplace=True)
-    if net_type == 'resnet_128':
-        netE = arch.E_ResNet(input_nc, output_nc, ndf, n_blocks=4, norm_layer=norm_layer,
-                       nl_layer=nl_layer, vaeLike=vaeLike)
-    elif net_type == 'resnet_256':
-        netE = arch.E_ResNet(input_nc, output_nc, ndf, n_blocks=5, norm_layer=norm_layer,
-                       nl_layer=nl_layer, vaeLike=vaeLike)
-    elif net_type == 'conv_128':
-        netE = arch.E_NLayers(input_nc, output_nc, ndf, n_layers=4, norm_layer=norm_layer,
-                        nl_layer=nl_layer, vaeLike=vaeLike)
-    elif net_type == 'conv_256':
-        netE = arch.E_NLayers(input_nc, output_nc, ndf, n_layers=5, norm_layer=norm_layer,
-                        nl_layer=nl_layer, vaeLike=vaeLike)
-    else:
-        raise NotImplementedError('Encoder model name [%s] is not recognized' % net_type)
-    init_weights(netE, init_type='kaiming', scale=1)
-    if gpu_ids:
-        assert torch.cuda.is_available()
-        netE = nn.DataParallel(netE)
-    return netE
-    # return init_net(netE, init_type, init_gain, gpu_ids)

@@ -14,7 +14,6 @@ from utils import util
 from data import create_dataloader, create_dataset
 from models import create_model
 from utils.logger import Logger, PrintLogger
-import tqdm
 from datetime import datetime
 
 IGNORED_KEYS_LIST = ['l_d_real','l_d_fake','D_real','D_fake','psnr_val','LR_decrease','Correctly_distinguished','l_g_range','D_loss_STD']#,'l_g_pix'
@@ -53,11 +52,6 @@ def main():
             train_set = create_dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['batch_size']))
             print('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
-            # current_step = 0
-            # if opt['train']['resume']:
-            #     model_name = [name for name in os.listdir(opt['path']['models']) if '_G.pth' in name]
-            #     model_name = sorted([m for m in model_name if re.search('(\d)+(?=_G.pth)', m) is not None], key=lambda x: int(re.search('(\d)+(?=_G.pth)', x).group(0)))[-1]
-            #     current_step = int(re.search('(\d)+(?=_G.pth)', model_name).group(0))*max_accumulation_steps
             total_iters = int(opt['train']['niter']*max_accumulation_steps)#-current_step
             total_epoches = int(math.ceil(total_iters / train_size))
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
@@ -102,7 +96,6 @@ def main():
                 last_saving_time = time.time()
 
             # save models
-            # if lr_too_low or (gradient_step_num % opt['logger']['save_checkpoint_freq'] == 0 and not_within_batch):
             if lr_too_low or saving_step:
                 recently_saved_models.append(model.save(gradient_step_num))
                 model.save_log()
@@ -180,14 +173,12 @@ def main():
                 print_rlt['iters'] = gradient_step_num
                 print_rlt['time'] = time_elapsed
                 model.display_log_figure()
-                # model.generator_changed = False
                 logger.print_format_results('val', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
                 print('-----------------------------------')
 
             # update learning rate
             if not_within_batch:
                 lr_too_low = model.update_learning_rate(gradient_step_num)
-            # current_step += 1
         if lr_too_low:
             print('Stopping training because LR is too low')
             break

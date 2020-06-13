@@ -1,14 +1,9 @@
 def create_model(opt,*kargs,**kwargs):
     model = opt['model']
-
-    if model == 'sr':
-        from .SR_model import SRModel as M
-    elif model == 'srgan':
+    if model == 'srgan':
         from .SRGAN_model import SRGANModel as M
     elif model == 'srragan':
         from .SRRaGAN_model import SRRaGANModel as M
-    elif model == 'sftgan':
-        from .SFTGAN_ACD_model import SFTGAN_ACD_Model as M
     elif model == 'dncnn':
         from .DecompCNN_model import DecompCNNModel as M
     else:

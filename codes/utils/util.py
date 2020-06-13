@@ -8,12 +8,9 @@ import GPUtil
 import time
 from skimage.transform import resize
 from scipy.signal import convolve2d
-# from scipy.ndimage.morphology import binary_opening
-# from sklearn.feature_extraction.image import extract_patches_2d
 import torch
 import torch.nn as nn
-# from models.modules.loss import GANLoss,FilterLoss
-# from skimage.color import rgb2hsv,hsv2rgb
+
 ####################
 # miscellaneous
 ####################
@@ -36,9 +33,6 @@ def mkdirs(paths):
 
 def mkdir_and_rename(path):
     if os.path.exists(path):
-        # new_name = path + '_archived_' + get_timestamp()
-        # print('Path already exists. Rename it to [{:s}]'.format(new_name))
-        # os.rename(path, new_name)
         renamed_path = path + '_Renamed' + get_timestamp()
         os.rename(path,renamed_path)
         print('Path already exists. Changing to [{:s}]'.format(renamed_path))
@@ -85,11 +79,7 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=None):
     Input: 4D(B,(3/1),H,W), 3D(C,H,W), or 2D(H,W), any range, RGB channel order
     Output: 3D(H,W,C) or 2D(H,W), [0,255], np.uint8 (default)
     '''
-    # if self.chroma_mode:
-    #     out_dict['Decomp'] = ycbcr2rgb(out_dict['Decomp'])
     tensor = tensor.squeeze().float().cpu()
-    # tensor = tensor.squeeze().float().cpu().clamp_(*min_max)  # clamp
-    # tensor = (tensor - min_max[0]) / (min_max[1] - min_max[0])  # to range [0,1]
     n_dim = tensor.dim()
     if n_dim == 4:
         assert chroma_mode is None,'Unsupported yet'
@@ -108,7 +98,6 @@ def tensor2img(tensor, out_type=np.uint8, min_max=(0, 1),chroma_mode=None):
         img_np = tensor.numpy()
         if chroma_mode: #input tensor is in Y color space:
             img_np = 255 * ycbcr2rgb(np.stack([img_np/255]+2*[128/255*np.ones_like(img_np)],-1))[:, :, [2, 1, 0]]
-            # img_np = 255/219*(img_np-16)
     else:
         raise TypeError(
             'Only support 4D, 3D and 2D tensor. But received with dimension: {:d}'.format(n_dim))
@@ -295,12 +284,7 @@ def convert_batchNorm_2_layerNorm(model,input):
     return nn.Sequential(*module_layers),input
 
 
-# import numpy as np
-# import torch
-# import torch.nn as nn
 from torch.autograd import Variable
-# import torch.nn.init as init
-# import torch.nn.functional as F
 
 def compute_RF_numerical(net,img_np):
     '''
@@ -315,12 +299,10 @@ def compute_RF_numerical(net,img_np):
             if m.bias is not None:
                 m.bias.data.fill_(0)
     net.apply(weights_init)
-    # img_ = Variable(torch.from_numpy(img_np).float(),requires_grad=True).to(next(net.module.parameters()).device)
     img_ = Variable(torch.from_numpy(img_np).float(),requires_grad=True)
     out_cnn=net(img_)
     out_shape=out_cnn.size()
     ndims=len(out_cnn.size())
-    # grad=torch.zeros(out_cnn.size()).to(next(net.module.parameters()).device)
     grad=torch.zeros(out_cnn.size())
     l_tmp=[]
     for i in range(ndims):
@@ -330,10 +312,8 @@ def compute_RF_numerical(net,img_np):
             l_tmp.append(out_shape[i]//2)
     print(tuple(l_tmp))
     grad[tuple(l_tmp)]=1
-    # out_cnn.backward(gradient=img_)
     out_cnn.backward(gradient=grad)
     grad_np=img_.grad[0,0].data.numpy()
-    # grad_np=grad[0,0].data.cpu().numpy()
     idx_nonzeros=np.where(grad_np!=0)
     RF=[np.max(idx)-np.min(idx)+1 for idx in idx_nonzeros]
 
