@@ -1,65 +1,38 @@
-# BasicSR [[ESRGAN]](https://github.com/xinntao/ESRGAN) [[SFTGAN]](https://github.com/xinntao/SFTGAN)
+# Explorable Super Resolution
 
-An image super-resolution toolkit flexible for development. It now provides:
+Official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 
-1. **PSNR-oriented SR** models (e.g., SRCNN, SRResNet and etc). You can try different architectures, e.g, ResNet Block, ResNeXt Block, Dense Block, Residual Dense Block, Poly Block, Dual Path Block, Squeeze-and-Excitation Block, Residual-in-Residual Dense Block and etc.
-<!--   1. want to compare more structures for SR. e.g. ResNet Block, ResNeXt Block, Dense Block, Residual Dense Block, Poly Block, Dual Path Block, Squeeze-and-Excitation Block and etc.
-   1. want to provide some useful tricks for training SR networks.
-   1. We are also curious to know what is the upper bound of PSNR for bicubic downsampling kernel by using an extremely large model.-->
-2. [**Enhanced SRGAN**](https://github.com/xinntao/ESRGAN) model (It can also train the **SRGAN** model). Enhanced SRGAN achieves consistently better visual quality with more realistic and natural textures than [SRGAN](https://arxiv.org/abs/1609.04802) and won the first place in the [PIRM2018-SR Challenge](https://www.pirm2018.org/PIRM-SR.html). For more details, please refer to [Paper](https://arxiv.org/abs/1809.00219), [ESRGAN repo](https://github.com/xinntao/ESRGAN). (If you just want to test the model, [ESRGAN repo](https://github.com/xinntao/ESRGAN) provides simpler testing codes.)
-<p align="center">
-  <img height="350" src="https://github.com/xinntao/ESRGAN/blob/master/figures/baboon.jpg">
-</p>
-
-3. [**SFTGAN**](https://github.com/xinntao/CVPR18-SFTGAN) model. It adopts Spatial Feature Transform (SFT) to effectively incorporate other conditions/priors, like semantic prior for image SR, representing by segmentation probability maps. For more details, please refer to [Papaer](https://arxiv.org/abs/1804.02815), [SFTGAN repo](https://github.com/xinntao/CVPR18-SFTGAN).
-<p align="center">
-  <img height="220" src="https://github.com/xinntao/SFTGAN/blob/master/figures/network_structure.png">
-</p>
+#### Repository includes:
+1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
+2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
+3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
 
 ### BibTex
 
-    @InProceedings{wang2018esrgan,
-        author = {Wang, Xintao and Yu, Ke and Wu, Shixiang and Gu, Jinjin and Liu, Yihao and Dong, Chao and Qiao, Yu and Loy, Chen Change},
-        title = {ESRGAN: Enhanced super-resolution generative adversarial networks},
-        booktitle = {The European Conference on Computer Vision Workshops (ECCVW)},
-        month = {September},
-        year = {2018}
-    }
-    @InProceedings{wang2018sftgan,
-        author = {Wang, Xintao and Yu, Ke and Dong, Chao and Loy, Chen Change},
-        title = {Recovering realistic texture in image super-resolution by deep spatial feature transform},
-        booktitle = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-        month = {June},
-        year = {2018}
+    @article{bahat2019explorable, title={Explorable Super Resolution},
+      author={Bahat, Yuval and Michaeli, Tomer},
+      journal={arXiv preprint arXiv:1912.01839}, year={2019}
     }
     
 ## Table of Contents
 1. [Dependencies](#dependencies)
 1. [Codes](#codes)
+<!--
 1. [Usage](#usage)
 1. [Datasets](#datasets)
 1. [Pretrained models](#pretrained-models)
-
+-->
 ### Dependencies
 
 - Python 3 (Recommend to use [Anaconda](https://www.anaconda.com/download/#linux))
-- [PyTorch >= 0.4.0](https://pytorch.org/)
+- [PyTorch >= 1.1.0](https://pytorch.org/)
 - NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
 - Python packages: `pip install numpy opencv-python lmdb`
-- [option] Python packages: [`pip install tensorflow tensorboard_logger`](https://github.com/xinntao/BasicSR/tree/master/codes/utils), for visualizing curves.
 
 # Codes
-[`./codes`](https://github.com/xinntao/BasicSR/tree/master/codes). We provide a detailed explaination of the **code framework** in [`./codes`](https://github.com/xinntao/BasicSR/tree/master/codes).
-<p align="center">
-   <img src="https://github.com/xinntao/public_figures/blob/master/BasicSR/code_framework.png" height="300">
-</p>
+We provide a detailed explaination of the **code framework** in [`./codes`](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes).
 
-We also provides:
-
-1. Some useful scripts. More details in [`./codes/scripts`](https://github.com/xinntao/BasicSR/tree/master/codes/scripts). 
-1. [Evaluation codes](https://github.com/xinntao/BasicSR/tree/master/metrics), e.g., PSNR/SSIM metric.
-1. [Wiki](https://github.com/xinntao/BasicSR/wiki), e.g., How to make high quality gif with full (true) color, Matlab bicubic imresize and etc.
-
+<!---
 # Usage
 ### Data and model preparation
 The common **SR datasets** can be found in [Datasets](#datasets). Detailed data preparation can be seen in [`codes/data`](https://github.com/xinntao/BasicSR/tree/master/codes/data).
@@ -265,9 +238,8 @@ May try [HandyViewer](https://github.com/xinntao/HandyViewer) - an image viewer 
 
 ---
 
-
+-->
 
 ## Acknowledgement
 
-- Code architecture is inspired by [pytorch-cyclegan](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
-- Thanks to *Wai Ho Kwok*, who contributes to the initial version.
+- Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
