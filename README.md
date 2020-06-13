@@ -2,7 +2,7 @@
 
 Official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 <p align="center">
-   <img src="7173-teaser.gif" height="450">
+   <img src="7173-teaser.gif" height="45">
 </p>
 
 #### Repository includes:
