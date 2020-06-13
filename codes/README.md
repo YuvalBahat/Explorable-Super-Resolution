@@ -2,7 +2,7 @@
 The overall code framework is shown in the following figure. It mainly consists of four parts - `Config`, `Data`, `Model` and `Network`.
 
 <p align="center">
-   <img src="fig_framework_scheme.pdf" height="450">
+   <embed src="fig_framework_scheme.pdf" height="450">
 </p>
 
 Let us take the train commad `python train.py -opt options/train/train_esrgan.json` for example. A sequence of actions will be done after this command. 
