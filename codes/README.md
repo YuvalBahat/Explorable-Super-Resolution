@@ -1,9 +1,14 @@
-# Code Framework
-The overall code framework is shown in the following figure. It mainly consists of four parts - `Config`, `Data`, `Model` and `Network`.
+# Code
+The overall explorable super resolution framework is shown in the following figure. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
 
 <p align="center">
    <img src="fig_framework_scheme_4_github.png">
 </p>
+
+Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated "KernelGAN" kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
+
+Train a model:
+Explore using a pre-trained model:
 
 Let us take the train commad `python train.py -opt options/train/train_esrgan.json` for example. A sequence of actions will be done after this command. 
 
