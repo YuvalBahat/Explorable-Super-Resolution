@@ -1,0 +1,44 @@
+{
+  "name": "Explorable_SR"
+  , "model": "srragan"
+  , "scale": 4
+  , "gpu_ids": [0]
+  , "use_tb_logger": 0 //Set to 1 for logging the loss values of the Z-optimization processes using Tensorboard
+  , "path": {
+      "root": "/media/ybahat/data/projects/SRGAN"
+      , "pretrained_model_G": "../pretrained_models/Explorable_SR_G.pth"
+      , "pretrained_ESRGAN": "../pretrained_models/RRDB_ESRGAN_x4.pth" //Comment this line if you didn't download the pretrained ESRGAN model, or to avoid displaying the ESRGAN result.
+  }
+  , "network_G": {
+    "which_model_G": "RRDB_net"
+    , "CEM_arch": 1
+    , "latent_input": "all_layers"
+    , "latent_input_domain": "HR_downscaled"
+    , "latent_channels": 3
+    , "norm_type": null
+    , "mode": "CNA"
+    , "nf": 64
+    , "nb": 23
+    , "in_nc": 3
+    , "out_nc": 3
+    , "gc": 32
+    , "group": 1
+  },
+  "network_D": { //For Z-optimization with D
+    "which_model_D": "discriminator_vgg_128"
+    , "relativistic": 0
+    , "decomposed_input": 0
+    , "pre_clipping": 0
+    , "add_quantization_noise": 0
+    , "norm_type": "batch"
+    , "act_type": "leakyrelu"
+    , "mode": "CNA"
+    , "n_layers": 6
+    , "nf": 64
+    , "in_nc": 3
+  }
+//, "datasets": {
+//    "train": {
+//       "patch_size": 256}
+//  }
+}

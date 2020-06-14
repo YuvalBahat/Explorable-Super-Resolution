@@ -43,7 +43,7 @@ Click for detailed explanations for each json file.
 
   , "path": {
     "root": "/home/xtwang/Projects/BasicSR" // root path
-    , "pretrain_model_G": null // path of the pretrained model
+    , "pretrained_model_G": null // path of the pretrained model
   }
 
   , "network_G": { // configurations for the network G
@@ -111,7 +111,7 @@ Click for detailed explanations for each json file.
 
   , "path": {
     "root": "/home/xtwang/Projects/BasicSR" // root path
-    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_PSNR_x4.pth" // path of the pretrained model
+    , "pretrained_model_G": "../experiments/pretrained_models/RRDB_PSNR_x4.pth" // path of the pretrained model
   }
 
   , "network_G": { // configurations for the network G
@@ -203,7 +203,7 @@ Click for detailed explanations for each json file.
 
   , "path": {
     "root": "/home/xtwang/Projects/BasicSR" // root path
-    , "pretrain_model_G": "../experiments/pretrained_models/sft_net_ini.pth" // path of the pretrained model
+    , "pretrained_model_G": "../experiments/pretrained_models/sft_net_ini.pth" // path of the pretrained model
   }
 
   , "network_G": { // configurations for the network G

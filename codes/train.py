@@ -32,7 +32,7 @@ def main():
     if not opt['train']['resume']:
         util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists
         util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root' and \
-            not key == 'pretrain_model_G' and not key == 'pretrain_model_D'))
+            not key == 'pretrained_model_G' and not key == 'pretrained_model_D'))
     option.save(opt)
     opt = option.dict_to_nonedict(opt)  # Convert to NoneDict, which return None for missing key.
     # print to file and std_out simultaneously

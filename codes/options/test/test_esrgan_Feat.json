@@ -37,7 +37,7 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
+    , "pretrained_model_G": "../experiments/pretrained_models/RRDB_ESRGAN_x4.pth"
   }
 
   , "network_G": {

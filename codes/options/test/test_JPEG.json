@@ -44,7 +44,7 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrain_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss/models/876435_G.pth"
+    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss/models/876435_G.pth"
     , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS/models/727906_G.pth"
   }
 
