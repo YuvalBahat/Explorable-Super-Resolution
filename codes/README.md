@@ -5,12 +5,22 @@ The overall explorable super resolution framework is shown in the following figu
    <img src="fig_framework_scheme_4_github.png">
 </p>
 
-Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated ["KernelGAN"](http://www.wisdom.weizmann.ac.il/~vision/kernelgan/) kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
+This repository contains the full code for our method. You can run our GUI and use its tools to explore the abundant different high-resolution images matching an input low-resolution image. The backend of this GUI comprises an explorable super-resolution netwrok. You can download a pre-trained model, or choose to train one by yourself. Finally, our consistency enforcing module (CEM) can be used as a standalone component, to wrap any super-resolution model, whether before or after its training, for guranteeing the consistency of its outputs.
 
-Train a model:
-Explore using a pre-trained model:
+Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated [KernelGAN](http://www.wisdom.weizmann.ac.il/~vision/kernelgan/) kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
 
+## Table of Contents
+1. [Running the GUI](#GUI_run)
+1. [Exploring with the GUI](#GUI_usage)
+1. [Training an explorable super-resolution network](#Training)
+1. [Using the consistency enforcing module (CEM) for other purposes](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes/CEM)
+
+## Running the explorable SR GUI<a name="GUI_run"></a>
 Let us take the train commad `python train.py -opt options/train/train_esrgan.json` for example. A sequence of actions will be done after this command. 
+
+## Exploring using our GUI<a name="GUI_usage"></a>
+
+## Training the backend exploration network<a name="Training"></a>
 
 - [`train.py`](https://github.com/xinntao/BasicSR/blob/master/codes/train.py) is called. 
 - Reads the configuration (a json file) in [`options/train/train_esrgan.json`](https://github.com/xinntao/BasicSR/blob/master/codes/options/train/train_esrgan.json), including the configurations for data loader, network, loss, training strategies and etc. The json file is processed by [`options/options.py`](https://github.com/xinntao/BasicSR/blob/master/codes/options/options.py).
