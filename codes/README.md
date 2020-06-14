@@ -5,7 +5,7 @@ The overall explorable super resolution framework is shown in the following figu
    <img src="fig_framework_scheme_4_github.png">
 </p>
 
-Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated "KernelGAN" kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
+Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated ["KernelGAN"](http://www.wisdom.weizmann.ac.il/~vision/kernelgan/) kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
 
 Train a model:
 Explore using a pre-trained model:
