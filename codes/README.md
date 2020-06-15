@@ -1,18 +1,18 @@
 The official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 
-#### Repository includes:
+## Table of Contents
+1. [What's in this reopsitory?](#repository_includes)
+1. [Dependencies](#dependencies)
+1. [Running the GUI](#GUI_run)
+1. [Exploring with the GUI](#GUI_usage)
+1. [Training an explorable super-resolution network](#Training)
+1. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
+
+#### This repository includes:<a name="repository_includes"></a>
 1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
 2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
 3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
 
-## Table of Contents
-1. [Dependencies](#dependencies)
-1. [Codes](#codes)
-<!--
-1. [Usage](#usage)
-1. [Datasets](#datasets)
-1. [Pretrained models](#pretrained-models)
--->
 ### Dependencies
 
 - Python 3 (Recommend to use [Anaconda](https://www.anaconda.com/download/#linux))
@@ -20,13 +20,9 @@ The official PyTorch implementation of the paper "Explorable Super Resolution" b
 - NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
 - Python packages: `pip install numpy opencv-python lmdb`
 
-# Codes
-We provide a detailed explaination of the **code framework** in [`./codes`](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes).
-
-
 ## Acknowledgement
 
-- Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
 
 
 
@@ -40,11 +36,6 @@ This repository contains the full code for our method. You can run our GUI and u
 
 Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated [KernelGAN](http://www.wisdom.weizmann.ac.il/~vision/kernelgan/) kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
 
-## Table of Contents
-1. [Running the GUI](#GUI_run)
-1. [Exploring with the GUI](#GUI_usage)
-1. [Training an explorable super-resolution network](#Training)
-1. [Using the consistency enforcing module (CEM) for other purposes](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes/CEM)
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
 Let us take the train commad `python train.py -opt options/train/train_esrgan.json` for example. A sequence of actions will be done after this command. 
