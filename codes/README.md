@@ -1,112 +1,67 @@
-The official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
-
-#### Repository includes:
-1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
-2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
-3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
+An official PyTorch implementation of "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 
 ## Table of Contents
+1. [Overview](#overview)
 1. [Dependencies](#dependencies)
-1. [Codes](#codes)
-<!--
-1. [Usage](#usage)
-1. [Datasets](#datasets)
-1. [Pretrained models](#pretrained-models)
--->
-### Dependencies
+1. [Acknowledgement](#acknowledgement)
+1. [Running the GUI](#GUI_run)
+1. [Exploring with the GUI](#GUI_usage)
+1. [Training an explorable super-resolution network](#Training)
+1. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
 
-- Python 3 (Recommend to use [Anaconda](https://www.anaconda.com/download/#linux))
-- [PyTorch >= 1.1.0](https://pytorch.org/)
-- NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
-- Python packages: `pip install numpy opencv-python lmdb`
-
-# Codes
-We provide a detailed explaination of the **code framework** in [`./codes`](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes).
-
-
-## Acknowledgement
-
-- Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
-
-
-
-The overall explorable super resolution framework is shown in the following figure. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
-
+## Overview 
+The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
 <p align="center">
    <img src="fig_framework_scheme_4_github.png">
 </p>
 
-This repository contains the full code for our method. You can run our GUI and use its tools to explore the abundant different high-resolution images matching an input low-resolution image. The backend of this GUI comprises an explorable super-resolution netwrok. You can download a pre-trained model, or choose to train one by yourself. Finally, our consistency enforcing module (CEM) can be used as a standalone component, to wrap any super-resolution model, whether before or after its training, for guranteeing the consistency of its outputs.
+### This repository includes:<a name="repository_includes"></a>
+1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models for the 4x case are available for download, though our method supports any integer super-resolution factor.
+
+1. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
+1. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
+
+
+You can run our **GUI** and use its tools to explore the abundant different high-resolution images matching an input low-resolution image. The backend of this GUI comprises an explorable super-resolution netwrok. You can either download a pre-trained model, or you can **train a model by yourself**. Finally, our consistency enforcing module (CEM) can be used as a standalone component, to **wrap any super-resolution model**, whether before or after its training, for guranteeing the consistency of its outputs.
 
 Our CEM assumes the default bicubic downsampling kernel, but in needs access to the actual downsampling kernel corresponding to the low-resolution image, in order to guarantee the consistency of our framework's outputs. To this end, GUI users can utilize the incorporated [KernelGAN](http://www.wisdom.weizmann.ac.il/~vision/kernelgan/) kernel estimation method by Bell-Kligler et al., which may improve consistency in some cases.
 
-## Table of Contents
-1. [Running the GUI](#GUI_run)
-1. [Exploring with the GUI](#GUI_usage)
-1. [Training an explorable super-resolution network](#Training)
-1. [Using the consistency enforcing module (CEM) for other purposes](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes/CEM)
+## Dependencies
+
+- Python >= 3.6
+- [PyTorch >= 1.1.0](https://pytorch.org/)
+- NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
+<!--- Other Python packages: `pip install numpy opencv-python lmdb`-->
+
+## Acknowledgement
+Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
-Let us take the train commad `python train.py -opt options/train/train_esrgan.json` for example. A sequence of actions will be done after this command. 
+1. *Train or download a pre-trained explorable SR model:*  
+Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. 
+1. *(Optional) Download a pre-trained ESRGAN model:*  
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
+1. *Update paths:*  
+Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) file.
+1. *Run the GUI:*  
+   ```
+   python GUI.py -opt ./options/test/GUI_SR.json  
+   ```
 
 ## Exploring using our GUI<a name="GUI_usage"></a>
+I hope to add here a full description of all our GUI exploration tools soon. In the meantime, please refer to the description in appendix D of [our paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing).
 
 ## Training the backend exploration network<a name="Training"></a>
-
-- [`train.py`](https://github.com/xinntao/BasicSR/blob/master/codes/train.py) is called. 
-- Reads the configuration (a json file) in [`options/train/train_esrgan.json`](https://github.com/xinntao/BasicSR/blob/master/codes/options/train/train_esrgan.json), including the configurations for data loader, network, loss, training strategies and etc. The json file is processed by [`options/options.py`](https://github.com/xinntao/BasicSR/blob/master/codes/options/options.py).
-- Creates the train and validation data loader. The data loader is constructed in [`data/__init__.py`](https://github.com/xinntao/BasicSR/blob/master/codes/data/__init__.py) according to different data modes.
-- Creates the model (is constructed in [`models/__init__.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/__init__.py) according to differnt model types). A model mainly consists of two parts - [network structure] and [model defination, e.g., loss definition, optimization and etc]. The network is constructed in [`models/network.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/networks.py) and the detailed structures are in [`models/modules`](https://github.com/xinntao/BasicSR/tree/master/codes/models/modules).
-- Start to train the model. Other actions like logging, saving intermediate models, validation, updating learning rate and etc are also done during the training.  
-
-Moreover, there are utils and userful scripts. A detailed description is provided as follows.
-
-
-## Table of Contents
-1. [Config](#config)
-1. [Data](#data)
-1. [Model](#model)
-1. [Network](#network)
-1. [Utils](#utils)
-1. [Scripts](#scripts)
-
-## Config
-#### [`options/`](https://github.com/xinntao/BasicSR/tree/master/codes/options) Configure the options for data loader, network structure, model, training strategies and etc.
-
-- `json` file is used to configure options and [`options/options.py`](https://github.com/xinntao/BasicSR/blob/master/codes/options/options.py) will convert the json file to python dict.
-- `json` file uses `null` for `None`; and supports `//` comments, i.e., in each line, contents after the `//` will be ignored. 
-- Supports `debug` mode, i.e, model name start with `debug_` will trigger the debug mode.
-- The configuration file and descriptions can be found in [`options`](https://github.com/xinntao/BasicSR/tree/master/codes/options).
-
-## Data
-#### [`data/`](https://github.com/xinntao/BasicSR/tree/master/codes/data) A data loader to provide data for training, validation and testing.
-
-- A separate data loader module. You can modify/create data loader to meet your own needs.
-- Uses `cv2` package to do image processing, which provides rich operations.
-- Supports reading files from image folder or `lmdb` file. For faster IO during training, recommand to create `lmdb` dataset first. More details including lmdb format, creation and usage can be found in our [lmdb wiki](https://github.com/xinntao/BasicSR/wiki/Faster-IO-speed).
-- [`data/util.py`](https://github.com/xinntao/BasicSR/blob/master/codes/data/util.py) provides useful tools. For example, the `MATLAB bicubic` operation; rgb<-->ycbcr as MATLAB. We also provide [MATLAB bicubic imresize wiki](https://github.com/xinntao/BasicSR/wiki/MATLAB-bicubic-imresize) and [Color conversion in SR wiki](https://github.com/xinntao/BasicSR/wiki/Color-conversion-in-SR).
-- Now, we convert the images to format NCHW, [0,1], RGB, torch float tensor.
-
-## Model
-#### [`models/`](https://github.com/xinntao/BasicSR/tree/master/codes/models) Construct different models for training and testing.
-
-- A model mainly consists of two parts - [network structure] and [model defination, e.g., loss definition, optimization and etc]. The network description is in the [Network part](#network).
-- Based on the [`base_model.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/base_model.py), we define different models, e.g., [`SR_model.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/SR_model.py), [`SRGAN_model.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/SRGAN_model.py), [`SRRaGAN_model.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/SRRaGAN_model.py) and [`SFTGAN_ACD_model.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/SFTGAN_ACD_model.py).
-
-## Network
-#### [`models/modules/`](https://github.com/xinntao/BasicSR/tree/master/codes/models/modules) Construct different network architectures.
-
-- The network is constructed in [`models/network.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/networks.py) and the detailed structures are in [`models/modules`](https://github.com/xinntao/BasicSR/tree/master/codes/models/modules).
-- We provide some useful blocks in [`block.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/modules/block.py) and it is flexible to construct your network structures with these pre-defined blocks.
-- You can also easily write your own network architecture in a seperate file like [`sft_arch.py`](https://github.com/xinntao/BasicSR/blob/master/codes/models/modules/sft_arch.py). 
-
-## Utils
-#### [`utils/`](https://github.com/xinntao/BasicSR/tree/master/codes/utils) Provide useful utilities.
-
-- [logger.py](https://github.com/xinntao/BasicSR/blob/master/codes/utils/logger.py) provides logging service during training and testing.
-- Support to use [tensorboard](https://www.tensorflow.org/programmers_guide/summaries_and_tensorboard) to visualize and compare training loss, validation PSNR and etc. Installationand usage can be found [here](https://github.com/xinntao/BasicSR/tree/master/codes/utils).
-- [progress_bar.py](https://github.com/xinntao/BasicSR/blob/master/codes/utils/progress_bar.py) provides a progress bar which can print the progress. 
-
-## Scripts
-#### [`scripts/`](https://github.com/xinntao/BasicSR/tree/master/codes/scripts) Privide useful scripts.
-Details can be found [here](https://github.com/xinntao/BasicSR/tree/master/codes/scripts).
+1. *Download training set:*  
+Download a dataset of high-resolution training images. We used the training subset of the [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) dataset.
+1. *Training-set preparation:*  
+   1. Create image crops using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
+   1. Create `lmdb` files using [`create_lmdb.py`](./scripts/create_lmdb.py).
+1. *Download initialization model:*  
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing) for weights initialization (This model is for a 4x super-resolution. Other factors require a different model).
+1. *Update parameters:*  
+Update the necessary (and optionally other) fields in the [`train_explorable_SR.json`](./options/train/train_explorable_SR.json) file.
+1. *Train the model:*  
+   ```
+   python train.py -opt ./options/train/train_explorable_SR.json  
+   ```

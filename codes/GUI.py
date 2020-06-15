@@ -1378,6 +1378,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         #### Connecting buttons to functions:
         # Load & Save:
+        self.special_behavior_button.clicked.connect(self.toggle_special_behaviour_icon)
         self.open_image_button.clicked.connect(lambda x: self.open_file(HR_image=False))
         self.open_HR_image_button.clicked.connect(lambda x: self.open_file(HR_image=True))
         self.Z_load_button.pressed.connect(self.Load_Z)
@@ -1474,6 +1475,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
         self.show()
+
+    def toggle_special_behaviour_icon(self):
+        self.special_behavior_button.setIcon(self.special_behavior_on_icon if self.special_behavior_button.isChecked() else self.special_behavior_off_icon)
 
     def Manipulate_HSV(self,channel,increase):
         STEP_SIZE = 0.05 # 0.01

@@ -343,14 +343,15 @@ class Z_optimizer():
             self.initial_output = model.Output_Batch(within_0_1=True)
         if self.non_local_Z_optimization:
             # Z Manipulation is allowed in all locations meeting ANY of the following:
-            # - The entire Z, except for a margin of 16 pixels on each side in the optimized region (for large images) or image (for small images)
+            # - The entire Z, except for a margin of NON_EDIT_MARGINS pixels on each side in the optimized region (for large images) or image (for small images)
             # - The dilated version of image_mask (using a 16x16 square structural element).
             new_Z_mask = np.zeros_like(Z_mask)
+            NON_EDIT_MARGINS = 24
             if self.jpeg_mode:
-                new_Z_mask[2:-2,2:-2] = 1
+                new_Z_mask[NON_EDIT_MARGINS//8:-NON_EDIT_MARGINS//8,NON_EDIT_MARGINS//8:-NON_EDIT_MARGINS//8] = 1
                 dilated_im_mask = np.max(np.max(dilate(image_mask, np.ones([16, 16])).reshape([Z_mask.shape[0],8,Z_mask.shape[1],8]),-1),1)
             else:
-                new_Z_mask[16:-16,16:-16] = 1
+                new_Z_mask[NON_EDIT_MARGINS:-NON_EDIT_MARGINS,NON_EDIT_MARGINS:-NON_EDIT_MARGINS] = 1
                 dilated_im_mask = dilate(image_mask, np.ones([16, 16]))
             # Z_mask *= new_Z_mask
             Z_mask = 1*new_Z_mask
