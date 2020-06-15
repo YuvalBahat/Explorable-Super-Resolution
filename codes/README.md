@@ -39,7 +39,7 @@ Code architecture is based on an older version of [BasicSR](https://github.com/j
 1. *Train or download a pre-trained explorable SR model:*  
 Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. 
 1. *(Optional) Download a pre-trained ESRGAN model:*  
-Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the result by the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
 1. *Update paths:*  
 Update the necessary fields in the [`./options/test/GUI_SR.json`](./options/test/GUI_SR.json) file.
 1. *Run the GUI:*  
