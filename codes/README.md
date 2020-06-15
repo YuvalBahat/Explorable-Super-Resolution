@@ -42,11 +42,25 @@ Our GUI enables exploration by utilizing a backend explorable SR network. Theref
 1. *(Optional) Download a pre-trained ESRGAN model:*  
 Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
 1. *Update paths:*  
-Update the necessary fields in the [`./options/test/GUI_SR.json`](./options/test/GUI_SR.json) file.
+Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) file.
 1. *Run the GUI:*  
    ```
    python GUI.py -opt ./options/test/GUI_SR.json  
    ```
 ## Exploring using our GUI<a name="GUI_usage"></a>
+I hope to add here a full description of all our GUI exploration tools soon. In the meantime, please refer to the description in appendix D of [our paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing).
 
 ## Training the backend exploration network<a name="Training"></a>
+1. *Download training set:*  
+Download a dataset of high-resolution training images. We used the training subset of the [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) dataset.
+1. *Training-set preparation:*  
+   1. Create image crops using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
+   1. Create `lmdb` files using [`create_lmdb.py`](./scripts/create_lmdb.py).
+1. *Download initialization model:*  
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing) for weights initialization (This model is for a 4x super-resolution. Other factors require a different model).
+1. *Update parameters:*  
+Update the necessary (and optionally other) fields in the [`train_explorable_SR.json`](./options/train/train_explorable_SR.json) file.
+1. *Train the model:*  
+   ```
+   python train.py -opt ./options/train/train_explorable_SR.json  
+   ```
