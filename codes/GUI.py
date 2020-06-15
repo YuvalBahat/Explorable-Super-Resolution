@@ -2448,15 +2448,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.input_image = torch.from_numpy(np.transpose(cv2.resize(self.LR_image, dsize=tuple(self.canvas.HR_size[::-1]),
                                       interpolation=cv2.INTER_NEAREST)/255,(2,0,1))).float().unsqueeze(0)
-        # if self.display_ESRGAN:
-        #     if 'pretrained_ESRGAN' not in self.opt['path'].keys():
-        #         self.canvas.DisplayedImageSelection_button.removeItem(self.canvas.DisplayedImageSelection_button.findText('ESRGAN'))
-        #         self.display_ESRGAN = False
-        #         self.ESRGAN_index = None
+
         if self.display_ESRGAN:
-            # ESRGAN_opt = option.parse('options/test/GUI_SR.json', is_train=False, name='RRDB_ESRGAN_x4')
             ESRGAN_opt = option.parse('options/test/GUI_SR.json', is_train=False)
-            # ESRGAN_opt['name']
             ESRGAN_opt = option.dict_to_nonedict(ESRGAN_opt)
             ESRGAN_opt['path']['pretrained_model_G'] = ESRGAN_opt['path']['pretrained_ESRGAN']
             ESRGAN_opt['network_G']['latent_input'] = 'None'
