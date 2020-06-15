@@ -1,9 +1,9 @@
 The official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 
 ## Table of Contents
-1. [Overview?](#overview)
+1. [Overview](#overview)
 1. [Dependencies](#dependencies)
-1. [Acknowledgement](#Acknowledgement)
+1. [Acknowledgement](#acknowledgement)
 1. [Running the GUI](#GUI_run)
 1. [Exploring with the GUI](#GUI_usage)
 1. [Training an explorable super-resolution network](#Training)
@@ -35,7 +35,16 @@ Our CEM assumes the default bicubic downsampling kernel, but in needs access to 
 Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
-
+1. *Train or download a pre-trained explorable SR model:*  
+Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. 
+1. *(Optional) Download a pre-trained ESRGAN model:*  
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the result by the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
+1. *Update paths:*  
+Update the necessary fields in the [`./options/test/GUI_SR.json`](./options/test/GUI_SR.json) file.
+1. *Run the GUI:*  
+   ```
+   python GUI.py -opt ./options/test/GUI_SR.json  
+   ```
 ## Exploring using our GUI<a name="GUI_usage"></a>
 
 ## Training the backend exploration network<a name="Training"></a>
