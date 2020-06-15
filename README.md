@@ -1,14 +1,18 @@
-# Explorable Super Resolution
-
-Official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 <p align="center">
+   <a href="https://sites.google.com/view/yuval-bahat/home">Yuval Bahat</a> &ensp; and &ensp;<a href="https://tomer.net.technion.ac.il/">Tomer Michaeli</a>
+   <br>  
    <img src="7173-teaser.gif" height="400">
 </p>
 
-#### Repository includes:
-1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
-2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
-3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
+
+## Abstract
+Single image super resolution (SR) has seen major performance leaps in recent years. However, existing methods do not allow exploring the infinitely many plausible reconstructions that might have given rise to the observed low-resolution (LR) image. These different explanations to the LR image may dramatically vary in their textures and fine details, and may often encode completely different semantic information. In this work, we introduce the task of explorable super resolution. We propose a framework comprising a graphical user interface with a neural network backend, allowing editing the SR output so as to explore the abundance of plausible HR explanations to the LR input. At the heart of our method is a novel module that can wrap any existing SR network, analytically guaranteeing that its SR outputs would precisely match the LR input, when downsampled. Besides its importance in our setting, this module is guaranteed to decrease the reconstruction error of any SR network it wraps, and can be used to cope with blur kernels that are different from the one the network was trained for. We illustrate our approach in a variety of use cases, ranging from medical imaging and forensics, to graphics.
+
+## Resources
+1. [Paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing) (Including suppelementary material)
+1. [Oral presentation](https://drive.google.com/file/d/1v42vy9gYxhMS-gi3O8q-q0h37HLgmh_T/view?usp=sharing)
+1. [Slides](https://drive.google.com/file/d/134Lr4G4ffr8A93m24iVkaW8DeYH1AHss/view?usp=sharing)
+1. [Code]()
 
 ### BibTex
     @inproceedings{bahat2020explorable,
@@ -19,6 +23,13 @@ Official PyTorch implementation of the paper "Explorable Super Resolution" by Yu
       year={2020}
     }
     
+Official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
+
+#### Repository includes:
+1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
+2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
+3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
+
 ## Table of Contents
 1. [Dependencies](#dependencies)
 1. [Codes](#codes)
