@@ -1,4 +1,4 @@
-The official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
+An official PyTorch implementation of "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
 
 ## Table of Contents
 1. [Overview](#overview)
