@@ -5,9 +5,9 @@
   , "gpu_ids": [0]
   , "use_tb_logger": 0 //Set to 1 for logging the loss values of the Z-optimization processes using Tensorboard
   , "path": {
-      "root": "/media/ybahat/data/projects/SRGAN"
+      "root": "/media/ybahat/data/projects/SRGAN" // Update path shared by both models below
       , "pretrained_model_G": "../pretrained_models/Explorable_SR_G.pth"
-      , "pretrained_ESRGAN": "../pretrained_models/RRDB_ESRGAN_x4.pth" //Comment this line if you didn't download the pretrained ESRGAN model, or to avoid displaying the ESRGAN result.
+      , "pretrained_ESRGAN": "../pretrained_models/RRDB_ESRGAN_x4.pth" //Uncomment this line to enable displaying the output by ESRGAN (after downloading the corresponding pre-trained model)
   }
   , "network_G": {
     "which_model_G": "RRDB_net"
@@ -37,8 +37,4 @@
     , "nf": 64
     , "in_nc": 3
   }
-//, "datasets": {
-//    "train": {
-//       "patch_size": 256}
-//  }
 }

@@ -2,6 +2,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5 import QtCore, QtWidgets
+import qimage2ndarray
 import numpy as np
 import os
 from scipy.signal import convolve2d
@@ -150,7 +151,12 @@ class Ui_MainWindow(object):
         self.Define_Button('estimatedKenrel',tooltip='Use estimated SR kernel',action_not_push=False,checkable=True)
         self.Define_Button('ProcessRandZ',tooltip='Produce random images',action_not_push=True)
         self.Define_Button('ProcessLimitedRandZ',tooltip='Produce random images close to current',action_not_push=True)
-        self.Define_Button('special_behavior',tooltip='Toggle special behavior',action_not_push=False,checkable=True)
+        self.Define_Button('special_behavior',tooltip='Toggle special behavior (corresponding buttons functionality appears in parantheses)',action_not_push=False,checkable=True)
+        self.special_behavior_off_icon = QIcon(QPixmap('icons/special_behavior.png'))
+        self.special_behavior_on_icon = qimage2ndarray.rgb_view(QPixmap('icons/special_behavior.png').toImage())
+        self.special_behavior_on_icon[..., 0][self.special_behavior_on_icon[:, :, 0] == 0] = 255
+        self.special_behavior_on_icon = QIcon(QPixmap(qimage2ndarray.array2qimage(self.special_behavior_on_icon)))
+
         self.Define_Button('IncreaseSTD',tooltip='Increase local STD (Magnitude)',action_not_push=True)
         self.Define_Button('DecreaseSTD',tooltip='Decrease local STD (Magnitude)',action_not_push=True)
         self.Define_Button('DecreaseTV',tooltip='Decrease TV',action_not_push=True)
@@ -323,10 +329,13 @@ class Ui_MainWindow(object):
         scribbling_tool_buttons = [getattr(self,m+'_button') for m in ['pencil','line', 'polygon','ellipse', 'rect']]
         sizeicon = QLabel(size=QSize(self.button_size,self.button_size))
         sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))
-        scribble_A_TB = self.Define_Grid_layout('Scribbling',buttons_list=[sizeicon,self.sizeselect_slider]+scribbling_tool_buttons,layout_cols=4)
-        scribble_B_TB = self.Define_Grid_layout('Manage scribble',buttons_list=[self.dropper_button,self.scribble_reset_button,self.undo_scribble_button,self.canvas.color_button,
-            self.apply_scribble_button,self.redo_scribble_button,self.canvas.cycleColorState_button,self.loop_apply_scribble_button],layout_cols=3)
-        imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[self.imprinting_button,self.imprinting_auto_location_button,None,None]+\
+        scribble_A_TB = self.Define_Grid_layout('Scribbling',buttons_list=[sizeicon,self.sizeselect_slider]+scribbling_tool_buttons+\
+            [self.dropper_button,self.canvas.color_button,self.canvas.cycleColorState_button,],layout_cols=4)
+        scribble_B_TB = self.Define_Grid_layout('Manage input',buttons_list=[self.scribble_reset_button,self.undo_scribble_button,
+            self.redo_scribble_button,None,self.apply_scribble_button,self.loop_apply_scribble_button],layout_cols=3)
+        imprinting_TB = self.Define_Grid_layout('Imprinting',buttons_list=[self.imprinting_button,self.imprinting_auto_location_button],layout_cols=2)
+        # [self.imprinting_button, self.imprinting_auto_location_button, None, None] +
+        modify_scrible_TB = self.Define_Grid_layout('Modify input',buttons_list=\
             [getattr(self,button+'_imprinting_button') for button in (imprint_stretches+imprint_translations+imprint_rotations)],layout_cols=4)
 
 
@@ -339,9 +348,10 @@ class Ui_MainWindow(object):
         self.verticalLayout_L.addWidget(region_selection_TB)
         self.verticalLayout_L.addWidget(general_TB)
         self.verticalLayout_C.addWidget(scribble_A_TB)
+        self.verticalLayout_C.addWidget(imprinting_TB)
         self.verticalLayout_C.addWidget(scribble_B_TB)
         self.verticalLayout_R.addWidget(optimize_Z_TB)
-        self.verticalLayout_C.addWidget(imprinting_TB)
+        self.verticalLayout_C.addWidget(modify_scrible_TB)
         self.verticalLayout_R.addWidget(periodicity_TB)
         if self.JPEG_GUI:
             self.verticalLayout_R.addWidget(HSV_TB)
