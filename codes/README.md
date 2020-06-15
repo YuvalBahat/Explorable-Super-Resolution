@@ -16,7 +16,8 @@ The overall explorable super resolution framework is shown in the figure below. 
 </p>
 
 ### This repository includes:<a name="repository_includes"></a>
-1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
+1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models for the 4x case are available for download, though our method supports any integer super-resolution factor.
+
 1. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
 1. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
 
