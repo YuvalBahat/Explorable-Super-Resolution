@@ -1,4 +1,35 @@
-# Code
+The official PyTorch implementation of the paper "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
+
+#### Repository includes:
+1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
+2. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
+3. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
+
+## Table of Contents
+1. [Dependencies](#dependencies)
+1. [Codes](#codes)
+<!--
+1. [Usage](#usage)
+1. [Datasets](#datasets)
+1. [Pretrained models](#pretrained-models)
+-->
+### Dependencies
+
+- Python 3 (Recommend to use [Anaconda](https://www.anaconda.com/download/#linux))
+- [PyTorch >= 1.1.0](https://pytorch.org/)
+- NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
+- Python packages: `pip install numpy opencv-python lmdb`
+
+# Codes
+We provide a detailed explaination of the **code framework** in [`./codes`](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/master/codes).
+
+
+## Acknowledgement
+
+- Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+
+
+
 The overall explorable super resolution framework is shown in the following figure. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
 
 <p align="center">
