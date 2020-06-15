@@ -14,7 +14,7 @@ Use our GUI to explore the infinite high-resolution images corresponding to an i
 1. [Paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing) (Including suppelementary material)
 1. [Oral presentation](https://drive.google.com/file/d/1v42vy9gYxhMS-gi3O8q-q0h37HLgmh_T/view?usp=sharing)
 1. [Slides](https://drive.google.com/file/d/134Lr4G4ffr8A93m24iVkaW8DeYH1AHss/view?usp=sharing)
-1. [Code](./codes)
+1. [Code](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/gh-pages/codes)
 
 ### BibTex
     @inproceedings{bahat2020explorable,
