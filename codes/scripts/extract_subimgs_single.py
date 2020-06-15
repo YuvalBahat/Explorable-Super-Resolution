@@ -19,6 +19,7 @@ def main():
     step = 30#240
     thres_sz = 48
     compression_level = 3  # 3 is the default value in cv2
+    multi_scale = False
     # CV_IMWRITE_PNG_COMPRESSION from 0 to 9. A higher value means a smaller size and longer
     # compression time. If read raw images during training, use 0 for faster IO speed.
 
@@ -42,7 +43,7 @@ def main():
     pool = Pool(n_thread)
     for path in img_list:
         pool.apply_async(worker,
-            args=(path, save_folder, crop_sz, step, thres_sz, compression_level,True),
+            args=(path, save_folder, crop_sz, step, thres_sz, compression_level,multi_scale),
             callback=update)
     pool.close()
     pool.join()

@@ -1,5 +1,5 @@
 {
-  "name": "temp" //,"Dconvergence_V10Dupdate_DTE_batch24_LRG1e-4D1e-4_Range5e3_VGG_NonRel_WGAN10_NoLossLR_debug" //  please remove "debug_" during training
+  "name": "model_name" // Model name (a folder with this name will be created if resume=0). Terminate name with "_debug" to calculate and log all possible loss terms
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -33,19 +33,16 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
-//    , "pretrained_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-//    , "pretrained_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" // Path to weights initialization model of the same architecture (but the Z input). For example, ESRGAN
 }
 
   , "network_G": {
-    "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
-    , "CEM_arch": 1
+    "which_model_G": "RRDB_net"
+    , "CEM_arch": 1 //Wrap architecture with CEM for consistency
     , "sigmoid_range_limit": 0
-    , "latent_input": "all_layers" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
-    , "latent_channels": "SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_input": "all_layers" // Concatenate Z signal to which model layers: "all_layers" /  "first_layer" / "None"
+    , "latent_input_domain": "HR_downscaled" // Spatial dimenssions of Z correspond to "HR_downscaled" / "HR_rearranged","LR"
+    , "latent_channels": "SVDinNormedOut_structure_tensor" // What kind of L_struct loss term is used: ""SVDinNormedOut_structure_tensor"" / "STD_1dir" / "STD_directional" / "structure_tensor" / "SVD_structure_tensor"
     , "norm_type": null
     , "mode": "CNA"
     , "nf": 64
@@ -56,11 +53,11 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128" //,"PatchGAN"
-    , "relativistic": 0
-    , "decomposed_input": 0
-    , "pre_clipping": 0 //1
-    , "add_quantization_noise": 0 //1
+    "which_model_D": "discriminator_vgg_128"
+    , "relativistic": 0 // Optionally use a relativistic discriminator (like in ESRGAN), which can be seen as s full-reference loss term (a disadvantage)
+    , "decomposed_input": 0 // Feed D with low-frequencies and high-frequencies separately (unsupported)
+    , "pre_clipping": 0 // Clip D's input to valid pixels range
+    , "add_quantization_noise": 0 // Add noise to D's input
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
@@ -70,13 +67,12 @@
   }
 
   , "train": {
-    "resume":0
+    "resume":0 // Set to 1 if resuming the training of a model with the same name.
     ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4
     , "lr_E": 1e-4
-    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -91,35 +87,32 @@
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-//    , "D_verification": "past" //'current', 'convergence', 'past'
+    , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
-    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
+    , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if actually using the CEM or not.
 
     , "pixel_weight": 0 //1e-2
     , "feature_weight": 0 //1
-    , "gan_weight": 1 //5e-3
-    , "latent_weight": 1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 0 //100
-    , "range_weight": 5000
+    , "gan_weight": 1 // Weight for adversarial loss term L_adv
+    , "latent_weight": 1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
+    , "optimalZ_loss_weight": 0 // L_map loss term weight
+    , "range_weight": 5000 // L_range loss term weight
 
-    //for wgan-gp
-    // , "D_update_ratio": 1
      , "D_init_iters": 0
-     , "E_init_iters": 40000
      , "gp_weight": 10
 
     , "manual_seed": 0
-    , "niter": 510000 //23532 //500100 //5e5
-    , "val_freq": 500 //5e3
+    , "niter": 510000
+    , "val_freq": 500
     , "val_save_freq": 1e4
 }
 
   , "logger": {
     "print_freq": 100 //200
-    , "save_checkpoint_freq": 20 // Minutes//5e3
+    , "save_checkpoint_freq": 20 // Minutes
   }
 }
