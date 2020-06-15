@@ -10,15 +10,16 @@ The official PyTorch implementation of the paper "Explorable Super Resolution" b
 1. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
 
 ## Overview 
+The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
+<p align="center">
+   <img src="fig_framework_scheme_4_github.png">
+</p>
+
 ### This repository includes:<a name="repository_includes"></a>
 1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models are available for download. 
 1. Code for **training an explorable super resolution model** yourself. This model can then be used to replace the available pre-trained models as the GUI backend.
 1. Implementation of the **Consistency Enforcing Module (CEM)** that can wrap any existing (and even pre-trained) super resolution network, modifying its high-resolution outputs to be consistent with the low-resolution input.
 
-The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
-<p align="center">
-   <img src="fig_framework_scheme_4_github.png">
-</p>
 
 You can run our **GUI** and use its tools to explore the abundant different high-resolution images matching an input low-resolution image. The backend of this GUI comprises an explorable super-resolution netwrok. You can either download a pre-trained model, or you can **train a model by yourself**. Finally, our consistency enforcing module (CEM) can be used as a standalone component, to **wrap any super-resolution model**, whether before or after its training, for guranteeing the consistency of its outputs.
 
