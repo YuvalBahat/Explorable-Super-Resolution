@@ -7,6 +7,7 @@
   , "range": [0,1]
 
   , "datasets": {
+    "path": "path_to_datasets_root_dir",
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
@@ -33,9 +34,9 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
-//    , "pretrain_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
-    , "pretrain_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
-//    , "pretrain_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
+//    , "pretrained_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
+//    , "pretrained_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth" //,"../pretrained_models/D_ESRGAN_VGG_x4.pth","../pretrained_models/D_RRDB_PSNR_VGG_x4.pth"
 }
 
   , "network_G": {

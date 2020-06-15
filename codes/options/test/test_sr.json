@@ -22,7 +22,7 @@
 
   , "path": {
     "root": "/home/xtwang/Projects/BasicSR"
-    , "pretrain_model_G": "../experiments/pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrained_model_G": "../experiments/pretrained_models/RRDB_PSNR_x4.pth"
   }
 
   , "network_G": {

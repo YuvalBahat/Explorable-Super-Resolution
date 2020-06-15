@@ -8,6 +8,7 @@ from scipy.signal import convolve2d
 
 MAX_SVD_LAMBDA = 1.
 DEFAULT_BUTTON_SIZE = 30
+ENABLE_ADVERSARY_BUTTON_IN_SR = False
 
 def ReturnSizePolicy(policy,hasHeightForWidth):
     sizePolicy = QtWidgets.QSizePolicy(policy, policy)
@@ -120,7 +121,6 @@ class Ui_MainWindow(object):
 
         # Configuring parameters:
         self.max_SVD_Lambda = MAX_SVD_LAMBDA
-        # self.display_ESRGAN = DISPLAY_ESRGAN_RESULTS
         self.button_size = DEFAULT_BUTTON_SIZE
 
         # Set parent layouts:
@@ -317,8 +317,9 @@ class Ui_MainWindow(object):
             buttons_list=[self.desiredAppearanceMode_button,self.undoZ_button,self.special_behavior_button,self.desiredExternalAppearanceMode_button,
                           self.redoZ_button]+([self.estimatedKenrel_button] if not self.JPEG_GUI else []),layout_cols=3)
         optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[self.IncreaseSTD_button,self.DecreaseSTD_button,self.DecreaseTV_button,
-            self.ImitateHist_button,self.ImitatePatchHist_button,self.FoolAdversary_button,self.STD_increment,self.ProcessRandZ_button,
-            self.ProcessLimitedRandZ_button]+([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else []),layout_cols=4)
+            self.ImitateHist_button,self.ImitatePatchHist_button]+([self.FoolAdversary_button] if ENABLE_ADVERSARY_BUTTON_IN_SR else [])+
+            [self.STD_increment,self.ProcessRandZ_button,self.ProcessLimitedRandZ_button]+
+            ([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else []),layout_cols=4)
         scribbling_tool_buttons = [getattr(self,m+'_button') for m in ['pencil','line', 'polygon','ellipse', 'rect']]
         sizeicon = QLabel(size=QSize(self.button_size,self.button_size))
         sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))

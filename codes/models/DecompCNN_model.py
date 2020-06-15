@@ -989,11 +989,11 @@ class DecompCNNModel(BaseModel):
                 self.gradient_step_num = loaded_model_step
 
         else:
-            load_path_G = self.opt['path']['pretrain_model_G']
+            load_path_G = self.opt['path']['pretrained_model_G']
             if load_path_G is not None:
                 print('loading model for G [{:s}] ...'.format(load_path_G))
                 self.load_network(load_path_G, self.netG)
-            load_path_D = self.opt['path']['pretrain_model_D']
+            load_path_D = self.opt['path']['pretrained_model_D']
             if self.opt['is_train'] and load_path_D is not None and self.D_exists:
                 print('loading model for D [{:s}] ...'.format(load_path_D))
                 self.load_network(load_path_D, self.netD)

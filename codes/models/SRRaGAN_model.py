@@ -1,6 +1,5 @@
 import os
 from collections import OrderedDict
-# import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
@@ -18,13 +17,6 @@ from utils import util
 
 
 
-def Unit_Circle_rejection_Sampling(batch_size):
-    cur_Z = torch.rand([batch_size,3,1,1])
-    while torch.any((cur_Z[:,1:3,:,:]**2).sum(1)>1):
-        rejected_samples = ((cur_Z[:,1:3,:,:]**2).sum(1)>1).squeeze()
-        cur_Z[rejected_samples] = torch.rand([rejected_samples.sum().item(),3,1,1])
-    return cur_Z
-
 class SRRaGANModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=1,init_Fnet=None,init_Dnet=None,**kwargs):
         super(SRRaGANModel, self).__init__(opt)
@@ -36,7 +28,6 @@ class SRRaGANModel(BaseModel):
             self.Z_size_factor = opt['scale'] if 'HR' in opt['network_G']['latent_input_domain'] else 1
         self.num_latent_channels = 0
         self.debug = 'debug' in opt['path']['log']
-        self.using_encoder = False  # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
         self.cri_latent = None
         self.optimalZ_loss_type = None
         self.generator_started_learning = False #I'm adding this flag to avoid wasting time optimizing over the Z space when D is still in its early learning phase. I don't change it when resuming training of a saved model - it would change by itself after 1 generator step.
@@ -67,7 +58,6 @@ class SRRaGANModel(BaseModel):
             if not self.CEM_arch:
                 self.CEM_net.WrapArchitecture_PyTorch(only_padders=True)
         self.netG = networks.define_G(opt,CEM=self.CEM_net,num_latent_channels=self.num_latent_channels)  # G
-        # print('Receptive field of G:',util.compute_RF_numerical(self.netG.module.cpu(),np.ones([1,3,256,256])))
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake','l_g_highpass','l_g_shift_invariant',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
@@ -75,9 +65,6 @@ class SRRaGANModel(BaseModel):
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         if self.is_train:
             if self.latent_input:
-                self.using_encoder = False # train_opt['latent_weight'] > 0 Now using 'latent_weight' parameter for the new latent input configuration
-                # self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
-                # self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
                 if train_opt['optimalZ_loss_type'] is not None and (train_opt['optimalZ_loss_weight']>0 or self.debug):
                     self.optimalZ_loss_type = train_opt['optimalZ_loss_type']
             self.D_verification = train_opt['D_verification']
@@ -98,10 +85,6 @@ class SRRaGANModel(BaseModel):
             if self.D_exists:
                 self.netD = networks.define_D(opt,CEM=self.CEM_net).to(self.device)  # D
                 self.netD.train()
-            if self.using_encoder:
-                self.netE = networks.define_E(input_nc=opt['network_G']['out_nc'],output_nc=1,ndf=opt['network_D']['nf'],
-                                              net_type='resnet_256',gpu_ids=opt['gpu_ids']).to(self.device)
-                self.netE.train()
 
         # define losses, optimizer and scheduler
         if self.is_train:
@@ -118,17 +101,6 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Remove pixel loss.')
                 self.cri_pix = None
-
-            # if train_opt['highpass_weight'] > 0 or self.debug:
-            #     import sys
-            #     sys.path.append(os.path.abspath('../../RandomPooling'))
-            #     from highpassed_loss import HighPass_Loss
-            #     filter = np.load('/media/ybahat/data/projects/SRGAN/experiments/MSE_srResNet/highpass_filter_Square.npz')['filter']
-            #     self.cri_highpass = HighPass_Loss(high_pass_filter=filter).to(self.device)
-            #     self.l_highpass_w = train_opt['highpass_weight']
-            # else:
-            #     print('Remove highpass loss.')
-            #     self.cri_highpass = None
 
             if train_opt['shift_invariant_weight'] is not None and train_opt['shift_invariant_weight'] > 0 or self.debug:
                 import sys
@@ -203,7 +175,6 @@ class SRRaGANModel(BaseModel):
                 # D_update_ratio and D_init_iters are for WGAN
                 self.global_D_update_ratio = train_opt['D_update_ratio'] if train_opt['D_update_ratio'] is not None else 1
                 self.D_init_iters = train_opt['D_init_iters'] if train_opt['D_init_iters'] else 0
-                self.E_init_iters = train_opt['E_init_iters'] if (train_opt['E_init_iters'] and self.using_encoder) else 0
 
                 if train_opt['gan_type'] == 'wgan-gp':
                     self.random_pt = torch.Tensor(1, 1, 1, 1).to(self.device)
@@ -227,13 +198,9 @@ class SRRaGANModel(BaseModel):
             if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
                 lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
                 lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
-                if self.using_encoder:
-                    lr_E = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_E']
             else:
                 lr_G = train_opt['lr_G']
                 lr_D = train_opt['lr_D']
-                if self.using_encoder:
-                    lr_E = train_opt['lr_E']
             self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G, \
                 weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
             self.optimizers.append(self.optimizer_G)
@@ -243,10 +210,6 @@ class SRRaGANModel(BaseModel):
                 self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr_D, \
                     weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
                 self.optimizers.append(self.optimizer_D)
-            # E
-            if self.using_encoder:
-                self.optimizer_E = torch.optim.Adam(self.netE.parameters(),lr=lr_E,betas=(train_opt['beta1_D'], 0.999))
-                self.optimizers.append(self.optimizer_E)
             # schedulers
             if train_opt['lr_scheme'] == 'MultiStepLR':
                 for optimizer in self.optimizers:
@@ -282,12 +245,6 @@ class SRRaGANModel(BaseModel):
             self.model_input = torch.cat([latent_input,LR_image],dim=1)
         else:
             self.model_input = 1*LR_image
-    def Assing_LR_and_Latent(self,LR_image,latent_input):
-        self.AssignLatent(latent_input)
-        self.model_input = LR_image
-
-    def AssignLatent(self,latent_input):
-        self.netG.module.generated_image_model.Z = latent_input
 
     def GetLatent(self):
         latent = 1*self.model_input[:,:-3,...]
@@ -302,10 +259,7 @@ class SRRaGANModel(BaseModel):
             if 'Z' in data.keys():
                 cur_Z = data['Z']
             else:
-                if self.opt['network_G']['latent_channels']=='STD_directional':
-                    cur_Z = Unit_Circle_rejection_Sampling(batch_size=self.var_L.size(dim=0))
-                else:
-                    cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
+                cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
                     cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
                     self.SVD = {'theta':cur_Z[:,-1,...],'lambda0_ratio':1*cur_Z[:,0,...],'lambda1_ratio':1*cur_Z[:,1,...]}
@@ -384,105 +338,84 @@ class SRRaGANModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
                 if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
-                    not_E_only_step = not (self.using_encoder and self.gradient_step_num<self.E_init_iters)
                     for p in self.netD.parameters():
-                        p.requires_grad = not_E_only_step
+                        p.requires_grad = True
                     for p in self.netG.parameters():
                         p.requires_grad = False
-                    if self.using_encoder:
-                        for p in self.netE.parameters():
-                            p.requires_grad = True
                     if first_grad_accumulation_step_D and first_dual_batch_step:
-                        if not_E_only_step:
-                            self.optimizer_D.zero_grad()
-                            self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
-                        if self.using_encoder:
-                            self.optimizer_E.zero_grad()
-                            self.l_e_grad_step = []
-                    if not_E_only_step:
+                        self.optimizer_D.zero_grad()
+                        self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
+                    if first_dual_batch_step:
+                        pred_d_real = self.netD([self.fake_H[0],self.var_ref-self.fake_H[0]] if self.decomposed_output else self.var_ref)
+                    pred_d_fake = self.netD([t.detach() for t in self.fake_H] if self.decomposed_output else self.fake_H.detach())  # detach to avoid BP to G
+                    if self.relativistic_D:
+                        l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+                        l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+                    else:
                         if first_dual_batch_step:
-                            pred_d_real = self.netD([self.fake_H[0],self.var_ref-self.fake_H[0]] if self.decomposed_output else self.var_ref)
-                        pred_d_fake = self.netD([t.detach() for t in self.fake_H] if self.decomposed_output else self.fake_H.detach())  # detach to avoid BP to G
-                        if self.relativistic_D:
-                            l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-                            l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
-                        else:
-                            if first_dual_batch_step:
-                                l_d_real = 2*self.cri_gan(pred_d_real, True)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                            l_d_fake = 2*self.cri_gan(pred_d_fake, False)
+                            l_d_real = 2*self.cri_gan(pred_d_real, True)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                        l_d_fake = 2*self.cri_gan(pred_d_fake, False)
 
-                        l_d_total += (l_d_real + l_d_fake) / 2
+                    l_d_total += (l_d_real + l_d_fake) / 2
 
-                        if self.opt['train']['gan_type'] == 'wgan-gp':
-                            batch_size = self.var_ref.size(0)
-                            if self.random_pt.size(0) != batch_size:
-                                self.random_pt.resize_(batch_size, 1, 1, 1)
-                            self.random_pt.uniform_()  # Draw random interpolation points
-                            interp = self.random_pt * ((self.fake_H[0].detach()+self.fake_H[1].detach()) if self.decomposed_output else self.fake_H.detach()) + (1 - self.random_pt) * self.var_ref
-                            interp.requires_grad = True
-                            interp_crit = self.netD([self.fake_H[0].detach(),interp-self.fake_H[0].detach()] if self.decomposed_output else interp)
-                            l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
-                            l_d_total += l_d_gp
-                        self.l_d_real_grad_step.append(l_d_real.item())
-                        self.l_d_fake_grad_step.append(l_d_fake.item())
-                        self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
-                        self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
-                        self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
-                        if first_grad_accumulation_step_D and first_dual_batch_step:
-                            self.generator_step = (self.gradient_step_num) % max(
-                                [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > max([self.D_init_iters,self.E_init_iters])
-                            # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                            self.generator_step = self.generator_step and self.step % \
-                                                  self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-                            if self.generator_step:
-                                if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
-                                    self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
-                                        all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
-                                        all([val[1] > self.opt['train']['min_mean_D_correct'] for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
-                                elif self.D_verification=='convergence':
-                                    if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
-                                        std, slope = 0, 0
-                                        for key in ['l_d_real', 'l_d_fake']:
-                                            relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= self.gradient_step_num - self.opt['train']['steps_4_loss_std']]
-                                            [cur_slope, _], [[cur_var, _], _] = np.polyfit([i for i in range(len(relevant_loss_vals))],relevant_loss_vals, 1, cov=True)
-                                            # We take the the standard deviation as a measure
-                                            std += 0.5 * np.sqrt(cur_var)
-                                            slope += 0.5 * cur_slope
-                                        self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
-                                    self.generator_step = 1*self.D_converged
-                        if self.D_verification=='current' and self.generator_step:
-                            self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
-                                and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
-                        if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
-                                self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
-                        l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
-                        l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
-
-                    if self.using_encoder:
-                        estimated_z = self.netE(self.fake_H.detach())
-                        l_e = self.cri_latent(estimated_z,self.cur_Z.to(estimated_z.device))
-                        self.l_e_grad_step.append(l_e.item())
-                        l_e /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
-                        l_e.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
+                    if self.opt['train']['gan_type'] == 'wgan-gp':
+                        batch_size = self.var_ref.size(0)
+                        if self.random_pt.size(0) != batch_size:
+                            self.random_pt.resize_(batch_size, 1, 1, 1)
+                        self.random_pt.uniform_()  # Draw random interpolation points
+                        interp = self.random_pt * ((self.fake_H[0].detach()+self.fake_H[1].detach()) if self.decomposed_output else self.fake_H.detach()) + (1 - self.random_pt) * self.var_ref
+                        interp.requires_grad = True
+                        interp_crit = self.netD([self.fake_H[0].detach(),interp-self.fake_H[0].detach()] if self.decomposed_output else interp)
+                        l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
+                        l_d_total += l_d_gp
+                    self.l_d_real_grad_step.append(l_d_real.item())
+                    self.l_d_fake_grad_step.append(l_d_fake.item())
+                    self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
+                    self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
+                    self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
+                    if first_grad_accumulation_step_D and first_dual_batch_step:
+                        self.generator_step = (self.gradient_step_num) % max([1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
+                        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                        self.generator_step = self.generator_step and self.step % \
+                                              self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+                        if self.generator_step:
+                            if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
+                                self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
+                                    all([val[1] > np.log(self.opt['train']['min_D_prob_ratio_4_G']) for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]]) and \
+                                    all([val[1] > self.opt['train']['min_mean_D_correct'] for val in self.log_dict['Correctly_distinguished'][-self.opt['train']['D_valid_Steps_4_G_update']:]])
+                            elif self.D_verification=='convergence':
+                                if not self.D_converged and self.gradient_step_num>=self.opt['train']['steps_4_D_convergence']:
+                                    std, slope = 0, 0
+                                    for key in ['l_d_real', 'l_d_fake']:
+                                        relevant_loss_vals = [val[1] for val in self.log_dict[key] if val[0] >= self.gradient_step_num - self.opt['train']['steps_4_loss_std']]
+                                        [cur_slope, _], [[cur_var, _], _] = np.polyfit([i for i in range(len(relevant_loss_vals))],relevant_loss_vals, 1, cov=True)
+                                        # We take the the standard deviation as a measure
+                                        std += 0.5 * np.sqrt(cur_var)
+                                        slope += 0.5 * cur_slope
+                                    self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
+                                self.generator_step = 1*self.D_converged
+                    if self.D_verification=='current' and self.generator_step:
+                        self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
+                            and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+                    if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
+                            self.fake_H = [var.detach() for var in self.fake_H] if self.decomposed_output else self.fake_H.detach()
+                    l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
+                    l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
 
                     if last_grad_accumulation_step_D and last_dual_batch_step:
-                        if not_E_only_step:
-                            self.optimizer_D.step()
-                            # set log
-                            self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
-                            self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
-                            self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
-                            if self.opt['train']['gan_type'] == 'wgan-gp':
-                                self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
-                            # D outputs
-                            self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
-                            self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
-                            self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
-                            self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
-                            self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
-                        if self.using_encoder:
-                            self.optimizer_E.step()
-                            self.log_dict['l_e'].append((self.gradient_step_num,np.mean(self.l_e_grad_step)))
+                        self.optimizer_D.step()
+                        # set log
+                        self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
+                        self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
+                        self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
+                        if self.opt['train']['gan_type'] == 'wgan-gp':
+                            self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
+                        # D outputs
+                        self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
+                        self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
+                        self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
+                        self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
             # G step:
             l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
@@ -493,9 +426,6 @@ class SRRaGANModel(BaseModel):
                         p.requires_grad = False
                 for p in self.netG.parameters():
                     p.requires_grad = True
-                if self.using_encoder:
-                    for p in self.netE.parameters():
-                        p.requires_grad = False
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step = [],[],[],[],[],[]
@@ -706,13 +636,7 @@ class SRRaGANModel(BaseModel):
                         return True
             lr_decrease_dict = {'lr_G':self.optimizer_G.param_groups[0]['lr'],'lr_D':self.optimizer_D.param_groups[0]['lr']}
             print('LR(D) reduced to %.2e, LR(G) reduced to %.2e.'%(self.optimizer_D.param_groups[0]['lr'],self.optimizer_G.param_groups[0]['lr']))
-            if self.using_encoder:
-                np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'],
-                         lr_E=self.optimizer_E.param_groups[0]['lr'])
-                lr_decrease_dict['lr_E'] = self.optimizer_E.param_groups[0]['lr']
-                print('LR(E) reduced to %.2e.' % (self.optimizer_E.param_groups[0]['lr']))
-            else:
-                np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
+            np.savez(os.path.join(self.log_path,'lr.npz'),step_num=cur_step,lr_G =self.optimizer_G.param_groups[0]['lr'],lr_D =self.optimizer_D.param_groups[0]['lr'])
             self.log_dict['LR_decrease'].append([self.step//self.max_accumulation_steps,lr_decrease_dict])
         return False
 
@@ -805,8 +729,11 @@ class SRRaGANModel(BaseModel):
 
     def load(self,max_step=None,resume_train=None):
         resume_training = resume_train if resume_train is not None else (self.opt['is_train'] and self.opt['train']['resume'])
-        if max_step is not None or (resume_training is not None and resume_training) or not self.opt['is_train']:
-            model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
+        load_self_trained_model = max_step is not None or (resume_training is not None and resume_training)
+        self_trained_models = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name] if os.path.isdir(self.opt['path']['models']) else []
+        load_self_trained_model = load_self_trained_model or (not self.opt['is_train'] and len(self_trained_models)>0)
+        if load_self_trained_model:
+            model_name = self_trained_models
             model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))
             if max_step is not None:
                 model_name = [model for model in model_name if int(re.search('(\d)+(?=_G.pth)',model).group(0))<=max_step]
@@ -821,10 +748,6 @@ class SRRaGANModel(BaseModel):
                     model_name = str(loaded_model_step)+'_D.pth'
                     print('Resuming training with model for D [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                     self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netD,optimizer=self.optimizer_D)
-                    if self.using_encoder:
-                        model_name = str(loaded_model_step)+'_E.pth'
-                        print('Resuming training with model for E [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
-                        self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netE,optimizer=self.optimizer_E)
             else:
                 print('Testing model for G [{:s}] ...'.format(os.path.join(self.opt['path']['models'],model_name)))
                 self.load_network(os.path.join(self.opt['path']['models'],model_name), self.netG)
@@ -835,11 +758,11 @@ class SRRaGANModel(BaseModel):
                 self.gradient_step_num = loaded_model_step
 
         else:
-            load_path_G = self.opt['path']['pretrain_model_G']
+            load_path_G = self.opt['path']['pretrained_model_G']
             if load_path_G is not None:
                 print('loading model for G [{:s}] ...'.format(load_path_G))
                 self.load_network(load_path_G, self.netG)
-            load_path_D = self.opt['path']['pretrain_model_D']
+            load_path_D = self.opt['path']['pretrained_model_D']
             if self.opt['is_train'] and load_path_D is not None:
                 print('loading model for D [{:s}] ...'.format(load_path_D))
                 self.load_network(load_path_D, self.netD,optimizer=self.optimizer_D)
@@ -848,7 +771,5 @@ class SRRaGANModel(BaseModel):
         saving_path = self.save_network(self.save_dir, self.netG, 'G', iter_label,self.optimizer_G)
         if self.D_exists:
             self.save_network(self.save_dir, self.netD, 'D', iter_label,self.optimizer_D)
-            if self.using_encoder:
-                self.save_network(self.save_dir, self.netE, 'E', iter_label, self.optimizer_E)
         return saving_path
 

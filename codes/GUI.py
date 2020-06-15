@@ -568,7 +568,7 @@ class Canvas(QLabel):
 
     def update_mask_bounding_rect(self):
         self.mask_bounding_rect = np.array(cv2.boundingRect(np.stack([np.round(np.array(p)).astype(int) for p in self.LR_mask_vertices], 1).transpose()))
-        if not self.JPEG_GUI:
+        if hasattr(self,'FoolAdversary_button'):
             self.FoolAdversary_button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.mask_bounding_rect[2:]]))
         self.contained_Z_mask = True
 
@@ -1307,14 +1307,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         parser.add_argument('-JPEG', action='store_true', help='JPEG decompresion exploration')
         self.JPEG_GUI =  parser.parse_args().JPEG
         opt_name = None
-        self.display_ESRGAN = DISPLAY_ESRGAN_RESULTS
         if self.JPEG_GUI:
             opt_name = 'JPEG_chroma'
-            self.display_ESRGAN = False
             self.real_JPEG_image = False
 
         util.Assign_GPU()
         self.num_random_Zs = NUM_RANDOM_ZS
+        self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
+        self.opt = option.dict_to_nonedict(self.opt)
+        self.display_ESRGAN = not self.JPEG_GUI and DISPLAY_ESRGAN_RESULTS and 'pretrained_ESRGAN' in self.opt['path'].keys()
         self.canvas = Canvas()
         self.setupUi()
         # Replace canvas placeholder from QtDesigner.
@@ -1323,8 +1324,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.setMouseTracking(True)
         # Enable focus to capture key inputs.
         self.canvas.setFocusPolicy(Qt.StrongFocus)
-        self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
-        self.opt = option.dict_to_nonedict(self.opt)
         if DISPLAY_INDUCED_LR:
             #Add a 3rd canvas:
             self.LR_canvas = Canvas()
@@ -1371,7 +1370,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.SelectImage2Display = self.SelectImage2Display
         if self.JPEG_GUI:
             self.estimatedKenrel_button.setEnabled(False)
-            self.FoolAdversary_button.setEnabled(False)
             self.open_image_button.setEnabled(False) #Loading existing jpg files is not yet enabled
         self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.SR_model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
         self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
@@ -1433,7 +1431,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.DecreaseTV_button.clicked.connect(lambda x:self.Optimize_Z('TV', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.ImitateHist_button.clicked.connect(lambda x:self.Optimize_Z('hist', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.ImitatePatchHist_button.clicked.connect(lambda x:self.Optimize_Z('patchhist', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
-        self.FoolAdversary_button.clicked.connect(lambda x:self.Optimize_Z('Adversarial', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
+        if hasattr(self,'FoolAdversary_button'):
+            self.FoolAdversary_button.clicked.connect(lambda x:self.Optimize_Z('Adversarial', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         self.ProcessRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=False))
         self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
@@ -2090,7 +2089,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.HR_selected_mask = 1-self.canvas.HR_selected_mask
         self.canvas.Z_optimizer_Reset()
         self.canvas.contained_Z_mask = not self.canvas.contained_Z_mask
-        if not self.JPEG_GUI:
+        if hasattr(self,'FoolAdversary_button'):
             if self.canvas.contained_Z_mask:
                 self.FoolAdversary_button.setEnabled(np.all([val<=D_EXPECTED_LR_SIZE for val in self.canvas.mask_bounding_rect[2:]]))
             else:
@@ -2221,7 +2220,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             loaded_Z = data_util.read_img(None, path)
             edited_pixels_map = np.any(loaded_Z!=127/255,axis=2)
             self.canvas.HR_selected_mask = 1*edited_pixels_map
-            self.canvas.FoolAdversary_button.setEnabled(False)
+            if hasattr(self, 'FoolAdversary_button'):
+                self.canvas.FoolAdversary_button.setEnabled(False)
             self.canvas.contained_Z_mask = False
             assert self.canvas.HR_Z,'Not supprting other option'
             self.canvas.Z_mask = 1*edited_pixels_map
@@ -2444,10 +2444,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.input_image = torch.from_numpy(np.transpose(cv2.resize(self.LR_image, dsize=tuple(self.canvas.HR_size[::-1]),
                                       interpolation=cv2.INTER_NEAREST)/255,(2,0,1))).float().unsqueeze(0)
+        # if self.display_ESRGAN:
+        #     if 'pretrained_ESRGAN' not in self.opt['path'].keys():
+        #         self.canvas.DisplayedImageSelection_button.removeItem(self.canvas.DisplayedImageSelection_button.findText('ESRGAN'))
+        #         self.display_ESRGAN = False
+        #         self.ESRGAN_index = None
         if self.display_ESRGAN:
-            ESRGAN_opt = option.parse('./options/test/GUI_esrgan.json', is_train=False,name='RRDB_ESRGAN_x4')
-            ESRGAN_opt['name']
+            # ESRGAN_opt = option.parse('options/test/GUI_SR.json', is_train=False, name='RRDB_ESRGAN_x4')
+            ESRGAN_opt = option.parse('options/test/GUI_SR.json', is_train=False)
+            # ESRGAN_opt['name']
             ESRGAN_opt = option.dict_to_nonedict(ESRGAN_opt)
+            ESRGAN_opt['path']['pretrained_model_G'] = ESRGAN_opt['path']['pretrained_ESRGAN']
             ESRGAN_opt['network_G']['latent_input'] = 'None'
             ESRGAN_opt['network_G']['latent_channels'] = 0
             ESRGAN_opt['network_G']['CEM_arch'] = 0

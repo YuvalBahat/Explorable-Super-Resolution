@@ -49,7 +49,7 @@ parser.add_argument('-single_GPU', action='store_true', help='Utilize only one G
 if parser.parse_args().single_GPU:
     util.Assign_GPU()
 opt = option.parse(parser.parse_args().opt, is_train=False,name='JPEG'+('_chroma' if CHROMA else ''))
-util.mkdirs((path for key, path in opt['path'].items() if not key == 'pretrain_model_G'))
+util.mkdirs((path for key, path in opt['path'].items() if not key == 'pretrained_model_G'))
 opt = option.dict_to_nonedict(opt)
 if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
     LATENT_CHANNEL_NUM = None
