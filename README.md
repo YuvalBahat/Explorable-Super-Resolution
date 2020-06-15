@@ -1,4 +1,4 @@
-<p style="font-size:50px" align="center">
+<p style="font-size:30px" align="center">
    <a href="https://sites.google.com/view/yuval-bahat/home">Yuval Bahat</a> &emsp; and &emsp;<a href="https://tomer.net.technion.ac.il/">Tomer Michaeli</a>
    <br><br>
    <img src="7173-teaser.gif" height="400">
