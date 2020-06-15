@@ -51,7 +51,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
     if 'datasets' in opt.keys():
-        dataset_root_path =  Locally_Adapt_Path(opt['datasets']['path'])
+        dataset_root_path =  Locally_Adapt_Path(opt['path']['datasets'] if 'datasets' in opt['path'].keys() else opt['path']['root'])
         # if 'root' not in opt['path']:
         #     opt['path']['root'] = '/media/ybahat/data/projects/SRGAN' if running_on_Technion else '/home/ybahat/PycharmProjects/SRGAN'
         non_degraded_images_fieldname = 'dataroot_Uncomp' if JPEG_run else 'dataroot_HR'
@@ -148,7 +148,7 @@ def dict_to_nonedict(opt):
         return opt
 
 def Locally_Adapt_Path(org_path):
-    path = org_path.copy()
+    path = org_path+''
     if 'tiras' in os.getcwd():
         path = '/home/tiras/datasets'
     elif gethostname()=='Yuval-Technion':
