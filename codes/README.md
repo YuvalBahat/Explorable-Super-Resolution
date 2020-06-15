@@ -47,6 +47,7 @@ Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) f
    ```
    python GUI.py -opt ./options/test/GUI_SR.json  
    ```
+
 ## Exploring using our GUI<a name="GUI_usage"></a>
 I hope to add here a full description of all our GUI exploration tools soon. In the meantime, please refer to the description in appendix D of [our paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing).
 
