@@ -168,7 +168,8 @@ class DnCNN(nn.Module):
             if spectral_norm:
                 layers[-1] = SN.spectral_norm(layers[-1])
             # layers.append(nn.Linear(in_features=64, out_features=1))
-        layers.append(nn.Sigmoid())
+        else:
+            layers.append(nn.Sigmoid())
         if False and self.discriminator_net:
             self.dncnn = nn.Sequential(*layers)
         else:

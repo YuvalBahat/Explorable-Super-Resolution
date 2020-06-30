@@ -206,13 +206,14 @@ class DecompCNNModel(BaseModel):
             # else:
             self.lr_G = train_opt['lr_G']
             self.lr_D = train_opt['lr_D']
-            self.optimizer_G = torch.optim.Adam(optim_params, lr=self.lr_G,weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
+            self.optimizer_G = torch.optim.Adam(optim_params, lr=self.lr_G,weight_decay=wd_G, betas=(train_opt['beta1_G'],
+                train_opt['beta2_G'] if train_opt['beta2_G'] is not None else 0.999))
             self.optimizers.append(self.optimizer_G)
             # D
             if self.D_exists:
                 wd_D = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
                 self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.lr_D, \
-                    weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
+                    weight_decay=wd_D, betas=(train_opt['beta1_D'], train_opt['beta2_D'] if train_opt['beta2_D'] is not None else 0.999))
                 self.optimizers.append(self.optimizer_D)
             # schedulers
             if train_opt['lr_scheme'] == 'MultiStepLR':
@@ -582,7 +583,7 @@ class DecompCNNModel(BaseModel):
                     if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                             self.D_fake_input = self.D_fake_input.detach()
                     l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
-                    l_d_total.backward(retain_graph=self.generator_step or (self.opt['train']['gan_type']=='wgan-gp'))
+                    l_d_total.backward(retain_graph=self.generator_step or ('wgan' in self.opt['train']['gan_type']))
 
                     if last_grad_accumulation_step_D and last_dual_batch_step:
                         if True:
@@ -624,7 +625,7 @@ class DecompCNNModel(BaseModel):
                     l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
-                    self.Z_effect_grad_step.append(np.mean(np.diff(self.Z_optimizer.loss_values)))
+                    self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
                 if self.generator_step:
                     if self.cri_pix:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)

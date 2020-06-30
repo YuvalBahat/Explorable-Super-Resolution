@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNet_InputConcatD_SN_VerifInit_SingleMap5e-4IterFromScratch_Z64FirstLayer" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNet_SNhinge_beta0.5_0.9_3_updatesRatio10_mixedLR_VerifInit_SingleMap5e-4IterFromScratch_Z64FirstLayer" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -16,7 +16,7 @@
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 4
+      , "n_workers": 2 //4
       , "batch_size": 16
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16
@@ -79,7 +79,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "DnCNN_D_SN" //"DnCNN_D_SN" //,"DnCNN_D" //,"PatchGAN"
+    "which_model_D": "DnCNN_D" //"DnCNN_D_SN" //,"DnCNN_D" //,"PatchGAN"
     , "relativistic": 0
     , "concat_input": 1
     , "inject_Z": 0 //1
@@ -94,14 +94,16 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
-    , "beta1_G": 0.9
+    , "beta1_G": 0.5 //0.9
+    , "beta2_G": 0.9 //None
     , "lr_D": 1e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
-    , "beta1_D": 0.9
+    , "beta1_D": 0.5 //0.9
+    , "beta2_D": 0.9 //None
     , "lr_scheme": "MultiStepLR"
     , "steps_4_loss_std": 500
     , "std_4_lr_drop": 1e6 //1.6
@@ -112,7 +114,7 @@
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
+    , "gan_type": "wgan-sn_hinge" //,"vanilla","lsgan","wgan-gp","wgan-sn"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
     , "Num_Z_iterations": [2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
     , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
