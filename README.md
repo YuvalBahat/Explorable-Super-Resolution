@@ -12,8 +12,8 @@ Use our GUI to explore the infinite high-resolution images corresponding to an i
 
 ## Resources
 1. [Paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing) (Including supplementary material)
-1. [Short oral presentation](https://youtu.be/OaksbqfP1rY) (5 mins, CVPR 2020)
-1. [Longer talk](https://youtu.be/sT8qeRpTetk) (47 mins, MIT vision seminar)
+1. [CVPR 2020 oral presentation](https://youtu.be/OaksbqfP1rY) (5 mins)
+1. [MIT vision seminar talk](https://youtu.be/sT8qeRpTetk) (47 mins)
 1. [Code](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/gh-pages/codes)
 
 ### BibTex
