@@ -11,7 +11,7 @@ Single image super resolution (SR) has seen major performance leaps in recent ye
 Use our GUI to explore the infinite high-resolution images corresponding to an input low-resolution image. You can use our pre-trained explorable super-resolution model, or train one yourself. You can also utilize our CEM to enforce consistency on any super resolution model, regardless of explorability. Please find details in our [code repository](./codes).
 
 ## Resources
-1. [Paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing) (Including suppelementary material)
+1. [Paper](https://drive.google.com/file/d/1N6pwutE_wxx8xDx29zvItjDdqO-CLklG/view?usp=sharing) (Including supplementary material)
 1. [Oral presentation](https://drive.google.com/file/d/1v42vy9gYxhMS-gi3O8q-q0h37HLgmh_T/view?usp=sharing)
 1. [Slides](https://drive.google.com/file/d/134Lr4G4ffr8A93m24iVkaW8DeYH1AHss/view?usp=sharing)
 1. [Code](https://github.com/YuvalBahat/Explorable-Super-Resolution/tree/gh-pages/codes)
