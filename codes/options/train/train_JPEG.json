@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNet_SNhinge_beta0.5_0.9_3_updatesRatio10_mixedLR_VerifInit_SingleMap5e-4IterFromScratch_Z64FirstLayer" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNet_SNhinge_beta0.5_0.9_3_updatesRatio3_mixedLR_Map1e-4IterFromScratch_Z64FirstLayer" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -102,7 +102,7 @@
     , "lr_D": 1e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
-    , "beta1_D": 0.5 //0.9
+    , "beta1_D": 0.5 //0.9 //0.0
     , "beta2_D": 0.9 //None
     , "lr_scheme": "MultiStepLR"
     , "steps_4_loss_std": 500
@@ -117,11 +117,11 @@
     , "gan_type": "wgan-sn_hinge" //,"vanilla","lsgan","wgan-gp","wgan-sn"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
     , "Num_Z_iterations": [2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
-    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
+//    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 10 //0
+    , "D_update_ratio": 3 //10 //0 //1
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
@@ -129,7 +129,7 @@
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 5e-4 //0 //100
+    , "optimalZ_loss_weight": 1e-4 //5e-4 //0 //100
     , "range_weight": 1 //0 //5000
 //    , "pixel_weight": 1e-2 //1e-3 //1e-2
 //    , "feature_weight": 0 //1

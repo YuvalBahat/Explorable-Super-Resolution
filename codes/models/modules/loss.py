@@ -238,8 +238,8 @@ class GANLoss(nn.Module):
         else:
             return torch.empty_like(input).fill_(self.fake_label_val)
 
-    def forward(self, input, target_is_real):
-        if 'hinge' in self.gan_type:
+    def forward(self, input, target_is_real,hinge=False):
+        if hinge:
             input = torch.clamp_max(input,1) if target_is_real else torch.clamp_min(input,-1)
         target_label = self.get_target_label(input, target_is_real)
         loss = self.loss(input, target_label)

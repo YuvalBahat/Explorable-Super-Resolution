@@ -1,5 +1,5 @@
 {
-  "name": "Feat_SegNetAE_4LnoBN" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
+  "name": "Feat_patch_init" //","Feat_with_randomStrideSize" //,"MSE_srResNet" //, "HighPass_srResNet","Feat_with_max2stride_untrained"
   , "use_tb_logger": true
   , "model": "srragan" //"srgan"
   , "scale": 4
@@ -14,7 +14,7 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 0
+      , "n_workers": 2 //0
       , "batch_size": 16
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16
@@ -88,9 +88,9 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
-//    , "feature_pooling": "patches_init_all_CS_useStats" //"patches_init_all_CS_useStats" // "untrained_num_channel_factor_4" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
+    , "feature_pooling": "patches_init_all_CS" //"patches_init_all_CS_useStats" // "untrained_num_channel_factor_4" //"untrained_max_2_random_stride_size_once" //,"max_2_dilation" //,"max_2_random_pool","max_2_random_once_pool","linear","untrained","untrained_shuffled"
 //    , "netF_checkpoint": "/home/tiras/ybahat/SRGAN/pretrained_models/patches_initiated_orgStats_Fnet.pth"
-    , "feature_model_arch": "SegNetAE" //"SegNetAE" //"vgg19"
+    , "feature_model_arch": "vgg19" //"SegNetAE" //"vgg19"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"

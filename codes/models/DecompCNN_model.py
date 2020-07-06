@@ -82,7 +82,7 @@ class DecompCNNModel(BaseModel):
                     self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past','initial','initial_gradual',None]
-            self.D_verified, self.verified_D_saved = False,False
+            self.D_verified, self.verified_D_saved = self.D_verification is None,self.D_verification is None
             if self.D_verification=='convergence':
                 self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
@@ -497,12 +497,13 @@ class DecompCNNModel(BaseModel):
                         pred_d_real = self.netD(self.var_ref)
                     pred_d_fake = self.netD(self.D_fake_input.detach())  # detach to avoid BP to G
                     if self.relativistic_D:
+                        assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
                         l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
                     else:
                         if first_dual_batch_step:
-                            l_d_real = 2*self.cri_gan(pred_d_real, True)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                        l_d_fake = 2*self.cri_gan(pred_d_fake, False)
+                            l_d_real = 2*self.cri_gan(pred_d_real, True,'hinge' in self.cri_gan.gan_type)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                        l_d_fake = 2*self.cri_gan(pred_d_fake, False,'hinge' in self.cri_gan.gan_type)
 
                     l_d_total += (l_d_real + l_d_fake) / 2
 
@@ -516,7 +517,7 @@ class DecompCNNModel(BaseModel):
                         interp_crit = self.netD(interp).mean(-1).mean(-1)
                         l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
                         l_d_total += l_d_gp
-                    self.l_d_real_grad_step.append(l_d_real.item())
+                    self.l_d_real_grad_step.append(-1*l_d_real.item())
                     self.l_d_fake_grad_step.append(l_d_fake.item())
                     self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
@@ -654,12 +655,12 @@ class DecompCNNModel(BaseModel):
 
                         if self.relativistic_D:
                             pred_d_real = self.netD(self.var_ref).detach()
-                            l_g_gan = self.l_gan_w * (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
+                            l_g_gan = (self.cri_gan(pred_d_real - torch.mean(pred_g_fake), False) +
                                                       self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                         else:
-                            l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                            l_g_gan = self.cri_gan(pred_g_fake, True)/(self.grad_accumulation_steps_G*actual_dual_step_steps)
 
-                    l_g_total += l_g_gan
+                    l_g_total += self.l_gan_w *l_g_gan
                 else:
                     last_dual_batch_step = True # When self.generator_step==False but self.generator_Z_opt_only_step==True, I don't have the second part of the generator step without the Z-optimization, so optimization step and logs saving should be done in the first part.
                     self.generator_Z_opt_only_step = False#Avoid entering the generator step part in the second dual-batch step, because there is no loss there so optimizer step() and backward() commands shoudn't be called
