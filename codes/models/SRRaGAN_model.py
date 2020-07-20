@@ -156,7 +156,7 @@ class SRRaGANModel(BaseModel):
                     if loaded_state_dict is not None:
                         print('Loaded state-dict for feature loss: ',train_opt['netF_checkpoint'])
                     self.netF = networks.define_F(opt, use_bn=False,state_dict=loaded_state_dict,arch=train_opt['feature_model_arch'],
-                        arch_config=train_opt['feature_pooling'],saved_config_params=saved_config_params).to(self.device)
+                        arch_config=train_opt['feature_pooling'],saved_config_params=saved_config_params,saving_path=opt['path']['models']).to(self.device)
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 

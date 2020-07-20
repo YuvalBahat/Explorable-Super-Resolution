@@ -68,7 +68,7 @@ class MSRResNet(nn.Module):
 
 class SRResNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, upscale=4, norm_type='batch', act_type='relu', \
-            mode='NAC', res_scale=1, upsample_mode='upconv'):
+            mode='NAC', res_scale=1, upsample_mode='upconv',range_correction=False):
         super(SRResNet, self).__init__()
         n_upscale = int(math.log(upscale, 2))
         if upscale == 3:
@@ -94,9 +94,12 @@ class SRResNet(nn.Module):
 
         self.model = B.sequential(fea_conv, B.ShortcutBlock(B.sequential(*resnet_blocks, LR_conv)),\
             *upsampler, HR_conv0, HR_conv1)
+        self.range_correction = bool(range_correction)
 
     def forward(self, x):
         x = self.model(x)
+        if self.range_correction:
+            x = x/8e-6*0.3+0.45
         return x
 
 class Flatten(nn.Module):
@@ -703,7 +706,8 @@ class VGGFeatureExtractor(nn.Module):
             sys.path.append(os.path.abspath('../../RandomPooling'))
             from model_modification import Modify_Model
             saved_config_params = kwargs['saved_config_params'] if 'saved_config_params' in kwargs.keys() else None
-            model = Modify_Model(model,arch_config,classification_mode=False,saved_config_params=saved_config_params)
+            saving_path = kwargs['saving_path'] if 'saving_path' in kwargs.keys() else None
+            model = Modify_Model(model,arch_config,classification_mode=False,saved_config_params=saved_config_params,saving_path=saving_path)
         self.use_input_norm = use_input_norm
         if self.use_input_norm:
             mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)

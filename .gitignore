@@ -36,3 +36,4 @@ data_samples/samples_result
 /Samples/face_GT_HR.png
 /codes/GT.png
 /.idea/
+/codes/scripts/temp_crop_im_margins.py

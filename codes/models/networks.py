@@ -91,7 +91,7 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
     if which_model == 'sr_resnet':  # SRResNet
         netG = arch.SRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
             nb=opt_net['nb'], upscale=opt_net['scale'], norm_type=opt_net['norm_type'], \
-            act_type='relu', mode=opt_net['mode'], upsample_mode='pixelshuffle')
+            act_type='relu', mode=opt_net['mode'], upsample_mode='pixelshuffle',range_correction=opt_net['range_correction'])
 
     elif which_model == 'RRDB_net':  # RRDB
         netG = arch.RRDBNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'],
