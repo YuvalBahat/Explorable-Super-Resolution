@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
-from scipy.signal import convolve2d as conv2
+from scipy.signal import convolve2d
 from scipy.signal import gaussian
 from scipy.stats import norm
+import torch # For using GPU when working with a very large anti-aliasing kernel, e.g. when using extreme upscaling/downscaling such as 32x
 
 def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=False, return_upscale_kernel=False,use_zero_padding=False,antialiasing=True, kernel_shift_flag=False):
     assert kernel is None or any([word in kernel for word in ['cubic','blurry_cubic','reset_2_default']]) or isinstance(kernel,np.ndarray)
@@ -38,7 +39,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
             sigma = float(kernel[len('blurry_cubic_'):])
             blur_kernel = Gaussian_2D(sigma=sigma)
             imresize.kernels['blur_'+str(sf_4_kernel)] = blur_kernel
-            kernel_2_use = conv2(kernel_2_use,blur_kernel)
+            kernel_2_use = convolve2d(kernel_2_use,blur_kernel)
         imresize.kernels[str(sf_4_kernel)] = kernel_2_use
     antialiasing_kernel = np.pad(imresize.kernels[str(sf_4_kernel)],((kernel_pre_padding[0],kernel_post_padding[0]),(kernel_pre_padding[1],kernel_post_padding[1])),mode='constant')
     if scale_factor < 1:
@@ -53,20 +54,35 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None,align_center=
     if im.ndim<3:
         im = np.expand_dims(im,-1)
     output = []
+
+    def filter2d(input,special_padding_size=None):
+        if special_padding_size is not None:
+            input = 1*np.pad(input, pad_width=((special_padding_size[0], special_padding_size[0]), (special_padding_size[1], special_padding_size[1])),mode='edge')
+        if antialiasing_kernel.size > 1000:
+            print('Using GPU for image resizing (since kernel is of size %dx%d)' % (antialiasing_kernel.shape[0], antialiasing_kernel.shape[1]))
+            return torch.nn.functional.conv2d(torch.from_numpy(input).cuda().unsqueeze(0).unsqueeze(0),
+                torch.from_numpy(1 * np.rot90(antialiasing_kernel.astype(input.dtype), 2)).unsqueeze(0).unsqueeze(0).cuda(),
+                padding=(antialiasing_kernel.shape[0] // 2,antialiasing_kernel.shape[1] // 2) if special_padding_size is None else 0).squeeze(0).squeeze(0).cpu().numpy()
+        else:
+            return convolve2d(input,antialiasing_kernel,'same' if special_padding_size is None else 'valid')
+
     for channel_num in range(im.shape[2]):
         if scale_factor>1:#Upscale
             output.append(np.reshape(np.pad(np.expand_dims(np.expand_dims(im[:,:,channel_num],2),1),((0,0),(pre_stride[0],post_stride[0]),(0,0),(pre_stride[1],post_stride[1])),
                 mode='constant'),newshape=desired_size))
             if use_zero_padding:
-                output[-1] = conv2(output[-1],antialiasing_kernel,mode='same')
+                output[-1] = filter2d(output[-1])
+                # output[-1] = conv2(output[-1],antialiasing_kernel,mode='same')
             else:# Use edge padding:
-                output[-1] = conv2(np.pad(output[-1],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),antialiasing_kernel,mode='valid')
+                # output[-1] = conv2(np.pad(output[-1],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),antialiasing_kernel,mode='valid')
+                output[-1] = filter2d(output[-1],special_padding_size=padding_size)
         else:
             if use_zero_padding:
-                output.append(conv2(im[:,:,channel_num],antialiasing_kernel,mode='same'))
+                output.append(filter2d(im[:,:,channel_num]))
             else:# Use edge padding:
-                output.append(conv2(np.pad(im[:,:,channel_num],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),
-                                    antialiasing_kernel,mode='valid'))
+                # output.append(conv2(np.pad(im[:,:,channel_num],pad_width=((padding_size[0],padding_size[0]),(padding_size[1],padding_size[1])),mode='edge'),
+                #                     antialiasing_kernel,mode='valid'))
+                output.append(filter2d(im[:, :, channel_num],special_padding_size=padding_size))
             output[-1] = output[-1][pre_stride[0]::int(1 / scale_factor),pre_stride[1]::int(1 / scale_factor)]
     return np.squeeze(np.stack(output,-1))
 
@@ -114,7 +130,7 @@ def Center_Mass(kernel,ds_factor):
     assert kernel.shape[0]==kernel.shape[1],'Currently supporting only square kernels'
     kernel_size = kernel.shape[0]
     x_grid,y_grid = np.meshgrid(np.arange(kernel_size),np.arange(kernel_size))
-    x_grid,y_grid = conv2(x_grid,kernel,mode='valid')+1,conv2(y_grid,kernel,mode='valid')+1
+    x_grid,y_grid = convolve2d(x_grid,kernel,mode='valid')+1,convolve2d(y_grid,kernel,mode='valid')+1
     x_pad,y_pad = 2*(kernel_size/2-x_grid),2*(kernel_size/2-y_grid)
     padding_diff = np.round(np.abs(y_pad))-np.round(np.abs(x_pad))
     pre_x_pad,post_x_pad = np.maximum(0,-x_pad),np.maximum(0,x_pad)

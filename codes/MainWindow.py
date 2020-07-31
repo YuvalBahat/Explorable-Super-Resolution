@@ -21,7 +21,7 @@ def ReturnSizePolicy(policy,hasHeightForWidth):
 
 class Ui_MainWindow(object):
     def Greedily_Find_Location(self, occupancy_map, button_size):
-        occupancy_map = np.pad(np.logical_not(occupancy_map),((0,button_size[0]-1),(0,button_size[1]-1)))
+        occupancy_map = np.pad(np.logical_not(occupancy_map),((0,button_size[0]-1),(0,button_size[1]-1)),mode='constant')
         optional_locations = np.abs(convolve2d(occupancy_map,np.ones(button_size)/np.prod(button_size),mode='valid')-1)<1e-5
         return np.unravel_index(np.argwhere(optional_locations.reshape([-1]))[0][0],optional_locations.shape)
 

@@ -156,7 +156,7 @@ class SRRaGANModel(BaseModel):
                     if loaded_state_dict is not None:
                         print('Loaded state-dict for feature loss: ',train_opt['netF_checkpoint'])
                     self.netF = networks.define_F(opt, use_bn=False,state_dict=loaded_state_dict,arch=train_opt['feature_model_arch'],
-                        arch_config=train_opt['feature_pooling'],saved_config_params=saved_config_params).to(self.device)
+                        arch_config=train_opt['feature_pooling'],saved_config_params=saved_config_params,saving_path=opt['path']['models']).to(self.device)
                 else:
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
@@ -520,10 +520,11 @@ class SRRaGANModel(BaseModel):
                                 torch.save([([ri._indices() for ri in l.random_indexes['pooling_mats']],l.random_indexes['max_areas']) for l in
                                     self.netF.module.features.children() if isinstance(l, RandomMaxArea)],
                                                        os.path.join(self.opt['path']['models'],'F_config_params.pth'))
-                            elif 'patches_init_first' in self.opt['train']['feature_pooling']:
-                                torch.save(next(self.netF.module.features.parameters()),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
-                            # elif 'patches_init_all' in self.opt['train']['feature_pooling']:
-                            #     torch.save(self.netF.state_dict(),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
+                            elif 'patches_init_' in self.opt['train']['feature_pooling']:
+                                if 'patches_init_first' in self.opt['train']['feature_pooling']:
+                                    torch.save(next(self.netF.module.features.parameters()),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
+                                elif 'patches_init_all' in self.opt['train']['feature_pooling']:
+                                    torch.save(self.netF.module.features.state_dict(),os.path.join(self.opt['path']['models'],'F_config_params.pth'))
 
                     if self.cri_range:
                         self.log_dict['l_g_range'].append((self.gradient_step_num,np.mean(self.l_g_range_grad_step)))

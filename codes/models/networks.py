@@ -91,7 +91,7 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
     if which_model == 'sr_resnet':  # SRResNet
         netG = arch.SRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
             nb=opt_net['nb'], upscale=opt_net['scale'], norm_type=opt_net['norm_type'], \
-            act_type='relu', mode=opt_net['mode'], upsample_mode='pixelshuffle')
+            act_type='relu', mode=opt_net['mode'], upsample_mode='pixelshuffle',range_correction=opt_net['range_correction'])
 
     elif which_model == 'RRDB_net':  # RRDB
         netG = arch.RRDBNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'],
@@ -163,10 +163,11 @@ def define_D(opt,CEM=None,**kwargs):
         if opt_net['inject_Z']:
             num_latent_channels = opt_net_G['latent_channels']
             # D_input_channels += num_latent_channels
-        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
-            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='SN' in which_model)
+            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
+                          pooling_no_FC=opt_net['pooling_no_fc'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 
