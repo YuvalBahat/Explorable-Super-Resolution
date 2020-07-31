@@ -163,10 +163,11 @@ def define_D(opt,CEM=None,**kwargs):
         if opt_net['inject_Z']:
             num_latent_channels = opt_net_G['latent_channels']
             # D_input_channels += num_latent_channels
-        netD = arch.DnCNN(n_channels=opt_net_G['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
-            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'])
+            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
+                          pooling_no_FC=opt_net['pooling_no_fc'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

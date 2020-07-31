@@ -108,7 +108,7 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,pooling_no_FC=False):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
@@ -122,6 +122,7 @@ class DnCNN(nn.Module):
             MIN_DCT_DIMS_4_D = 5
             num_padded_layers = max(0,depth-int(np.floor((expected_input_size-MIN_DCT_DIMS_4_D)/(kernel_size-1))))
             layer_num = 0
+            self.pooling_no_FC = pooling_no_FC
         else:
             spectral_norm = False
         self.chroma_generator = chroma_generator
@@ -162,15 +163,18 @@ class DnCNN(nn.Module):
         if self.discriminator_net and layer_num >= num_padded_layers:
             expected_input_size -= (kernel_size - 1)
             padding = 0
-        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'), out_channels=out_nc, kernel_size=kernel_size, padding=padding,bias=False))
+        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'),
+            out_channels=1 if (self.discriminator_net and self.pooling_no_FC) else out_nc, kernel_size=kernel_size, padding=padding,
+                                bias=self.discriminator_net and self.pooling_no_FC)) #When using a fully convolutional D (when pooling_no_FC), allowing bias in the final layer.
         if spectral_norm:
             layers[-1] = SN.spectral_norm(layers[-1])
         if self.discriminator_net:
             layers.append(Flatten())
-            layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
-            if spectral_norm:
-                layers[-1] = SN.spectral_norm(layers[-1])
-            # layers.append(nn.Linear(in_features=64, out_features=1))
+            if not self.pooling_no_FC:
+                layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
+                if spectral_norm:
+                    layers[-1] = SN.spectral_norm(layers[-1])
+                # layers.append(nn.Linear(in_features=64, out_features=1))
         else:
             layers.append(nn.Sigmoid())
         if False and self.discriminator_net:
@@ -193,7 +197,7 @@ class DnCNN(nn.Module):
                         x = torch.cat([latent_input,x],dim=1)
                 x = module(x)
             if self.discriminator_net:
-                return x
+                return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
             quantization_err_estimation = x-0.5
             # quantization_err_estimation = self.dncnn(x)-0.5
             # if not next(self.modules()).training:

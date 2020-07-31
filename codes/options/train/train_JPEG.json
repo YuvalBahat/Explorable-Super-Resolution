@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNet_SNhinge_beta0.5_0.9_3_updatesRatio1_mixedLR_Map5e-2IterFromScratch_Z64FirstLayer_LR1e-3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf160nb10_QF5_updatesRatio1_Z5FirstLayer_LR1e-4_DnoFC_SameDpolicy_NoMAP" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -11,12 +11,12 @@
 //      "name": "DIV2K"
       "name": "ImageNet"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70] //10
+      , "jpeg_quality_factor": 5 //[[5,50]] //[5,10,20,30,40,50,60,70] //10
 //      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 2 //4
+      , "n_workers": 2 //2 //4
       , "batch_size": 16
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16
@@ -28,7 +28,7 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": [[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": 5 //[[5,50]] //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
@@ -55,10 +55,10 @@
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": "SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": 5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
-    , "nf": 320 //94 //320
+    , "nf": 160 //320 //94 //320
     , "nb": 10 //9 //10 //17
     , "in_nc": 64
     , "out_nc": 64
@@ -71,7 +71,7 @@
     , "latent_channels": "SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
-    , "nf": 320 //94 //320
+    , "nf": 160 //320 //94 //320
     , "nb": 10 //9 //10 //17
     , "in_nc": 64
     , "out_nc": 64
@@ -86,20 +86,21 @@
     , "DCT_D": 1
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
+    , "pooling_no_fc": 1 //Last layer should be an average pooling layer rather than a fully connected layer.
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-//    , "nf": 16 //64
+//    , "nf": 40 //64
 //    , "in_nc": 1
   }
 
   , "train": {
     "resume": 0
-    ,"lr_G": 1e-3 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-3 //1e-4 //1e-5
+    , "lr_D": 1e-4 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
@@ -122,6 +123,9 @@
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 1 //3 //10 //0 //1
+    , "G_Dbatch_separation": "SameD" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
+//      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
+//      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
@@ -129,7 +133,7 @@
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 5e-2 //5e-4 //0 //100
+    , "optimalZ_loss_weight": 0 //5e-3 //5e-4 //0 //100
     , "range_weight": 1 //0 //5000
 //    , "pixel_weight": 1e-2 //1e-3 //1e-2
 //    , "feature_weight": 0 //1

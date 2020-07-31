@@ -69,7 +69,7 @@ class DecompCNNModel(BaseModel):
             self.jpeg_extractor_Y = JPEG(compress=False,chroma_mode=False,block_size=8).to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
-                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
@@ -98,6 +98,7 @@ class DecompCNNModel(BaseModel):
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
+                assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
                 if self.DCT_discriminator:
                     self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
@@ -239,7 +240,8 @@ class DecompCNNModel(BaseModel):
                     param_group['lr'] = self.lr_D
                 if self.verified_D_saved:# When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
                     self.lr_G = 1*self.lr_D
-                    self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
+                    if 'Z_optimizer' in self.__dict__.keys(): #If MAP loss is calculated:
+                        self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
             for param_group in self.optimizer_G.param_groups:
                 param_group['lr'] = self.lr_G
 
@@ -392,6 +394,15 @@ class DecompCNNModel(BaseModel):
         for p in network.parameters():
             p.requires_grad = status
 
+    def Prepare_D_input(self,fake_H):
+        self.D_fake_input = fake_H
+        if not self.DCT_discriminator:
+            self.D_fake_input = self.output_image
+        if self.concatenated_D_input:
+            self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
+        if self.Z_injected_2_D:
+            self.D_fake_input = torch.cat([self.GetLatent().type(self.D_fake_input.type()), self.D_fake_input], 1)
+
     def optimize_parameters(self):
         Z_OPTIMIZATION_WHEN_D_UNVERIFIED = len(self.opt['train']['Num_Z_iterations'])>1
         SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP = True
@@ -462,16 +473,17 @@ class DecompCNNModel(BaseModel):
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
                 self.fake_H = self.netG(self.model_input)
-            self.D_fake_input = self.fake_H
             self.output_image = self.jpeg_extractor(self.fake_H)
             if self.chroma_mode:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
-            if not self.DCT_discriminator:
-                self.D_fake_input = self.output_image
-            if self.concatenated_D_input:
-                self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
-            if self.Z_injected_2_D:
-                self.D_fake_input = torch.cat([self.GetLatent().type(self.D_fake_input.type()), self.D_fake_input], 1)
+            self.Prepare_D_input(self.fake_H)
+            # self.D_fake_input = self.fake_H
+            # if not self.DCT_discriminator:
+            #     self.D_fake_input = self.output_image
+            # if self.concatenated_D_input:
+            #     self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
+            # if self.Z_injected_2_D:
+            #     self.D_fake_input = torch.cat([self.GetLatent().type(self.D_fake_input.type()), self.D_fake_input], 1)
             # D
             l_d_total = 0
             if not self.D_exists:
@@ -480,10 +492,6 @@ class DecompCNNModel(BaseModel):
                 if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num >= -self.D_init_iters:
                     self.Set_Require_Grad_Status(self.netD, True)
                     self.Set_Require_Grad_Status(self.netG, False)
-                    # for p in self.netD.parameters():
-                    #     p.requires_grad = True
-                    # for p in self.netG.parameters():
-                    #     p.requires_grad = False
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         if self.G_steps_since_D > 0:
                             self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1 / self.G_steps_since_D))
@@ -496,6 +504,8 @@ class DecompCNNModel(BaseModel):
                     if first_dual_batch_step:
                         pred_d_real = self.netD(self.var_ref)
                     pred_d_fake = self.netD(self.D_fake_input.detach())  # detach to avoid BP to G
+                    if self.opt['train']['G_Dbatch_separation']=='SameD':
+                        pred_g_fake = 1*pred_d_fake
                     if self.relativistic_D:
                         assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
@@ -587,20 +597,20 @@ class DecompCNNModel(BaseModel):
                     l_d_total.backward(retain_graph=self.generator_step or ('wgan' in self.opt['train']['gan_type']))
 
                     if last_grad_accumulation_step_D and last_dual_batch_step:
-                        if True:
-                            self.optimizer_D.step()
-                            # set log
-                            self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
-                            self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
-                            self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
-                            if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
-                                self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
-                            # D outputs
-                            self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
-                            self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
-                            self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(np.concatenate(self.D_logits_diff_grad_step))))
-                            self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
-                            # self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
+
+                        self.optimizer_D.step()
+                        # set log
+                        self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
+                        self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
+                        self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
+                        if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
+                            self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
+                        # D outputs
+                        self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
+                        self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
+                        self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(np.concatenate(self.D_logits_diff_grad_step))))
+                        self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
+                        # self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
             # G step:
             l_g_total = 0
@@ -608,11 +618,7 @@ class DecompCNNModel(BaseModel):
                 self.generator_started_learning = True
                 if self.D_exists:
                     self.Set_Require_Grad_Status(self.netD, False)
-                    # for p in self.netD.parameters():
-                    #     p.requires_grad = False
                 self.Set_Require_Grad_Status(self.netG, True)
-                # for p in self.netG.parameters():
-                #     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     if self.D_steps_since_G > 0:
                         self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
@@ -651,7 +657,8 @@ class DecompCNNModel(BaseModel):
                     if not self.D_exists:
                         l_g_gan = 0
                     else:
-                        pred_g_fake = self.netD(self.D_fake_input)
+                        if self.opt['train']['G_Dbatch_separation']!='SameD':
+                            pred_g_fake = self.netD(self.D_fake_input)
 
                         if self.relativistic_D:
                             pred_d_real = self.netD(self.var_ref).detach()
@@ -692,6 +699,19 @@ class DecompCNNModel(BaseModel):
                                 self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
+                            if self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
+                                with torch.no_grad():
+                                    self.Prepare_D_input(self.netG(self.model_input))
+                                    # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
+                                    post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
+                                    self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                        torch.mean(pred_d_real.detach() - post_G_step_D_scores,
+                                                   dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                    if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
+                                        self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                            torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
+                                                       dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
                         self.log_dict['Z_effect'].append((self.gradient_step_num, np.mean(self.Z_effect_grad_step)))
