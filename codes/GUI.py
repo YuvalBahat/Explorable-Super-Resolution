@@ -955,7 +955,7 @@ class Canvas(QLabel):
             desired_image = rgb2ycbcr(1*desired_image)
             fixed_image = rgb2ycbcr(1*fixed_image)
         def crop_padding(array):
-            return np.pad(array, (tuple(padding[0]), tuple(padding[1]))) if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)))
+            return np.pad(array, (tuple(padding[0]), tuple(padding[1])),mode='constant') if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)),mode='constant')
 
         fixed_im_coeffs = self.SR_model.jpeg_compressor_Y(torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
         original_rectangle = 1 * desired_mask_bounding_rect
@@ -1065,8 +1065,8 @@ class Canvas(QLabel):
             self.desired_graphic_input_rotation += 1 if 'counter' in modification else -1
             mask_centor_of_mass = np.argwhere(self.non_rotated_desired_im_HR_mask_4_imprinting).mean(0)
             padding_lengths = [np.maximum(0,(self.non_rotated_desired_im_HR_mask_4_imprinting.shape[i]-2*mask_centor_of_mass[i])*np.array([1,-1])).astype(int) for i in range(2)]
-            padded_mask = PIL_Image.fromarray(255*np.pad(self.non_rotated_desired_im_HR_mask_4_imprinting,(tuple(padding_lengths[0]),tuple(padding_lengths[1]))))
-            padded_input = PIL_Image.fromarray((255*np.pad(self.non_rotated_desired_graphic_input,(tuple(padding_lengths[0]),tuple(padding_lengths[1]),(0,0)))).astype(np.uint8))
+            padded_mask = PIL_Image.fromarray(255*np.pad(self.non_rotated_desired_im_HR_mask_4_imprinting,(tuple(padding_lengths[0]),tuple(padding_lengths[1])),mode='constant'))
+            padded_input = PIL_Image.fromarray((255*np.pad(self.non_rotated_desired_graphic_input,(tuple(padding_lengths[0]),tuple(padding_lengths[1]),(0,0)),mode='constant')).astype(np.uint8))
             rotated_mask = np.array(padded_mask.rotate(self.desired_graphic_input_rotation)).astype(self.desired_im_HR_mask_4_imprinting.dtype)/255
             rotated_input = np.array(padded_input.rotate(self.desired_graphic_input_rotation)).astype(self.desired_graphic_input.dtype)/255
             self.desired_im_HR_mask_4_imprinting = 1*rotated_mask[padding_lengths[0][0]:util.IndexingHelper(-1*padding_lengths[0][1],True),padding_lengths[1][0]:util.IndexingHelper(-1*padding_lengths[1][1],True)]
@@ -2349,7 +2349,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     output_tensor /= self.Q_Tables[1].reshape([1,1,64])
                 assert np.all(output_tensor.round() == output_tensor), 'Expected the DCT coefficients divided by the saved Q-table to be integers'
                 output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],1,8,1,8)
-                output_tensor = np.pad(output_tensor,((0,0),(0,0),(0,1),(0,0),(0,1),(0,0)))
+                output_tensor = np.pad(output_tensor,((0,0),(0,0),(0,1),(0,0),(0,1),(0,0)),mode='constant')
                 output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],256)
                 return torch.from_numpy(output_tensor.transpose((2,0,1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
             dct_y, dct_cb, dct_cr = jpeg_load(path,normalized=LOAD_NORMALIZED)
