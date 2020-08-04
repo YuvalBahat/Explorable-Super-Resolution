@@ -98,7 +98,7 @@ class DecompCNNModel(BaseModel):
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
-                assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD']
+                assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD','SeparateBatch']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
                 if self.DCT_discriminator:
                     self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
@@ -110,6 +110,7 @@ class DecompCNNModel(BaseModel):
                 self.netD.train()
             self.netG.train()
             self.mixed_Y_4_training = self.D_exists and self.chroma_mode
+            self.separate_G_D_batches_counter = util.Counter(2 if (self.D_exists and self.opt['train']['G_Dbatch_separation'] =='SeparateBatch') else 1)
         else:
             self.DCT_discriminator,self.mixed_Y_4_training = False,False
         # self.mixed_Y_4_training = self.D_exists and self.is_train and self.chroma_mode
@@ -428,16 +429,25 @@ class DecompCNNModel(BaseModel):
         if first_grad_accumulation_step_D or self.generator_step:
             G_grads_retained = True
             self.Set_Require_Grad_Status(self.netG,True)
-            # for p in self.netG.parameters():
-            #     p.requires_grad = True
         else:
             G_grads_retained = False
             self.Set_Require_Grad_Status(self.netG, False)
-            # for p in self.netG.parameters():
-            #     p.requires_grad = False
-        actual_dual_step_steps = int(self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED))+1 # 2 if I actually have an optimized-Z step, 1 otherwise
+        performing_optimized_Z_steps = self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED)
+        performing_non_optimized_Z_steps = any([getattr(self,a) is not None for a in ['cri_gan','cri_pix','cri_latent','cri_fea']])
+        actual_dual_step_steps = int(performing_optimized_Z_steps)+int(performing_non_optimized_Z_steps) # 2 if I actually have an optimized-Z step, 1 otherwise
+        G_step_batch = self.separate_G_D_batches_counter.max_val==1 or self.separate_G_D_batches_counter.counter==1
+        D_step_batch = self.separate_G_D_batches_counter.counter==0
+        self.generator_step = G_step_batch and (self.gradient_step_num) % max(
+            [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
+        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+        self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+        if not (D_step_batch or self.generator_step): #In case this is going to be a wasted step, where both G and D don't learn, make it a D step:
+            D_step_batch = True
+            self.separate_G_D_batches_counter.advance()
+        self.separate_G_D_batches_counter.advance()
         for possible_dual_step_num in range(actual_dual_step_steps):
-            optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
+            # optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
+            optimized_Z_step = performing_optimized_Z_steps and possible_dual_step_num==0 #I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
             first_dual_batch_step = possible_dual_step_num==0
             last_dual_batch_step = possible_dual_step_num==(actual_dual_step_steps-1)
 
@@ -454,10 +464,6 @@ class DecompCNNModel(BaseModel):
                 else:
                     data_dict = {'Uncomp': self.var_Uncomp[self.Y_channel_is_fake],'desired': torch.clamp(self.var_Uncomp[self.Y_channel_is_fake] / 255, 0, 1),'QF': self.QF[self.Y_channel_is_fake]}
 
-                # data_dict = {'Uncomp':self.var_Uncomp[self.Y_channel_is_fake,0].unsqueeze(1),
-                #     'desired':self.var_Uncomp[self.Y_channel_is_fake]/255,'QF':self.QF[self.Y_channel_is_fake]}
-                # if self.chroma_mode:
-                #     data_dict['chroma_input'] = self.var_Uncomp[self.Y_channel_is_fake,1:]
                 self.Z_optimizer.feed_data(data_dict)
                 if self.mixed_Y_4_training:
                     # In this case, fake_H has half the batch_size images, so the rest of the images (whose Y channel is real) should be loaded back.
@@ -477,19 +483,14 @@ class DecompCNNModel(BaseModel):
             if self.chroma_mode:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
             self.Prepare_D_input(self.fake_H)
-            # self.D_fake_input = self.fake_H
-            # if not self.DCT_discriminator:
-            #     self.D_fake_input = self.output_image
-            # if self.concatenated_D_input:
-            #     self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
-            # if self.Z_injected_2_D:
-            #     self.D_fake_input = torch.cat([self.GetLatent().type(self.D_fake_input.type()), self.D_fake_input], 1)
+
             # D
             l_d_total = 0
             if not self.D_exists:
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
+                self.generator_Z_opt_only_step = 1*self.generator_step
             else:
-                if ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num >= -self.D_init_iters:
+                if D_step_batch and ((self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0) and self.gradient_step_num >= -self.D_init_iters:
                     self.Set_Require_Grad_Status(self.netD, True)
                     self.Set_Require_Grad_Status(self.netG, False)
                     if first_grad_accumulation_step_D and first_dual_batch_step:
@@ -534,11 +535,9 @@ class DecompCNNModel(BaseModel):
                     self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
                     # self.D_logits_diff_grad_step.append(torch.mean(pred_d_real.detach()-pred_d_fake.detach()).item())
                     if first_grad_accumulation_step_D and first_dual_batch_step:
-                        self.generator_step = (self.gradient_step_num) % max(
-                            [1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
-                        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                        self.generator_step = self.generator_step and self.step % \
-                                              self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+                        # self.generator_step = (self.gradient_step_num) % max([1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
+                        # # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                        # self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
 
                         self.generator_Z_opt_only_step = Z_OPTIMIZATION_WHEN_D_UNVERIFIED and self.generator_step
                         if self.generator_step:
@@ -613,8 +612,8 @@ class DecompCNNModel(BaseModel):
                         # self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
             # G step:
-            l_g_total = 0
-            if self.generator_step or self.generator_Z_opt_only_step:
+            if G_step_batch and (self.generator_step or self.generator_Z_opt_only_step):
+                l_g_total = 0
                 self.generator_started_learning = True
                 if self.D_exists:
                     self.Set_Require_Grad_Status(self.netD, False)
@@ -704,13 +703,14 @@ class DecompCNNModel(BaseModel):
                                     self.Prepare_D_input(self.netG(self.model_input))
                                     # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
                                     post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
-                                    self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
-                                        torch.mean(pred_d_real.detach() - post_G_step_D_scores,
-                                                   dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                    if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': #It doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                        self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                            torch.mean(pred_d_real.detach() - post_G_step_D_scores,
+                                                       dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
                                     if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
                                         self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                             torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
-                                                       dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                                       dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
 
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))

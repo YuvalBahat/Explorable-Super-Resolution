@@ -70,6 +70,14 @@ def SVD_Symmetric_2x2(a,d,b):
     lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
     return lambda0,lambda1,theta
 
+class Counter:
+    def __init__(self,max_val):
+        self.max_val = max_val
+        self.counter = 0
+
+    def advance(self):
+        self.counter = (self.counter+1)%self.max_val
+
 ####################
 # image convert
 ####################
