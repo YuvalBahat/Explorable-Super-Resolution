@@ -78,6 +78,34 @@ class Counter:
     def advance(self):
         self.counter = (self.counter+1)%self.max_val
 
+class G_D_updates_controller:
+    def __init__(self,intervals_range,values_range):
+        self.DG_steps_ratio = 0
+        self.steps_since_D = 0
+        self.steps_since_G = 0
+
+        def interval_func(value):
+            a = (intervals_range[1]-intervals_range[0])/(values_range[1]-values_range[0])
+            return np.maximum(np.min(intervals_range),np.minimum(np.max(intervals_range),a*(value-values_range[1])+intervals_range[1]))
+
+        self.interval_func = interval_func
+
+    def Step_query(self,GnotD):
+        if GnotD: #G:
+            self.steps_since_G += 1
+            if self.steps_since_G>=self.DG_steps_ratio:
+                self.steps_since_G = 0
+                return True
+        else: #D:
+            self.steps_since_D += 1
+            if self.steps_since_D>=-1*self.DG_steps_ratio:
+                self.steps_since_D = 0
+                return True
+        return False
+
+    def Update_ratio(self,value):
+        self.DG_steps_ratio = self.interval_func(value)
+
 ####################
 # image convert
 ####################
