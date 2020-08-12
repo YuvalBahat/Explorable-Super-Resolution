@@ -749,7 +749,7 @@ class DecompCNNModel(BaseModel):
                                             torch.mean(pred_d_real.detach() - post_G_step_D_scores,
                                                        dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
                                         if self.GD_update_controller is not None:
-                                            self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
+                                            self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
                                     if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
                                         self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                             torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
