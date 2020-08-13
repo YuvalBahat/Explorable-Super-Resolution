@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF5_AUTOupdatesRatio_-002_01Win100range0_-10_Z5FirstLayer_LR1e-4_DnoFC" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf160nb10_QF5_AUTOupdatesRatio_-002_01Win100range0_-10_Z1FirstLayer_LR1e-4_DnoFC" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -55,7 +55,7 @@
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": 5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": 1 //5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
     , "nf": 160 //320 //94 //320
