@@ -344,7 +344,11 @@ class DecompCNNModel(BaseModel):
             if 'Z' in data.keys():
                 cur_Z = data['Z']
             else:
-                cur_Z = torch.rand([input_size[0], self.num_latent_channels, 1, 1])
+                SPATIALLY_UNIFORM_SAMPLED_Z = False
+                if SPATIALLY_UNIFORM_SAMPLED_Z:
+                    cur_Z = torch.rand([input_size[0], self.num_latent_channels, 1, 1])
+                else:
+                    cur_Z = torch.rand([input_size[0], self.num_latent_channels]+DCT_dims)
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
                     cur_Z = cur_Z[:,:3,...]
                     cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
@@ -443,20 +447,6 @@ class DecompCNNModel(BaseModel):
                     else:
                         self.discriminator_step = self.GD_update_controller.Step_query(False)
 
-            # else:
-            # if self.global_D_update_ratio>0:
-            #     self.cur_D_update_ratio = self.global_D_update_ratio
-            #     if SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP and not self.verified_D_saved:
-            #         self.cur_D_update_ratio = 1
-            # elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
-            #     self.cur_D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
-            # else:#Varying update ratio:
-            #     log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
-            #     if log_mean_D_diff<-2:
-            #         self.cur_D_update_ratio = int(-2*np.ceil((log_mean_D_diff+1)*2)/2)
-            #     else:
-            #         self.cur_D_update_ratio = 1/max(1,int(np.floor((log_mean_D_diff+2)*20)))
-        # G
         if first_grad_accumulation_step_D or self.generator_step:
             G_grads_retained = True
             self.Set_Require_Grad_Status(self.netG,True)
@@ -466,21 +456,6 @@ class DecompCNNModel(BaseModel):
         performing_optimized_Z_steps = self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED)
         performing_non_optimized_Z_steps = any([getattr(self,a) is not None for a in ['cri_gan','cri_pix','cri_latent','cri_fea']])
         actual_dual_step_steps = int(performing_optimized_Z_steps)+int(performing_non_optimized_Z_steps) # 2 if I actually have an optimized-Z step, 1 otherwise
-        # G_step_batch = self.separate_G_D_batches_counter.max_val==1 or self.separate_G_D_batches_counter.counter==1
-        # D_step_batch = self.separate_G_D_batches_counter.counter==0
-        # self.generator_step = False
-        # if G_step_batch:
-        #     self.generator_step = self.gradient_step_num > self.D_init_iters
-        #     if self.generator_step:
-        #         if self.GD_update_controller is None:
-        #             self.generator_step = self.gradient_step_num % max([1, self.cur_D_update_ratio]) == 0
-        #             # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-        #             self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-        #         else:
-        #             self.generator_step = self.GD_update_controller.Step_query(True)
-        if not (D_step_batch or self.generator_step): #In case this is going to be a wasted step, where both G and D don't learn, make it a D step:
-            D_step_batch = True
-            self.separate_G_D_batches_counter.advance()
         self.separate_G_D_batches_counter.advance()
         for possible_dual_step_num in range(actual_dual_step_steps):
             # optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
@@ -527,22 +502,10 @@ class DecompCNNModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
                 self.generator_Z_opt_only_step = 1*self.generator_step
             else:
-                # perform_D_step = D_step_batch.copy()
-                # if perform_D_step:
-                #     perform_D_step = self.gradient_step_num >= -self.D_init_iters
-                #     if self.GD_update_controller is None:
-                #         perform_D_step = self.gradient_step_num % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0
-                #     else:
-                #         perform_D_step = self.GD_update_controller.Step_query(False)
                 if self.discriminator_step:
                     self.Set_Require_Grad_Status(self.netD, True)
                     self.Set_Require_Grad_Status(self.netG, False)
                     if first_grad_accumulation_step_D and first_dual_batch_step:
-                        # if self.G_steps_since_D > 0:
-                        #     self.log_dict['D_update_ratio'].append((self.gradient_step_num, 1 / self.G_steps_since_D))
-                        # else:
-                        #     self.D_steps_since_G += 1
-                        # self.G_steps_since_D = 0
                         self.optimizer_D.zero_grad()
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step,self.D_G_prob_ratio_grad_step\
                             = [],[],[],[],[],[]
