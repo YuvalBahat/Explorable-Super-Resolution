@@ -151,7 +151,7 @@ def main():
                                  range(len(cur_train_results['Decomp']))],0), np.concatenate(
                                 [util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]) for im_num in range(len(cur_train_results['Decomp']))],
                                 0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                    Z_latent = [0]+([-0.5,0.5] if opt['network_G']['latent_input'] else [])
+                    Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
                     print_rlt['psnr'] = 0
                     for cur_Z in Z_latent:
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,

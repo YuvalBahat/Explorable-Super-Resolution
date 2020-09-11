@@ -179,12 +179,13 @@ class BaseModel():
             print('Warning: %d model weights were augmented with zeros to accommodate for larger inputs' % (zero_extended_weights_counter))
         return modified_state_dict
 
-    def plot_curves(self,steps,loss,extra_smoothed=False):
-        SMOOTH_CURVES = True
-        if SMOOTH_CURVES:
+    def plot_curves(self, steps, loss, smoothing='yes'):
+        assert smoothing in ['yes','no','extra']
+        # SMOOTH_CURVES = True
+        if smoothing!='no':
             steps_induced_upper_bound = np.ceil(1000/np.percentile(np.diff(steps),99)) if len(steps)>1 else 1
             smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
-            if extra_smoothed:
+            if smoothing=='extra':
                 smoothing_win = np.minimum(len(loss)//3,smoothing_win*100)
             loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
             if steps is not None:
@@ -200,6 +201,7 @@ class BaseModel():
         keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
                           'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ','l_g_pix','l_g_highpass','l_g_shift_invariant','D_update_ratio',
                           'D_G_prob_ratio','Correctly_distinguished','Z_effect','post_train_D_diff','G_step_D_gain']
+        NON_SMOOTHED_LOGS = ['post_train_D_diff','D_update_ratio','D_logits_diff']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)
@@ -212,7 +214,7 @@ class BaseModel():
                     plt.clf()
                 if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
                     cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1],smoothing='no' if key in NON_SMOOTHED_LOGS else 'yes')
                     if 'LR_decrease' in self.log_dict.keys():
                         for decrease in self.log_dict['LR_decrease']:
                             plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
@@ -230,7 +232,7 @@ class BaseModel():
                         series_avg = np.mean(self.log_dict[key])
                 cur_legend_string = [key + ' (%.2e)' % (series_avg)]
                 if len(cur_curve[0])>100:
-                    self.plot_curves(cur_curve[0],cur_curve[1],extra_smoothed=True)
+                    self.plot_curves(cur_curve[0], cur_curve[1], smoothing='extra')
                     cur_legend_string.append(key+'_smoothed')
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
@@ -247,7 +249,7 @@ class BaseModel():
                         cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
                     else:
                         cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1],smoothing='no' if key in NON_SMOOTHED_LOGS else 'yes')
                     min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
                 legend_strings.append(cur_legend_string[0])
         plt.legend(legend_strings,loc='best')

@@ -94,17 +94,33 @@ class G_D_updates_controller:
         if GnotD: #G:
             self.steps_since_G += 1
             if self.steps_since_G>=self.DG_steps_ratio:
-                self.steps_since_G = 0
+                # self.steps_since_G = 0
                 return True
         else: #D:
             self.steps_since_D += 1
             if self.steps_since_D>=-1*self.DG_steps_ratio:
-                self.steps_since_D = 0
+                # self.steps_since_D = 0
                 return True
         return False
 
+    def Step_performed(self,GnotD):
+        if GnotD: #G:
+            self.steps_since_G = 0
+        else:  # D:
+            self.steps_since_D = 0
+
     def Update_ratio(self,value):
         self.DG_steps_ratio = self.interval_func(value)
+
+    def Query_update_ratio(self):
+        if (self.DG_steps_ratio<0 and self.steps_since_G>-1*self.DG_steps_ratio) or (self.DG_steps_ratio>0 and self.steps_since_D>self.DG_steps_ratio):
+            if self.steps_since_G>self.steps_since_D:
+                return -1*self.steps_since_G
+            else:
+                return self.steps_since_D
+        else:
+            return self.DG_steps_ratio
+
 
 ####################
 # image convert
