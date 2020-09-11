@@ -9,7 +9,7 @@ import argparse
 from models import create_model
 import options.options as option
 import utils.util as util
-from Z_optimization import Z_optimizer,ReturnPatchExtractionMat
+from Z_optimization import Z_optimizer,ReturnPatchExtractionMat,Recurrence_Optimizer
 from utils.logger import Logger
 import data.util as data_util
 import numpy as np
@@ -83,6 +83,7 @@ AUTO_CYCLE_LENGTH_4_PERIODICITY = True
 
 # SR-only parameters:
 DISPLAY_ESRGAN_RESULTS = True
+INTERNAL_RECURRENCE_OPT = True
 
 # JPEG-only tools:
 MAXIMAL_JPEG_QF = 49
@@ -1316,6 +1317,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
         self.opt = option.dict_to_nonedict(self.opt)
         self.display_ESRGAN = not self.JPEG_GUI and DISPLAY_ESRGAN_RESULTS and 'pretrained_ESRGAN' in self.opt['path'].keys()
+        self.recurrence_opt_enabled = not self.JPEG_GUI and INTERNAL_RECURRENCE_OPT
         self.canvas = Canvas()
         self.setupUi()
         # Replace canvas placeholder from QtDesigner.
@@ -1371,6 +1373,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.JPEG_GUI:
             self.estimatedKenrel_button.setEnabled(False)
             self.open_image_button.setEnabled(False) #Loading existing jpg files is not yet enabled
+        if self.recurrence_opt_enabled:
+            self.canvas.recurrence_optimizer =  None
         self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.SR_model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
         self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
         self.canvas.statusBar = self.statusBar
@@ -1439,6 +1443,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
         if self.auto_hist_temperature_mode_Enabled:
             self.auto_hist_temperature_mode_button.clicked.connect(lambda checked:self.AutoHistTemperatureMode(checked))
+        self.recurrence_button.clicked.connect(lambda x:self.Optimize_Z_recurrence())
         # Periodicity:
         self.IncreasePeriodicity_2D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.IncreasePeriodicity_1D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity_1D', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
@@ -1856,6 +1861,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             size_factor = [self.canvas.HR_size[i]/cur_attr_size[i] for i in range(2)]
             assert size_factor[0]==size_factor[1],'Unisotropic scale factor'
             Set_Inner_Attr(key, self.Crop2BoundingRect(cur_attr, bounding_rect=bounding_rect, SF=size_factor[0]))
+
+    def Optimize_Z_recurrence(self):
+        if self.canvas.recurrence_optimizer is None:
+            data = {'LR': self.var_L}
+            self.canvas.recurrence_optimizer = Recurrence_Optimizer(Z_size=[val*self.canvas.SR_model.Z_size_factor for val in self.var_L.size()[2:]],model=self.canvas.SR_model,
+                Z_range=self.max_SVD_Lambda,data=data,max_iters=1000)
+        self.statusBar.showMessage('Optimizing for across-scale recurrence')
+        self.cur_Z = self.canvas.recurrence_optimizer.optimize()
+        self.statusBar.showMessage('Done optimizing for across-scale recurrence', INFO_MESSAGE_DURATION)
+        self.canvas.recurrence_optimizer = None
+        self.DeriveControlValues()
+        self.ReProcess()
 
     def Optimize_Z(self,objective,loop=False):
         if self.special_behavior_button.isChecked():

@@ -302,6 +302,9 @@ class Ui_MainWindow(object):
         self.STD_increment.setToolTip('STD/Brightness change')
         self.Set_Button_Size(self.STD_increment,[2,1])
 
+        # Internal recurrence optimization:
+        if self.recurrence_opt_enabled:
+            self.Define_Button('recurrence','Trigger internal recurrence maximization',action_not_push=True)
 
         ###### Defining layouts holding groups of buttons:
         load_and_save = self.Define_Grid_layout(layout_name='Load & Save',
@@ -324,6 +327,7 @@ class Ui_MainWindow(object):
                           self.redoZ_button]+([self.estimatedKenrel_button] if not self.JPEG_GUI else []),layout_cols=3)
         optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[self.IncreaseSTD_button,self.DecreaseSTD_button,self.DecreaseTV_button,
             self.ImitateHist_button,self.ImitatePatchHist_button]+([self.FoolAdversary_button] if ENABLE_ADVERSARY_BUTTON_IN_SR else [])+
+            ([self.recurrence_button] if self.recurrence_opt_enabled else []) +
             [self.STD_increment,self.ProcessRandZ_button,self.ProcessLimitedRandZ_button]+
             ([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else []),layout_cols=4)
         scribbling_tool_buttons = [getattr(self,m+'_button') for m in ['pencil','line', 'polygon','ellipse', 'rect']]

@@ -317,6 +317,44 @@ class RRDBNet(nn.Module):
 ####################
 # Discriminator
 ####################
+class BasicBlock(nn.Module):
+    def __init__(self, in_channels=64, out_channels=64, kernel_size=3, bias=True, normalization=False,padding=False):
+        super(BasicBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, padding=(kernel_size // 2) if padding else 0000, bias=bias)
+        self.norm = nn.BatchNorm2d(num_features=out_channels)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+        arch_util.initialize_weights([self.conv], 0.1)
+
+        if normalization:
+            self.conv = SN.spectral_norm(self.conv)
+
+    def forward(self, x):
+        x = self.lrelu(self.norm(self.conv(x)))
+        return x
+
+
+class Internal_Discriminator(nn.Module):
+    def __init__(self, num_features, num_blocks,in_channels=3,padding=False):
+        super(Internal_Discriminator, self).__init__()
+
+        # image to features
+        self.image_to_features = BasicBlock(in_channels=in_channels, out_channels=num_features * pow(2, num_blocks - 1),padding=padding)
+
+        # features
+        blocks = []
+        for i in range(num_blocks - 1, 0, -1):
+            blocks.append(BasicBlock(in_channels=num_features * pow(2, i), out_channels=num_features * pow(2, i - 1), normalization=True,padding=padding))
+        self.features = nn.Sequential(*blocks)
+
+        # classifier
+        self.classifier = SN.spectral_norm(nn.Conv2d(in_channels=num_features, out_channels=1, kernel_size=3, padding=1 if padding else 0))
+
+    def forward(self, x):
+        x = self.image_to_features(x)
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
 
 class PatchGAN_Discriminator(nn.Module):
     DEFAULT_N_LAYERS = 3
@@ -831,57 +869,6 @@ def convMeanpool(inplanes, outplanes):
     sequence += [conv3x3(inplanes, outplanes)]
     sequence += [nn.AvgPool2d(kernel_size=2, stride=2)]
     return nn.Sequential(*sequence)
-
-class BasicBlock(nn.Module):
-    def __init__(self, inplanes, outplanes, norm_layer=None, nl_layer=None):
-        super(BasicBlock, self).__init__()
-        layers = []
-        if norm_layer is not None:
-            layers += [norm_layer(inplanes)]
-        layers += [nl_layer()]
-        layers += [conv3x3(inplanes, inplanes)]
-        if norm_layer is not None:
-            layers += [norm_layer(inplanes)]
-        layers += [nl_layer()]
-        layers += [convMeanpool(inplanes, outplanes)]
-        self.conv = nn.Sequential(*layers)
-        self.shortcut = meanpoolConv(inplanes, outplanes)
-
-    def forward(self, x):
-        out = self.conv(x) + self.shortcut(x)
-        return out
-
-class E_ResNet(nn.Module):
-    def __init__(self, input_nc=3, output_nc=1, ndf=64, n_blocks=4,
-                 norm_layer=None, nl_layer=None, vaeLike=False):
-        super(E_ResNet, self).__init__()
-        self.vaeLike = vaeLike
-        max_ndf = 4
-        conv_layers = [
-            nn.Conv2d(input_nc, ndf, kernel_size=4, stride=2, padding=1, bias=True)]
-        for n in range(1, n_blocks):
-            input_ndf = ndf * min(max_ndf, n)
-            output_ndf = ndf * min(max_ndf, n + 1)
-            conv_layers += [BasicBlock(input_ndf,
-                                       output_ndf, norm_layer, nl_layer)]
-        conv_layers += [nl_layer(), nn.AvgPool2d(8)]
-        if vaeLike:
-            self.fc = nn.Sequential(*[nn.Linear(output_ndf, output_nc)])
-            self.fcVar = nn.Sequential(*[nn.Linear(output_ndf, output_nc)])
-        else:
-            self.fc = nn.Sequential(*[nn.Linear(output_ndf, output_nc)])
-        self.conv = nn.Sequential(*conv_layers)
-
-    def forward(self, x):
-        x_conv = self.conv(x)
-        conv_flat = x_conv.view(x.size(0), -1)
-        output = self.fc(conv_flat)
-        if self.vaeLike:
-            outputVar = self.fcVar(conv_flat)
-            return output, outputVar
-        else:
-            return output
-        return output
 
 # Assume input range is [0, 1]
 class MINCFeatureExtractor(nn.Module):

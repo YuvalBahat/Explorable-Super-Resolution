@@ -321,6 +321,147 @@ def TV_Loss(image):
     # return torch.pow((image[:,:,:,:-1]-image[:,:,:,1:]).abs(),0.1).mean(dim=(1,2,3))+torch.pow((image[:,:,:-1,:]-image[:,:,1:,:]).abs(),0.1).mean(dim=(1,2,3))
     return (image[:,:,:,:-1]-image[:,:,:,1:]).abs().mean(dim=(1,2,3))+(image[:,:,:-1,:]-image[:,:,1:,:]).abs().mean(dim=(1,2,3))
 
+class Recurrence_Optimizer:
+    def __init__(self, Z_size, model, Z_range, data, max_iters, initial_pre_tanh_Z=None, LR_D=1e-4, LR_G=1e-1, scale=0.9, D_G_ratio=None):
+        self.Z_model = Optimizable_Z(Z_shape=[1,model.num_latent_channels] + list(Z_size), Z_range=Z_range,initial_pre_tanh_Z=initial_pre_tanh_Z,Z_mask=None)
+        self.data = data
+        self.max_iters = max_iters
+        self.model = model
+        self.optimizer_Z = torch.optim.Adam(self.Z_model.parameters(), lr=LR_G)
+        self.netD = arch.Internal_Discriminator(num_features=16,num_blocks=5).cuda()
+        self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=LR_D)
+        self.cur_iter = 0
+        self.HR_size = self.model.opt['network_G']['scale']*np.array(self.data['LR'].shape[2:])
+        self.scaling_OP = lambda x: torch.nn.functional.interpolate(x,size=tuple(np.round(scale*self.HR_size).astype(np.int)),mode='bicubic').clamp(min=0,max=1)
+        self.criterion = GANLoss("wgan-sn_hinge",1.0,0.0).to(self.model.device)
+        self.auto_iter_z_steps = D_G_ratio is None
+        self.D_G_ratio = 1 if self.auto_iter_z_steps else D_G_ratio
+
+    def optimize(self):
+        IGNORE_MARGINS = False
+        HINGE_LOSS = True
+        DESIRED_LOSS_FRACTION = 0.85
+        self.Manage_Model_Grad_Requirements(True)
+        self.G_loss_values,self.D_loss_values,self.logits_diff,self.G_learning = [],[],[],[]
+
+        z_iter = self.cur_iter
+        G_steps_gap = 1 if self.D_G_ratio<1 else self.D_G_ratio
+        D_steps_gap = 1 if self.D_G_ratio>=1 else int(1/self.D_G_ratio)
+        D_step = True
+        while True:
+            if self.max_iters>0:
+                if z_iter==(self.cur_iter+self.max_iters):
+                    break
+            # elif len(self.loss_values)>=-self.max_iters:# Would stop when loss siezes to decrease, or after 5*(-)max_iters
+            #     if z_iter==(self.cur_iter-5*self.max_iters):
+            #         break
+            #     if (self.loss_values[self.max_iters] - self.loss_values[-1]) / np.abs(self.loss_values[self.max_iters]) < 1e-2 * self.LR:
+            #         break
+            self.data['Z'] = self.Z_model()
+            self.model.feed_data(self.data, need_GT=False)
+            self.model.test(prevent_grads_calc=False)
+            self.output_image = self.model.Output_Batch(within_0_1=False)
+            if IGNORE_MARGINS:
+                self.output_image = self.model.CEM_net.HR_unpadder(self.output_image)
+            G_step = z_iter%G_steps_gap==0
+            if not self.auto_iter_z_steps:
+                D_step = z_iter % D_steps_gap == 0
+            if self.auto_iter_z_steps or D_step:
+                downsampled_output = self.scaling_OP(self.output_image)
+                downsampled_d_prediction = self.netD(downsampled_output.detach())
+            if D_step:
+                self.optimizer_D.zero_grad()
+                sr_d_prediction = self.netD(self.output_image.detach())
+                l_d_downsampled  = 2 * self.criterion(downsampled_d_prediction, True,HINGE_LOSS)  # Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                l_d_sr = 2 * self.criterion(sr_d_prediction, False,HINGE_LOSS)
+                l_d_total = (l_d_downsampled + l_d_sr) / 2
+                l_d_total.backward()
+                self.optimizer_D.step()
+                self.D_loss_values.append((z_iter,l_d_total.item()))
+            if self.auto_iter_z_steps or D_step:
+                self.logits_diff.append((z_iter,downsampled_d_prediction.mean().item()-sr_d_prediction.mean().item()))
+            if G_step:
+                # internal_G_iters = 0
+                # internal_iters_loss = []
+                self.optimizer_Z.zero_grad()
+                sr_d_prediction = self.netD(self.output_image)
+                l_z_total = self.criterion(sr_d_prediction, True)
+                # internal_iters_loss.append(l_z_total.item())
+                G_loss = l_z_total.item()
+                if D_step:# Recomputing downsampled_d_prediction after D's update, as it is going to serve as reference if self.auto_iter_z_steps:
+                    with torch.no_grad():
+                        downsampled_d_prediction = self.netD(self.scaling_OP(self.output_image).detach())
+                cur_logits_diff = downsampled_d_prediction.mean().item()-sr_d_prediction.mean().item()
+                if D_step:
+                    # initial_G_loss = 1*G_loss
+                    initial_logits_diff = 1*cur_logits_diff
+                l_z_total.backward()
+                self.optimizer_Z.step()
+                self.G_loss_values.append((z_iter,G_loss))
+                if self.auto_iter_z_steps:
+                    # D_step = G_loss<0 or G_loss<DESIRED_LOSS_FRACTION*initial_G_loss
+                    D_step = cur_logits_diff < 0 or cur_logits_diff < DESIRED_LOSS_FRACTION * initial_logits_diff
+                # #   Checking wheather G learned:
+                # self.model.test(prevent_grads_calc=True)
+                # self.output_image = self.model.Output_Batch(within_0_1=True)
+                # if IGNORE_MARGINS:
+                #     self.output_image = self.model.CEM_net.HR_unpadder(self.output_image)
+                # self.G_learning.append((z_iter,G_loss/initial_G_loss))
+                self.G_learning.append((z_iter,cur_logits_diff/initial_logits_diff))
+
+
+            cur_LR = self.optimizer_Z.param_groups[0]['lr']
+            # if self.loggers is not None:
+            #     for logger_num,logger in enumerate(self.loggers):
+            #         cur_value = Z_loss[logger_num].item() if Z_loss.dim()>0 else Z_loss.item()
+            #         logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': cur_value}, dont_print=True)
+            # if not self.model_training:
+            #     self.latest_Z_loss_values = [val.item() for val in Z_loss]
+            # self.loss_values.append(Z_loss.item())
+            # if self.scheduler is not None:
+            #     self.scheduler.step(Z_loss)
+            #     if cur_LR<=1.2*self.MIN_LR:
+            #         break
+            z_iter += 1
+        # if 'Adversarial' in self.objective:
+        #     self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
+        # if 'STD' in self.objective or 'periodicity' in self.objective:
+        # if not self.model_training:
+        #     print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
+        if False:
+            import matplotlib.pyplot as plt
+            plt.clf()
+            plt.plot([v[0] for v in self.G_learning], [v[1] for v in self.G_learning])
+            plt.title('Average inter-D-steps gap: %.3f'%(np.diff([v[0] for v in self.D_loss_values]).mean()))
+            import matplotlib.pyplot as plt
+            plt.clf()
+            plt.plot([v[0] for v in self.G_loss_values],[v[1] for v in self.G_loss_values])
+            plt.plot([v[0] for v in self.D_loss_values],[v[1] for v in self.D_loss_values])
+            plt.plot([v[0] for v in self.logits_diff],[v[1] for v in self.logits_diff])
+            plt.legend(['G','D','Logits_diff'])
+        self.cur_iter = z_iter+1
+        Z_2_return = self.Z_model.Return_Detached_Z()
+        self.Manage_Model_Grad_Requirements(verify_disabled=False)
+        # if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
+        #     self.data['Z'] = Z_2_return
+        #     if 'Uncomp' in self.data.keys():
+        #         self.data['Uncomp'] = 1 * Uncomp_batch
+        #     self.model.feed_data(self.data, need_GT=False)
+        #     self.model.fake_H = self.model.netG(self.model.model_input)
+        print('%.4f of the resulting image''s pixels are within the valid range.'%(((self.output_image>=0)*(self.output_image<=1)).float().mean()))
+        return Z_2_return
+
+    def Manage_Model_Grad_Requirements(self, verify_disabled):
+        if verify_disabled:
+            self.original_requires_grad_status = []
+            for p in self.model.netG.parameters():
+                self.original_requires_grad_status.append(p.requires_grad)
+                p.requires_grad = False
+        else:
+            for i, p in enumerate(self.model.netG.parameters()):
+                p.requires_grad = self.original_requires_grad_status[i]
+
+
 class Z_optimizer():
     MIN_LR = 1e-5
     PATCH_SIZE_4_STD = 7
@@ -540,8 +681,8 @@ class Z_optimizer():
             elif 'limited' in objective:
                 self.initial_image = 1*model.output_image.detach()
                 self.rmse_weight = data['rmse_weight']
-            # elif 'recurrence' in objective:
-            #     self.netD = arch.
+            elif 'recurrence' in objective:
+                self.netD = arch.Internal_Discriminator()
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
         else:
             self.optimizer = existing_optimizer
@@ -576,8 +717,8 @@ class Z_optimizer():
         elif 'hist' in self.objective:
             self.loss.Feed_Desired_Hist_Im(data['desired'].to(self.device))
 
-    def Manage_Model_Grad_Requirements(self,disable):
-        if disable:
+    def Manage_Model_Grad_Requirements(self,verify_disabled):
+        if verify_disabled:
             self.original_requires_grad_status = []
             for p in self.model.netG.parameters():
                 self.original_requires_grad_status.append(p.requires_grad)
@@ -590,7 +731,7 @@ class Z_optimizer():
         DETACH_Y_FOR_CHROMA_TRAINING = False
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
-        self.Manage_Model_Grad_Requirements(disable=True)
+        self.Manage_Model_Grad_Requirements(verify_disabled=True)
         self.loss_values = []
         if self.random_Z_inits and self.cur_iter==0:
             self.Z_model.Randomize_Z(what_2_shuffle=self.random_Z_inits)
@@ -694,7 +835,7 @@ class Z_optimizer():
             print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
-        self.Manage_Model_Grad_Requirements(disable=False)
+        self.Manage_Model_Grad_Requirements(verify_disabled=False)
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             if 'Uncomp' in self.data.keys():
