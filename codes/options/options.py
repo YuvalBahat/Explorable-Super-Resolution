@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 from socket import gethostname
 import numpy as np
+from deepdiff import DeepDiff
 try:
     import GPUtil
 except:
@@ -27,7 +28,31 @@ import time
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
+def print_config_change(dict,key):
+    print('%s:' % (key))
+    print('\tFrom: %s' % (dict[key]['old_value']))
+    print('\tTo: %s' % (dict[key]['new_value']))
+
 def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
+    opt = parse_conf(opt_path=opt_path,is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
+    if is_train and opt['train']['resume']:
+        saved_opt = parse_conf(opt_path=os.path.join(opt['path']['experiments_root'],'options.json'),is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
+        saved_opt['train']['resume'] = opt['train']['resume']
+        opt_diff = DeepDiff(opt,saved_opt)
+        if len(opt_diff.keys())>0:
+            print('Using some saved configuration values that are different from the current ones. This means changing:')
+            [print_config_change(opt_diff['values_changed'],key) for key in opt_diff['values_changed']]
+            [print_config_change(opt_diff['type_changes'],key) for key in opt_diff['type_changes']]
+            if any([key not in ['values_changed','type_changes'] for key in opt_diff]):
+                print('More configuration keys added or removed...')
+            # for key in opt_diff['dictionary_item_added'].keys():
+            #     print('%s:'%(key))
+            #     print('\tFrom: %s'%(opt_diff['values_changed'][key]['old_value']))
+            #     print('\tTo: %s' % (opt_diff['values_changed'][key]['new_value']))
+        return saved_opt
+    return opt
+
+def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     # remove comments starting with '//'
     json_str = ''
     with open(opt_path, 'r') as f:
@@ -45,7 +70,8 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
                 opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
         else:
             opt['input_downsampling'] = 1
-        opt['name'] = os.path.join('JPEG', opt['name'])
+        if opt['name'][:len('JPEG/')]!='JPEG/': #Accomodating the case where the name was already modified, in which case I shouldn't add another 'JPEG/' prefix:
+            opt['name'] = os.path.join('JPEG', opt['name'])
         opt['scale'] = 8*opt['input_downsampling']
     scale = opt['scale']
     opt['timestamp'] = get_timestamp()

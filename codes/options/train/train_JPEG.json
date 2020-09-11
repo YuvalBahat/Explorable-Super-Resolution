@@ -1,5 +1,5 @@
 {
-  "name": "nf160nb10_QF5_AUTOupdatesRatio_-002_01Win100range0_-10_Z5F_NonUniformZ_fromMSE" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nfG480D253nbG10D5_QF5_AUTOupdatesRatio_0_01Win1range4_-10_Z0_fromAndWithMSE1e-3_Hinge0_3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -35,10 +35,10 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5/models/328175_G.pth"
-//    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
-//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/chroma_nf160nb10_QF5_50_LR1e-4/models/2000001_G.pth"
-//    , "pretrained_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5_Z5/models/328175_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5/models/47414_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5/models/85000_G.pth"
+    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf480nb10_QF5/models/250652_G.pth"
 //    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/743643_G.pth"
@@ -55,10 +55,10 @@
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
-    , "latent_channels": 5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": 0 //5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
-    , "nf": 160 //320 //94 //320
+    , "nf": 480 //94 //320
     , "nb": 10 //9 //10 //17
     , "in_nc": 64
     , "out_nc": 64
@@ -90,7 +90,8 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-//    , "nf": 40 //64
+    , "nf": 253 //160 //64
+    , "nb": 5
 //    , "in_nc": 1
   }
 
@@ -106,7 +107,7 @@
     , "beta1_D": 0.5 //0.9 //0.0
     , "beta2_D": 0.9 //None
     , "lr_scheme": "MultiStepLR"
-    , "steps_4_loss_std": 100 //500
+    , "steps_4_loss_std": 1 //500
     , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
@@ -115,37 +116,38 @@
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "gan_type": "wgan-sn_hinge" //,"vanilla","lsgan","wgan-gp","wgan-sn"
+    , "gan_type": "wgan-sn" //,"vanilla","lsgan","wgan-gp","wgan-sn"
+    , "hinge_threshold": 0.3 //Comment if not using hinge loss
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "Num_Z_iterations": [2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
-//    , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
+    , "Num_Z_iterations": [10] //[2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
+//    , "D_verification": "current" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
-    , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
+    , "min_D_prob_ratio_4_G": 1 //0.01 //1.05
     , "min_mean_D_correct": 0.1 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": [[0,-10],[-0.02,0.1]] //1 //3 //10 //0 //1
+    , "D_update_ratio": [[4,-10],[0,0.1]] //1 //3 //10 //0 //1
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
 //      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
+//    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
-    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 5e-3 //5e-4 //0 //100
+//    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+//    , "optimalZ_loss_weight": 5e-3 //5e-4 //0 //100
     , "range_weight": 1 //0 //5000
-//    , "pixel_weight": 1e-2 //1e-3 //1e-2
+    , "pixel_weight": 1e-3 //1e-2
 //    , "feature_weight": 0 //1
 //    , "gan_weight": 0 //5e-3 //1 //5e-3
-//    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-//    , "optimalZ_loss_weight": 0 //5e-4 //0 //100
+    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
+    , "optimalZ_loss_weight": 0 //5e-4 //0 //100
 //    , "range_weight": 0 //1 //0 //5000
      , "gp_weight": 0 //10
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0
+     , "D_init_iters": 0 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0

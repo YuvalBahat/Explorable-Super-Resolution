@@ -503,6 +503,8 @@ class DecompCNNModel(BaseModel):
                 self.generator_Z_opt_only_step = 1*self.generator_step
             else:
                 if self.discriminator_step:
+                    if first_grad_accumulation_step_D and self.GD_update_controller is not None:
+                        self.GD_update_controller.Step_performed(False)
                     self.Set_Require_Grad_Status(self.netD, True)
                     self.Set_Require_Grad_Status(self.netG, False)
                     if first_grad_accumulation_step_D and first_dual_batch_step:
@@ -515,13 +517,16 @@ class DecompCNNModel(BaseModel):
                     if self.opt['train']['G_Dbatch_separation']=='SameD':
                         pred_g_fake = 1*pred_d_fake
                     if self.relativistic_D:
-                        assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
+                        assert self.opt['train']['hinge_threshold'] is None,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
+                        # assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
                         l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
                     else:
                         if first_dual_batch_step:
-                            l_d_real = 2*self.cri_gan(pred_d_real, True,'hinge' in self.cri_gan.gan_type)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                        l_d_fake = 2*self.cri_gan(pred_d_fake, False,'hinge' in self.cri_gan.gan_type)
+                            l_d_real = 2*self.cri_gan(pred_d_real, True,self.opt['train']['hinge_threshold'])#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                            # l_d_real = 2*self.cri_gan(pred_d_real, True,'hinge' in self.cri_gan.gan_type)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                        # l_d_fake = 2*self.cri_gan(pred_d_fake, False,'hinge' in self.cri_gan.gan_type)
+                        l_d_fake = 2*self.cri_gan(pred_d_fake, False,self.opt['train']['hinge_threshold'])
 
                     l_d_total += (l_d_real + l_d_fake) / 2
 
@@ -591,8 +596,9 @@ class DecompCNNModel(BaseModel):
                                     self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
                                 self.generator_step = 1*self.D_converged
                     if self.D_verification=='current' and self.generator_step:
-                        self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
-                            and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+                        # self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
+                        #     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+                        self.generator_step = np.mean(self.D_logits_diff_grad_step[-1]) > np.log(self.opt['train']['min_D_prob_ratio_4_G'])
                     if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
                             self.D_fake_input = self.D_fake_input.detach()
                     l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
@@ -614,7 +620,7 @@ class DecompCNNModel(BaseModel):
                         self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
 
             # G step:
-            if G_step_batch and (self.generator_step or self.generator_Z_opt_only_step):
+            if self.generator_step or self.generator_Z_opt_only_step:
                 l_g_total = 0
                 self.generator_started_learning = True
                 if self.D_exists:
@@ -622,12 +628,7 @@ class DecompCNNModel(BaseModel):
                 self.Set_Require_Grad_Status(self.netG, True)
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     if self.GD_update_controller is not None:
-                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.DG_steps_ratio))
-                    # if self.D_steps_since_G > 0:
-                    #     self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.D_steps_since_G))
-                    # else:
-                    #     self.G_steps_since_D += 1
-                    # self.D_steps_since_G = 0
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
@@ -637,6 +638,8 @@ class DecompCNNModel(BaseModel):
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
                     self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
                 if self.generator_step:
+                    if first_grad_accumulation_step_G and self.GD_update_controller is not None:
+                        self.GD_update_controller.Step_performed(True)
                     if self.cri_pix:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
                         l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
@@ -707,7 +710,9 @@ class DecompCNNModel(BaseModel):
                                     self.Prepare_D_input(self.netG(self.model_input))
                                     # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
                                     post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
-                                    if self.discriminator_step and self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                    if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                        if not self.discriminator_step:
+                                            pred_d_real = self.netD(self.var_ref)
                                         self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                             torch.mean(pred_d_real.detach() - post_G_step_D_scores,
                                                        dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
@@ -979,10 +984,11 @@ class DecompCNNModel(BaseModel):
                         f.write(message)
 
             if self.cri_fea:  # F, Perceptual Network
-                s, n,receptive_field = self.get_network_description(self.netF)
-                print('Number of parameters in F: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
+                net_desc = self.get_network_description(self.netF)
+                # s, n,receptive_field = self.get_network_description(self.netF)
+                # print('Number of parameters in F: {:,d}. Receptive field size: ({:,d},{:,d})'.format(n, *receptive_field))
                 # s, n = self.get_network_description(self.netF)
-                # print('Number of parameters in F: {:,d}'.format(n))
+                print('Number of parameters in F: {:,d}'.format(net_desc['n']))
                 message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'
                 if not self.opt['train']['resume']:
                     with open(network_path, 'a') as f:
