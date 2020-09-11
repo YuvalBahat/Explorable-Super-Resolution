@@ -169,8 +169,8 @@ class DnCNN(nn.Module):
         if spectral_norm:
             layers[-1] = SN.spectral_norm(layers[-1])
         if self.discriminator_net:
-            layers.append(Flatten())
             if not self.pooling_no_FC:
+                layers.append(Flatten())
                 layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
                 if spectral_norm:
                     layers[-1] = SN.spectral_norm(layers[-1])
@@ -197,7 +197,8 @@ class DnCNN(nn.Module):
                         x = torch.cat([latent_input,x],dim=1)
                 x = module(x)
             if self.discriminator_net:
-                return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
+                return x
+                # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
             quantization_err_estimation = x-0.5
             # quantization_err_estimation = self.dncnn(x)-0.5
             # if not next(self.modules()).training:

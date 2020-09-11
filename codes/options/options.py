@@ -177,6 +177,6 @@ def Locally_Adapt_Path(org_path):
     path = org_path+''
     if 'tiras' in os.getcwd():
         path = '/home/tiras/datasets'
-    elif gethostname()=='Yuval-Technion':
+    elif gethostname()=='sipl-yuval.ef.technion.ac.il':
         path = '/media/ybahat/data/Datasets'
     return path
