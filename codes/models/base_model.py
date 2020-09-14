@@ -5,8 +5,10 @@ import CEM.CEMnet as CEMnet
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
-from torch.nn import Upsample
-from utils.util import compute_RF_numerical
+import re
+import copy
+# from torch.nn import Upsample
+# from utils.util import compute_RF_numerical
 
 class BaseModel():
     def __init__(self, opt):
@@ -138,6 +140,45 @@ class BaseModel():
         # network.load_state_dict(loaded_state_dict, strict=(strict and not self.opt['network_G']['CEM_arch']))
         loaded_state_dict = self.process_loaded_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
+
+    # def average_across_model_snapshots(self,apply):
+    #     #     Used before performing evaluation during training. When apply=True, saving the current generator weights, and loading and averaging across latest svaed weights. When apply=False, restoring current weights.
+    #     if apply:
+    #         self.temp_stored_G_weights = copy.deepcopy(self.netG.state_dict())
+    #         averaged_dicts = []
+    #         for snapshot in os.listdir(self.save_dir):
+    #             if '_G.pth' in snapshot and int(re.search('(\d)+(?=_G)',snapshot).group(0))>self.gradient_step_num-self.opt['train']['val_save_freq']:
+    #                 averaged_dicts.append(os.path.join(self.save_dir,snapshot))
+    #         print('Evaluating by averaging weights over %d latest snapshots'%(len(averaged_dicts)+1))
+    #         averaged_state_dict = self.netG.state_dict()
+    #         for i,snapshot in enumerate(averaged_dicts):
+    #             loaded_snapshot = torch.load(snapshot)
+    #             for key in averaged_state_dict:
+    #                 averaged_state_dict[key] = (i+1)/(i+2)*averaged_state_dict[key]+1/(i+2)*loaded_snapshot['model_state_dict'][key.replace('module.','')].cuda()
+    #         self.netG.load_state_dict(averaged_state_dict)
+    #     else:
+    #         self.netG.load_state_dict(self.temp_stored_G_weights)
+
+    def update_running_avg(self):
+        translated_step_num = [self.gradient_step_num+i for i in range(min([self.opt['train']['val_running_avg_steps'],self.gradient_step_num+1]))]
+        steps_before_eval = [(v%self.opt['train']['val_freq'])==0 for v in translated_step_num]
+        if any(steps_before_eval):
+            cur_state_dic = self.netG.state_dict()
+            if steps_before_eval[-1]: #If this is the first step of calculating running average:
+                self.weights_averaging_counter = 1
+                self.running_avg_weights = copy.deepcopy(cur_state_dic)
+            else:
+                self.weights_averaging_counter += 1
+                for key in cur_state_dic:
+                    self.running_avg_weights[key] = (self.weights_averaging_counter-1)/self.weights_averaging_counter*self.running_avg_weights[key]+\
+                        1/self.weights_averaging_counter*cur_state_dic[key]
+
+    def toggle_running_avg_weight(self,on):
+        if on:
+            self.temp_saved_weights = copy.deepcopy(self.netG.state_dict())
+            self.netG.load_state_dict(self.running_avg_weights)
+        else:
+            self.netG.load_state_dict(self.temp_saved_weights)
 
     def process_loaded_state_dict(self,loaded_state_dict,current_state_dict):
         SPECTRAL_NORMALIZATIONFIX_PATCH = False

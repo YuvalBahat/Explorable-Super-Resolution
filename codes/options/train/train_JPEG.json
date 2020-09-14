@@ -1,5 +1,5 @@
 {
-  "name": "nf160nbG10D5_QF5_AUTOupdatesRatio_0_01Win1range4_-10_Z0_Hinge0_3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nfG480D318nb10Dnk2_QF5_AUTOupdatesRatio_0_01Win1range4_-10_Z0_fromAndWithMSE1e-3_NonAvgHinge0_3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -35,10 +35,10 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_ImageNetDS/models/500001_G.pth"
-//    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
-//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/chroma_nf160nb10_QF5_50_LR1e-4/models/2000001_G.pth"
-//    , "pretrained_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5_Z5/models/328175_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5/models/47414_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5/models/85000_G.pth"
+    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf480nb10_QF5/models/250652_G.pth"
 //    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/743643_G.pth"
@@ -58,7 +58,7 @@
     , "latent_channels": 0 //5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
-    , "nf": 160 //320 //94 //320
+    , "nf": 480 //94 //320
     , "nb": 10 //9 //10 //17
     , "in_nc": 64
     , "out_nc": 64
@@ -90,8 +90,9 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-//    , "nf": 40 //64
-    , "nb": 5
+    , "nf": 318 //160 //64
+//    , "nb": 5
+    , "nk": 2 //Number of first layers with 3x3 kernels. Consecutive nb-nk layers would use 1x1 kernels. Must satisfy nk<=nb
 //    , "in_nc": 1
   }
 
@@ -147,13 +148,14 @@
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0
+     , "D_init_iters": 0 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0
     , "niter": 2e6 //23532 //500100 //5e5
     , "val_freq": 5e2
     , "val_save_freq": 1e4
+    , "val_running_avg_steps": 5
 }
 
   , "logger": {

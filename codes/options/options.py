@@ -2,6 +2,7 @@ import os
 from collections import OrderedDict
 from datetime import datetime
 import json
+# from jsonpath_rw import parse as nested_key_parse
 from socket import gethostname
 import numpy as np
 from deepdiff import DeepDiff
@@ -9,21 +10,6 @@ try:
     import GPUtil
 except:
     pass
-import time
-
-
-# running_on_Technion = gethostname() in ['Yuval-Technion','tiras']
-# def Assign_GPU():
-#     excluded_IDs = []
-#     GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
-#     if len(GPU_2_use) == 0:
-#         print('No available GPUs. waiting...')
-#         while len(GPU_2_use) == 0:
-#             time.sleep(10)
-#             GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
-#     print('Using GPU #%d' % (GPU_2_use[0]))
-#     return GPU_2_use
-
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
@@ -34,21 +20,25 @@ def print_config_change(dict,key):
     print('\tTo: %s' % (dict[key]['new_value']))
 
 def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
+    OVERRIDING_KEYS = [['train','resume'],['datasets','train','n_workers'],['train','val_running_avg_steps']]
     opt = parse_conf(opt_path=opt_path,is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
     if is_train and opt['train']['resume']:
         saved_opt = parse_conf(opt_path=os.path.join(opt['path']['experiments_root'],'options.json'),is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
+        for key in OVERRIDING_KEYS:
+            cur_opt,cur_saved_opt = opt,saved_opt
+            for sub_key in key[:-1]:
+                cur_opt,cur_saved_opt = cur_opt[sub_key],cur_saved_opt[sub_key]
+            cur_saved_opt[key[-1]] = cur_opt[key[-1]]
         saved_opt['train']['resume'] = opt['train']['resume']
         opt_diff = DeepDiff(opt,saved_opt)
         if len(opt_diff.keys())>0:
             print('Using some saved configuration values that are different from the current ones. This means changing:')
-            [print_config_change(opt_diff['values_changed'],key) for key in opt_diff['values_changed']]
-            [print_config_change(opt_diff['type_changes'],key) for key in opt_diff['type_changes']]
+            if 'values_changed' in opt_diff.keys():
+                [print_config_change(opt_diff['values_changed'],key) for key in opt_diff['values_changed']]
+            if 'type_changes' in opt_diff.keys():
+                [print_config_change(opt_diff['type_changes'],key) for key in opt_diff['type_changes']]
             if any([key not in ['values_changed','type_changes'] for key in opt_diff]):
                 print('More configuration keys added or removed...')
-            # for key in opt_diff['dictionary_item_added'].keys():
-            #     print('%s:'%(key))
-            #     print('\tFrom: %s'%(opt_diff['values_changed'][key]['old_value']))
-            #     print('\tTo: %s' % (opt_diff['values_changed'][key]['new_value']))
         return saved_opt
     return opt
 

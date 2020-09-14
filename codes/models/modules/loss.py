@@ -239,8 +239,10 @@ class GANLoss(nn.Module):
             return torch.empty_like(input).fill_(self.fake_label_val)
 
     def forward(self, input, target_is_real,hinge_threshold=None):
-        # CLIPPING_AMP = 1.0
+        LEGACY_HINGE_CLIPPING_BUG = False
         if hinge_threshold is not None:
+            if LEGACY_HINGE_CLIPPING_BUG:
+                input = torch.mean(input,dim=[d for d in range(1,input.dim())])
             input = torch.clamp_max(input,hinge_threshold) if target_is_real else torch.clamp_min(input,-1*hinge_threshold)
         target_label = self.get_target_label(input, target_is_real)
         loss = self.loss(input, target_label)

@@ -95,6 +95,7 @@ def main():
         for i, train_data in enumerate(train_loader):
             model.gradient_step_num = model.step // (max_accumulation_steps*(2 if model.D_exists and model.opt['train']['G_Dbatch_separation']=='SeparateBatch' else 1))
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
+            if not_within_batch:    model.update_running_avg()
             saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
@@ -139,23 +140,16 @@ def main():
                 if model.generator_changed:
                     print('---------- validation -------------')
                     start_time = time.time()
-                    if False and SAVE_IMAGE_COLLAGE and model.gradient_step_num%opt['train']['val_save_freq'] == 0: #Saving training images:
-                        # GT_image_collage,quantized_image_collage = [],[]
-                        cur_train_results = model.get_current_visuals(entire_batch=True)
-                        train_psnrs = [util.calculate_psnr(util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]),
-                            util.tensor2img(cur_train_results['Uncomp'][im_num], out_type=np.uint8,min_max=[0,255])) for im_num in range(len(cur_train_results['Decomp']))]
-                        #Save latest training batch output:
-                        save_img_path = os.path.join(os.path.join(opt['path']['val_images']),
-                                                     '{:d}_Tr_PSNR{:.3f}.png'.format(model.gradient_step_num, np.mean(train_psnrs)))
-                        util.save_img(np.clip(np.concatenate((np.concatenate([util.tensor2img(cur_train_results['Uncomp'][im_num], out_type=np.uint8,min_max=[0,255]) for im_num in
-                                 range(len(cur_train_results['Decomp']))],0), np.concatenate(
-                                [util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]) for im_num in range(len(cur_train_results['Decomp']))],
-                                0)), 1), 0, 255).astype(np.uint8), save_img_path)
+                    save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
                     Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
                     print_rlt['psnr'] = 0
+                    model.toggle_running_avg_weight(True)
+                    # if save_images: model.average_across_model_snapshots(apply=True)
                     for cur_Z in Z_latent:
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,
-                                                 save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp)
+                                                 save_images=save_images)
+                    model.toggle_running_avg_weight(False)
+                    # if save_images: model.average_across_model_snapshots(apply=False)
                     if save_GT_Uncomp:  # Save GT Uncomp images
                         save_GT_Uncomp = False
                     print_rlt['psnr'] /= len(Z_latent)

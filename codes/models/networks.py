@@ -164,7 +164,7 @@ def define_D(opt,CEM=None,**kwargs):
             num_latent_channels = opt_net_G['latent_channels']
             # D_input_channels += num_latent_channels
         netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],
-            depth=opt_net_G['nb'] if opt_net['nb'] is None else opt_net['nb'],in_nc=D_input_channels,
+            depth=opt_net_G['nb'] if opt_net['nb'] is None else opt_net['nb'],in_nc=D_input_channels,num_kerneled_layers=opt_net['nk'],
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
