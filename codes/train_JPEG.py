@@ -135,7 +135,8 @@ def main():
                 model.display_log_figure()
 
             # validation
-            if (not_within_batch or i==0) and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
+            if not_within_batch and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
+            # if (not_within_batch or i==0) and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
                 print_rlt = OrderedDict()
                 if model.generator_changed:
                     print('---------- validation -------------')

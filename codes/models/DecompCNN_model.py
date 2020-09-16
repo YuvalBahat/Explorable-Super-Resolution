@@ -400,7 +400,9 @@ class DecompCNNModel(BaseModel):
                 if self.Z_injected_2_D:
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             self.var_ref = input_ref.to(self.device)
+
     def Set_Require_Grad_Status(self,network,status):
+        return
         for p in network.parameters():
             p.requires_grad = status
 
@@ -433,7 +435,7 @@ class DecompCNNModel(BaseModel):
                         self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
                     else:
                         self.generator_step = self.GD_update_controller.Step_query(True)
-        self.discriminator_step = False
+        # self.discriminator_step = False
         if self.D_exists and first_grad_accumulation_step_D:
             D_step_batch = self.separate_G_D_batches_counter.counter == 0
             if D_step_batch:
@@ -502,46 +504,49 @@ class DecompCNNModel(BaseModel):
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
                 self.generator_Z_opt_only_step = 1*self.generator_step
             else:
-                if self.discriminator_step:
-                    if first_grad_accumulation_step_D and self.GD_update_controller is not None:
-                        self.GD_update_controller.Step_performed(False)
-                    self.Set_Require_Grad_Status(self.netD, True)
-                    self.Set_Require_Grad_Status(self.netG, False)
-                    if first_grad_accumulation_step_D and first_dual_batch_step:
-                        self.optimizer_D.zero_grad()
-                        self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step,self.D_G_prob_ratio_grad_step\
-                            = [],[],[],[],[],[]
+                if self.discriminator_step or self.D_verification is not None:
+                    if self.discriminator_step:
+                        if first_grad_accumulation_step_D and self.GD_update_controller is not None:
+                            self.GD_update_controller.Step_performed(False)
+                        self.Set_Require_Grad_Status(self.netD, True)
+                        self.Set_Require_Grad_Status(self.netG, False)
+                        if first_grad_accumulation_step_D and first_dual_batch_step:
+                            self.optimizer_D.zero_grad()
                     if first_dual_batch_step:
                         pred_d_real = self.netD(self.var_ref)
+                        if first_grad_accumulation_step_D:
+                            self.l_d_real_grad_step, self.l_d_fake_grad_step, self.D_real_grad_step, self.D_fake_grad_step, self.D_logits_diff_grad_step, self.D_G_prob_ratio_grad_step \
+                                = [], [], [], [], [], []
                     pred_d_fake = self.netD(self.D_fake_input.detach())  # detach to avoid BP to G
                     if self.opt['train']['G_Dbatch_separation']=='SameD':
                         pred_g_fake = 1*pred_d_fake
-                    if self.relativistic_D:
-                        assert self.opt['train']['hinge_threshold'] is None,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
-                        # assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
-                        l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
-                        l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
-                    else:
-                        if first_dual_batch_step:
-                            l_d_real = 2*self.cri_gan(pred_d_real, True,self.opt['train']['hinge_threshold'])#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                            # l_d_real = 2*self.cri_gan(pred_d_real, True,'hinge' in self.cri_gan.gan_type)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                        # l_d_fake = 2*self.cri_gan(pred_d_fake, False,'hinge' in self.cri_gan.gan_type)
-                        l_d_fake = 2*self.cri_gan(pred_d_fake, False,self.opt['train']['hinge_threshold'])
+                    if self.discriminator_step:
+                        if self.relativistic_D:
+                            assert self.opt['train']['hinge_threshold'] is None,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
+                            # assert 'hinge' not in self.cri_gan.gan_type,'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
+                            l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
+                            l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
+                        else:
+                            if first_dual_batch_step:
+                                l_d_real = 2*self.cri_gan(pred_d_real, True,self.opt['train']['hinge_threshold'])#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                                # l_d_real = 2*self.cri_gan(pred_d_real, True,'hinge' in self.cri_gan.gan_type)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                            # l_d_fake = 2*self.cri_gan(pred_d_fake, False,'hinge' in self.cri_gan.gan_type)
+                            l_d_fake = 2*self.cri_gan(pred_d_fake, False,self.opt['train']['hinge_threshold'])
 
-                    l_d_total += (l_d_real + l_d_fake) / 2
+                        l_d_total += (l_d_real + l_d_fake) / 2
 
-                    if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
-                        batch_size = self.var_ref.size(0)
-                        if self.random_pt.size(0) != batch_size:
-                            self.random_pt.resize_(batch_size, 1, 1, 1)
-                        self.random_pt.uniform_()  # Draw random interpolation points
-                        interp = self.random_pt * self.D_fake_input.detach() + (1 - self.random_pt) * self.var_ref
-                        interp.requires_grad = True
-                        interp_crit = self.netD(interp).mean(-1).mean(-1)
-                        l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
-                        l_d_total += l_d_gp
-                    self.l_d_real_grad_step.append(-1*l_d_real.item())
-                    self.l_d_fake_grad_step.append(l_d_fake.item())
+                        if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
+                            batch_size = self.var_ref.size(0)
+                            if self.random_pt.size(0) != batch_size:
+                                self.random_pt.resize_(batch_size, 1, 1, 1)
+                            self.random_pt.uniform_()  # Draw random interpolation points
+                            interp = self.random_pt * self.D_fake_input.detach() + (1 - self.random_pt) * self.var_ref
+                            interp.requires_grad = True
+                            interp_crit = self.netD(interp).mean(-1).mean(-1)
+                            l_d_gp = self.l_gp_w * self.cri_gp(interp, interp_crit)  # maybe wrong in cls?
+                            l_d_total += l_d_gp
+                        self.l_d_real_grad_step.append(-1*l_d_real.item())
+                        self.l_d_fake_grad_step.append(l_d_fake.item())
                     self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
                     self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
@@ -598,21 +603,25 @@ class DecompCNNModel(BaseModel):
                     if self.D_verification=='current' and self.generator_step:
                         # self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
                         #     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
-                        self.generator_step = np.mean(self.D_logits_diff_grad_step[-1]) > np.log(self.opt['train']['min_D_prob_ratio_4_G'])
-                    if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory:
+                        self.generator_step = (np.mean(self.D_logits_diff_grad_step[-1]) > np.log(self.opt['train']['min_D_prob_ratio_4_G']))\
+                            and (np.mean([val > 0 for val in self.D_logits_diff_grad_step[-1]])>=self.opt['train']['min_mean_D_correct'])
+                    if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory and forcing controller to switch to D step, if generator step was canceled since D was not verified:
                             self.D_fake_input = self.D_fake_input.detach()
-                    l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
-                    l_d_total.backward(retain_graph=self.generator_step or ('wgan' in self.opt['train']['gan_type']))
+                            if self.GD_update_controller is not None:
+                                self.GD_update_controller.Force_D_step()
+                    if self.discriminator_step:
+                        l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
+                        l_d_total.backward(retain_graph=self.generator_step or ('wgan' in self.opt['train']['gan_type']))
 
                     if last_grad_accumulation_step_D and last_dual_batch_step:
-
-                        self.optimizer_D.step()
-                        # set log
-                        self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
-                        self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
-                        self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
-                        if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
-                            self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
+                        if self.discriminator_step:
+                            self.optimizer_D.step()
+                            # set log
+                            self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
+                            self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
+                            self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
+                            if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
+                                self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
                         # D outputs
                         self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
                         self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
