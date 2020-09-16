@@ -400,9 +400,6 @@ class DecompCNNModel(BaseModel):
                 if self.Z_injected_2_D:
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             self.var_ref = input_ref.to(self.device)
-    def Set_Require_Grad_Status(self,network,status):
-        for p in network.parameters():
-            p.requires_grad = status
 
     def Prepare_D_input(self,fake_H):
         self.D_fake_input = fake_H
@@ -638,7 +635,7 @@ class DecompCNNModel(BaseModel):
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
                     self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
                 if self.generator_step:
-                    if first_grad_accumulation_step_G and self.GD_update_controller is not None:
+                    if first_grad_accumulation_step_G and first_dual_batch_step and self.GD_update_controller is not None:
                         self.GD_update_controller.Step_performed(True)
                     if self.cri_pix:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)

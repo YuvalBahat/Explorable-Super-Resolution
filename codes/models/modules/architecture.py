@@ -392,7 +392,7 @@ class PatchGAN_Discriminator(nn.Module):
         projected_component_sequences = []
         in_ch_addition = input_nc if self.decomposed_input else 0
         kw = 4
-        padw = 1
+        padw = 0 #1
         max_out_channels = 512
         sequences = [nn.Sequential(*[nn.Conv2d(input_nc+in_ch_addition, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)])]
         # if self.decomposed_input:

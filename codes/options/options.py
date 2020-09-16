@@ -126,7 +126,7 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         # assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
         if 'network_D' in opt.keys():
             if opt['network_D']['which_model_D']=='PatchGAN':
-                assert opt['train']['gan_type'] in ['lsgan','wgan-gp']
+                assert opt['train']['gan_type'] in ['lsgan','wgan-gp','wgan-sn']
             else:
                 assert (opt['train']['gan_type']!='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
     else:  # test

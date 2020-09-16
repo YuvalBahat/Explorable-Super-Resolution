@@ -141,6 +141,10 @@ class BaseModel():
         loaded_state_dict = self.process_loaded_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 
+    def Set_Require_Grad_Status(self,network,status):
+        for p in network.parameters():
+            p.requires_grad = status
+
     # def average_across_model_snapshots(self,apply):
     #     #     Used before performing evaluation during training. When apply=True, saving the current generator weights, and loading and averaging across latest svaed weights. When apply=False, restoring current weights.
     #     if apply:

@@ -15,7 +15,7 @@ from Z_optimization import Z_optimizer
 import tqdm
 from utils import util
 
-
+ADDITIONALLY_SAVED_ATTRIBUTES = ['D_verified','verified_D_saved','lr_G','lr_D']
 
 class SRRaGANModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=1,init_Fnet=None,init_Dnet=None,**kwargs):
@@ -61,7 +61,7 @@ class SRRaGANModel(BaseModel):
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake','l_g_highpass','l_g_shift_invariant',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
-                       'l_e','l_g_optimalZ']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         if self.is_train:
             if self.latent_input:
@@ -69,6 +69,8 @@ class SRRaGANModel(BaseModel):
                     self.optimalZ_loss_type = train_opt['optimalZ_loss_type']
             self.D_verification = train_opt['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past',None]
+            assert self.D_verification is None,'Removed support after changing to using ratio-controller and other stuff. Re-enable if desired.'
+            self.D_verified, self.verified_D_saved = self.D_verification is None,self.D_verification is None
             if self.D_verification=='convergence':
                 self.D_converged = False
             self.relativistic_D = opt['network_D']['relativistic'] is None or bool(opt['network_D']['relativistic'])
@@ -168,12 +170,16 @@ class SRRaGANModel(BaseModel):
                 print('Remove range loss.')
                 self.cri_range = None
 
+            self.GD_update_controller = None
             if self.D_exists:
                 # GD gan loss
                 self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
                 self.l_gan_w = train_opt['gan_weight']
                 # D_update_ratio and D_init_iters are for WGAN
                 self.global_D_update_ratio = train_opt['D_update_ratio'] if train_opt['D_update_ratio'] is not None else 1
+                if isinstance(self.global_D_update_ratio,list):
+                    self.GD_update_controller = util.G_D_updates_controller(intervals_range=train_opt['D_update_ratio'][0],values_range=train_opt['D_update_ratio'][1])
+                    assert self.grad_accumulation_steps_D==self.grad_accumulation_steps_G,'Different batch sizes for G and D not supported with automatic controller.'
                 self.D_init_iters = train_opt['D_init_iters'] if train_opt['D_init_iters'] else 0
 
                 if train_opt['gan_type'] == 'wgan-gp':
@@ -195,20 +201,20 @@ class SRRaGANModel(BaseModel):
                     optim_params.append(v)
                 else:
                     print('WARNING: params [{:s}] will not optimize.'.format(k))
-            if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
-                lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
-                lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
-            else:
-                lr_G = train_opt['lr_G']
-                lr_D = train_opt['lr_D']
-            self.optimizer_G = torch.optim.Adam(optim_params, lr=lr_G, \
-                weight_decay=wd_G, betas=(train_opt['beta1_G'], 0.999))
+            # if os.path.isfile(os.path.join(self.log_path,'lr.npz')):
+            #     lr_G = np.load(os.path.join(self.log_path,'lr.npz'))['lr_G']
+            #     lr_D = np.load(os.path.join(self.log_path, 'lr.npz'))['lr_D']
+            # else:
+            self.lr_G = train_opt['lr_G']
+            self.lr_D = train_opt['lr_D']
+            self.optimizer_G = torch.optim.Adam(optim_params, lr=self.lr_G, \
+                weight_decay=wd_G, betas=(train_opt['beta1_G'],train_opt['beta2_G'] if train_opt['beta2_G'] is not None else 0.999))
             self.optimizers.append(self.optimizer_G)
             # D
             if self.D_exists:
                 wd_D = train_opt['weight_decay_D'] if train_opt['weight_decay_D'] else 0
-                self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr_D, \
-                    weight_decay=wd_D, betas=(train_opt['beta1_D'], 0.999))
+                self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.lr_D, \
+                    weight_decay=wd_D, betas=(train_opt['beta1_D'], train_opt['beta2_D'] if train_opt['beta2_D'] is not None else 0.999))
                 self.optimizers.append(self.optimizer_D)
             # schedulers
             if train_opt['lr_scheme'] == 'MultiStepLR':
@@ -227,6 +233,17 @@ class SRRaGANModel(BaseModel):
                 self.netD = networks.define_D(opt,CEM=self.CEM_net).to(self.device)
                 self.netD.eval()
         self.load()
+        if self.is_train:
+            self.D_verified,self.verified_D_saved = bool(self.D_verified),bool(self.verified_D_saved)
+            if self.D_exists:
+                for param_group in self.optimizer_D.param_groups:
+                    param_group['lr'] = self.lr_D
+                if self.verified_D_saved:# When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
+                    self.lr_G = 1*self.lr_D
+                    if 'Z_optimizer' in self.__dict__.keys(): #If MAP loss is calculated:
+                        self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
+            for param_group in self.optimizer_G.param_groups:
+                param_group['lr'] = self.lr_G
 
         print('---------- Model initialized ------------------')
         self.print_network()
@@ -291,26 +308,46 @@ class SRRaGANModel(BaseModel):
         first_grad_accumulation_step_D = self.step%self.grad_accumulation_steps_D==0
         last_grad_accumulation_step_D = self.step % self.grad_accumulation_steps_D == (self.grad_accumulation_steps_D-1)
 
-        if first_grad_accumulation_step_D:
-            if self.global_D_update_ratio>0:
-                self.cur_D_update_ratio = self.global_D_update_ratio
-            elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
-                self.cur_D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
-            else:#Varying update ratio:
-                log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
-                if log_mean_D_diff<-2:
-                    self.cur_D_update_ratio = int(-2*np.ceil((log_mean_D_diff+1)*2)/2)
+        if first_grad_accumulation_step_G:
+            self.generator_step = self.gradient_step_num > self.D_init_iters
+            if self.generator_step:
+                if self.GD_update_controller is None:
+                    self.generator_step = self.gradient_step_num % max([1, self.global_D_update_ratio]) == 0
+                    # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                    self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
                 else:
-                    self.cur_D_update_ratio = 1/max(1,int(np.floor((log_mean_D_diff+2)*20)))
+                    self.generator_step = self.GD_update_controller.Step_query(True)
+        if self.D_exists and first_grad_accumulation_step_D:
+            self.discriminator_step = self.gradient_step_num >= -self.D_init_iters
+            if self.discriminator_step:
+                if self.GD_update_controller is None:
+                    if not self.verified_D_saved:
+                        self.discriminator_step = True
+                    else:
+                        self.discriminator_step = self.gradient_step_num % max([1, np.ceil(1 / self.global_D_update_ratio)]) == 0
+                else:
+                    self.discriminator_step = self.GD_update_controller.Step_query(False)
+            # if self.global_D_update_ratio>0:
+            #     self.cur_D_update_ratio = self.global_D_update_ratio
+            # elif len(self.log_dict['D_logits_diff'])<self.opt['train']['D_valid_Steps_4_G_update']:
+            #     self.cur_D_update_ratio = self.opt['train']['D_valid_Steps_4_G_update']
+            # else:#Varying update ratio:
+            #     log_mean_D_diff = np.log(max(1e-5,np.mean([val[1] for val in self.log_dict['D_logits_diff'][-self.opt['train']['D_valid_Steps_4_G_update']:]])))
+            #     if log_mean_D_diff<-2:
+            #         self.cur_D_update_ratio = int(-2*np.ceil((log_mean_D_diff+1)*2)/2)
+            #     else:
+            #         self.cur_D_update_ratio = 1/max(1,int(np.floor((log_mean_D_diff+2)*20)))
         # G
         if first_grad_accumulation_step_D or self.generator_step:
             G_grads_retained = True
-            for p in self.netG.parameters():
-                p.requires_grad = True
+            self.Set_Require_Grad_Status(self.netG,True)
+            # for p in self.netG.parameters():
+            #     p.requires_grad = True
         else:
             G_grads_retained = False
-            for p in self.netG.parameters():
-                p.requires_grad = False
+            self.Set_Require_Grad_Status(self.netG, False)
+            # for p in self.netG.parameters():
+            #     p.requires_grad = False
         actual_dual_step_steps = int(self.optimalZ_loss_type is not None and self.generator_started_learning)+1 # 2 if I actually have an optimized-Z step, 1 otherwise
         for possible_dual_step_num in range(actual_dual_step_steps):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
@@ -337,11 +374,16 @@ class SRRaGANModel(BaseModel):
             if not self.D_exists:
                 self.generator_step = self.gradient_step_num>0 #Allow one first idle iteration to save initital validation results
             else:
-                if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
-                    for p in self.netD.parameters():
-                        p.requires_grad = True
-                    for p in self.netG.parameters():
-                        p.requires_grad = False
+                if self.discriminator_step:
+                # if (self.gradient_step_num) % max([1,np.ceil(1/self.cur_D_update_ratio)]) == 0 and self.gradient_step_num > -self.D_init_iters:
+                    if first_grad_accumulation_step_D and self.GD_update_controller is not None:
+                        self.GD_update_controller.Step_performed(False)
+                    self.Set_Require_Grad_Status(self.netD, True)
+                    self.Set_Require_Grad_Status(self.netG, False)
+                    # for p in self.netD.parameters():
+                    #     p.requires_grad = True
+                    # for p in self.netG.parameters():
+                    #     p.requires_grad = False
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         self.optimizer_D.zero_grad()
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
@@ -374,10 +416,10 @@ class SRRaGANModel(BaseModel):
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
                     self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
                     if first_grad_accumulation_step_D and first_dual_batch_step:
-                        self.generator_step = (self.gradient_step_num) % max([1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
-                        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                        self.generator_step = self.generator_step and self.step % \
-                                              self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+                        # self.generator_step = (self.gradient_step_num) % max([1, self.cur_D_update_ratio]) == 0 and self.gradient_step_num > self.D_init_iters
+                        # # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                        # self.generator_step = self.generator_step and self.step % \
+                        #                       self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
                         if self.generator_step:
                             if self.D_verification=='past' and self.opt['train']['D_valid_Steps_4_G_update'] > 0:
                                 self.generator_step = len(self.log_dict['D_logits_diff']) >= self.opt['train']['D_valid_Steps_4_G_update'] and \
@@ -415,18 +457,23 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
                         self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(self.D_logits_diff_grad_step)))
                         self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
-                        self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
+                        # self.log_dict['D_update_ratio'].append((self.gradient_step_num,self.cur_D_update_ratio))
 
             # G step:
             l_g_total = 0#torch.zeros(size=[],requires_grad=True).type(torch.cuda.FloatTensor)
             if self.generator_step:
                 self.generator_started_learning = True
                 if self.D_exists:
-                    for p in self.netD.parameters():
-                        p.requires_grad = False
-                for p in self.netG.parameters():
-                    p.requires_grad = True
+                    self.Set_Require_Grad_Status(self.netD, False)
+                self.Set_Require_Grad_Status(self.netG, True)
+                #     for p in self.netD.parameters():
+                #             p.requires_grad = False
+                # for p in self.netG.parameters():
+                #     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
+                    if self.GD_update_controller is not None:
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
+                        self.GD_update_controller.Step_performed(True)
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step = [],[],[],[],[],[]
                     self.l_g_highpass_grad_step,self.l_g_shift_invariant_grad_step = [],[]
@@ -535,6 +582,28 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
                     if self.cri_gan:
                         self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
+                        if self.GD_update_controller is not None or self.gradient_step_num % self.opt['train']['val_freq'] == 0:  # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
+                            with torch.no_grad():
+                                # self.Prepare_D_input(self.netG(self.model_input))
+                                # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
+                                # post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
+                                post_G_step_D_scores = self.netD(self.netG(self.model_input).detach()).detach()
+                                if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch':  # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                    if not self.discriminator_step:
+                                        pred_d_real = self.netD(self.var_ref)
+                                    self.log_dict['post_train_D_diff'].append((self.gradient_step_num, np.mean([v.item() for v in list(
+                                        torch.mean(pred_d_real.detach() - post_G_step_D_scores,
+                                                   dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                    if self.GD_update_controller is not None:
+                                        self.GD_update_controller.Update_ratio(np.mean(
+                                            [v[1] for v in self.log_dict['post_train_D_diff'] if
+                                             v[0] >= self.gradient_step_num - self.opt['train']['steps_4_loss_std']]))
+                                if self.opt['train'][
+                                    'G_Dbatch_separation'] != 'SameD':  # It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
+                                    self.log_dict['G_step_D_gain'].append((self.gradient_step_num, np.mean([v.item() for v in list(
+                                        torch.mean(post_G_step_D_scores - pred_g_fake.detach(),
+                                                   dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
+
         self.step += 1
 
     def test(self,prevent_grads_calc=True,**kwargs):
@@ -652,7 +721,10 @@ class SRRaGANModel(BaseModel):
         return dict_2_return
 
     def save_log(self):
-        np.savez(os.path.join(self.log_path,'logs.npz'), ** self.log_dict)
+        dict_2_save = self.log_dict.copy()
+        for attr in ADDITIONALLY_SAVED_ATTRIBUTES:
+            dict_2_save[attr] = getattr(self,attr)
+        np.savez(os.path.join(self.log_path,'logs.npz'), ** dict_2_save)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
             np.savez(os.path.join(self.log_path,'collected_stats.npz'),*self.cri_latent.collected_ratios)
 
@@ -665,6 +737,9 @@ class SRRaGANModel(BaseModel):
         for key in loaded_log.files:
             if key=='psnr_val':
                 self.log_dict[key] = ([tuple(val) for val in old_log[key]] if PREPEND_OLD_LOG else [])+[tuple(val) for val in loaded_log[key]]
+            elif key in ADDITIONALLY_SAVED_ATTRIBUTES:
+                setattr(self, key, loaded_log[key])
+                continue
             else:
                 self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
                 if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.

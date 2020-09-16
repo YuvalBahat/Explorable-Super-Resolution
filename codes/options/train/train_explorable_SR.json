@@ -1,5 +1,5 @@
 {
-  "name": "model_name" // Model name (a folder with this name will be created if resume=0). Terminate name with "_debug" to calculate and log all possible loss terms
+  "name": "fromMSE_Z0_patchDhinge1SN" // Model name (a folder with this name will be created if resume=0). Terminate name with "_debug" to calculate and log all possible loss terms
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -7,7 +7,7 @@
   , "range": [0,1]
 
   , "datasets": {
-    "path": "path_to_datasets_root_dir",
+//    "path": "path_to_datasets_root_dir",
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
@@ -15,7 +15,7 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 8
+      , "n_workers": 0 //2
       , "batch_size": 6
       , "batch_size_4_grads_G": 48
       , "batch_size_4_grads_D": 48
@@ -40,7 +40,7 @@
     "which_model_G": "RRDB_net"
     , "CEM_arch": 1 //Wrap architecture with CEM for consistency
     , "sigmoid_range_limit": 0
-    , "latent_input": "all_layers" // Concatenate Z signal to which model layers: "all_layers" /  "first_layer" / "None"
+    , "latent_input": "None" // Concatenate Z signal to which model layers: "all_layers" /  "first_layer" / "None"
     , "latent_input_domain": "HR_downscaled" // Spatial dimenssions of Z correspond to "HR_downscaled" / "HR_rearranged","LR"
     , "latent_channels": "SVDinNormedOut_structure_tensor" // What kind of L_struct loss term is used: ""SVDinNormedOut_structure_tensor"" / "STD_1dir" / "STD_directional" / "structure_tensor" / "SVD_structure_tensor"
     , "norm_type": null
@@ -53,7 +53,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128"
+    "which_model_D": "PatchGAN" //,"discriminator_vgg_128"
     , "relativistic": 0 // Optionally use a relativistic discriminator (like in ESRGAN), which can be seen as s full-reference loss term (a disadvantage)
     , "decomposed_input": 0 // Feed D with low-frequencies and high-frequencies separately (unsupported)
     , "pre_clipping": 0 // Clip D's input to valid pixels range
@@ -68,15 +68,16 @@
 
   , "train": {
     "resume":0 // Set to 1 if resuming the training of a model with the same name.
-    ,"lr_G": 1e-5 //1e-5
+    ,"lr_G": 1e-4 //1e-5
     , "weight_decay_G": 0
-    , "beta1_G": 0.9
-    , "lr_D": 1e-5 //1e-4
-    , "lr_E": 1e-4
+    , "beta1_G": 0.5 //0.9
+    , "beta2_G": 0.9 //None
+    , "lr_D": 1e-4 //1e-5
     , "weight_decay_D": 0
-    , "beta1_D": 0.9
+    , "beta1_D": 0.5 //0.9 //0.0
+    , "beta2_D": 0.9 //None
     , "lr_scheme": "MultiStepLR"
-    , "steps_4_loss_std": 500
+    , "steps_4_loss_std": 1 //500
     , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
@@ -85,30 +86,32 @@
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "gan_type": "wgan-gp" //,"vanilla","lsgan","wgan-gp"
+    , "gan_type": "wgan-sn" //,"vanilla","lsgan","wgan-gp"
+    , "hinge_threshold": 0.3 //Comment if not using hinge loss
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
-    , "D_verification": "past" //'current', 'convergence', 'past'
+//    , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 10 //0
+    , "D_update_ratio": [[4,-10],[0,0.1]] //10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if actually using the CEM or not.
 
     , "pixel_weight": 0 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 1 // Weight for adversarial loss term L_adv
-    , "latent_weight": 1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
+    , "latent_weight": 0 //1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
     , "optimalZ_loss_weight": 0 // L_map loss term weight
     , "range_weight": 5000 // L_range loss term weight
 
      , "D_init_iters": 0
-     , "gp_weight": 10
+     , "gp_weight": 0 //10
 
     , "manual_seed": 0
     , "niter": 510000
     , "val_freq": 500
     , "val_save_freq": 1e4
+    , "val_running_avg_steps": 5
 }
 
   , "logger": {
