@@ -91,6 +91,7 @@ def main():
         for i, train_data in enumerate(train_loader):
             gradient_step_num = model.step // max_accumulation_steps
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
+            if not_within_batch:    model.update_running_avg()
             saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
@@ -153,8 +154,9 @@ def main():
                         util.save_img(np.clip(np.concatenate((np.concatenate([util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255 for im_num in
                                  range(len(cur_train_results['SR']))],0), np.concatenate([util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
                                  range(len(cur_train_results['SR']))],0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                    Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
+                    Z_latent = [0]+([-1,1] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
                     print_rlt['psnr'] = 0
+                    model.toggle_running_avg_weight(True)
                     for cur_Z in Z_latent:
                         sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,save_GT_HR=save_GT_HR,
                                                  save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_HR)
@@ -163,6 +165,7 @@ def main():
 
                         if save_GT_HR:  # Save GT Uncomp images
                             save_GT_HR = False
+                    model.toggle_running_avg_weight(False)
                     model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']/len(Z_latent)))
                 else:
                     print('Skipping validation because generator is unchanged')

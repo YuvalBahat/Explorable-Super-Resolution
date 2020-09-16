@@ -141,7 +141,9 @@ def define_D(opt,CEM=None,**kwargs):
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
     elif which_model=='PatchGAN':
-        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
+        norm_layer = nn.BatchNorm2d
+        if 'gp' in opt['train']['gan_type']:
+            norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
         netD = arch.PatchGAN_Discriminator(input_nc=in_nc, opt_net=opt_net,ndf=opt_net['nf'], n_layers=opt_net['n_layers'], norm_layer=norm_layer)
     elif which_model == 'discriminator_vgg_96':
         netD = arch.Discriminator_VGG_96(in_nc=in_nc, base_nf=opt_net['nf'], \
