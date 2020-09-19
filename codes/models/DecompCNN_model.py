@@ -117,7 +117,7 @@ class DecompCNNModel(BaseModel):
         # define losses, optimizer and scheduler
         if self.is_train:
             # G pixel loss
-            if train_opt['pixel_weight'] > 0 or self.debug:
+            if isinstance(train_opt['pixel_weight'],list) or train_opt['pixel_weight'] > 0 or self.debug:
                 l_pix_type = train_opt['pixel_criterion']
                 if l_pix_type == 'l1':
                     self.cri_pix = nn.L1Loss().to(self.device)
@@ -125,7 +125,10 @@ class DecompCNNModel(BaseModel):
                     self.cri_pix = nn.MSELoss().to(self.device)
                 else:
                     raise NotImplementedError('Loss type [{:s}] not recognized.'.format(l_pix_type))
-                self.l_pix_w = train_opt['pixel_weight']
+                if isinstance(train_opt['pixel_weight'], list):
+                    self.l_pix_w = util.Varying_weight(train_opt['pixel_weight'][0],train_opt['pixel_weight'][1])
+                else:
+                    self.l_pix_w = lambda x : train_opt['pixel_weight']
             else:
                 print('Remove pixel loss.')
                 self.cri_pix = None
@@ -646,7 +649,7 @@ class DecompCNNModel(BaseModel):
                         self.GD_update_controller.Step_performed(True)
                     if self.cri_pix:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
-                        l_g_total += self.l_pix_w * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                        l_g_total += self.l_pix_w(self.gradient_step_num) * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                     if self.cri_fea:  # feature loss
                         real_fea = self.netF(self.var_Uncomp).detach()
                         fake_fea = self.netF(self.output_image)

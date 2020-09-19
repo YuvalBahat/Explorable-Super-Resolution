@@ -129,6 +129,24 @@ class G_D_updates_controller:
     def Force_D_step(self):
         self.force_D_step = True
 
+# class Varying_weight:
+#     def __init__(self,weight_range,steps_range,model_step):
+#         self.weigh_range = weight_range
+#         self.steps_range = steps_range
+#         self.cur_step = model_step
+def Varying_weight(steps_range,weight_range,log_scale=True):
+        def cur_weight(cur_step):
+            if cur_step<steps_range[0]:
+                return weight_range[0]
+            elif cur_step>steps_range[1]:
+                return weight_range[1]
+            else:
+                if log_scale:
+                    return float(np.exp((cur_step - steps_range[0]) / np.diff(steps_range) * np.diff(np.log(weight_range)) + np.log(weight_range[0])))
+                else:
+                    return float((cur_step-steps_range[0])/np.diff(steps_range)*np.diff(weight_range)+weight_range[0])
+
+        return cur_weight
 ####################
 # image convert
 ####################
