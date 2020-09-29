@@ -213,6 +213,9 @@ class DnCNN(nn.Module):
                 return x
                 # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
             quantization_err_estimation = x-0.5
+            if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
+                self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
+                self.average_err_collection_counter += 1
             # quantization_err_estimation = self.dncnn(x)-0.5
             # if not next(self.modules()).training:
             #     self.average_err_collection_counter += 1
@@ -227,18 +230,19 @@ class DnCNN(nn.Module):
             else:
                 return quantized_coeffs+quantization_err_estimation
 
-    def return_collected_err_avg(self):
+    def reset_err_collectiion(self):
         self.average_err_collection_counter = 0
-        natrix_2_return = 1*self.average_abs_err_estimates
-        self.average_abs_err_estimates = np.zeros([8,8])
-        return natrix_2_return
+        self.average_abs_err_estimates = np.zeros([8, 8])
 
-    def save_estimated_errors_fig(self,quantization_err_batch):
-        import matplotlib.pyplot as plt
-        plt.clf()
-        plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
-        plt.colorbar()
-        plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
+    def return_collected_err_avg(self):
+        return self.average_abs_err_estimates/self.average_err_collection_counter
+
+    # def save_estimated_errors_fig(self,quantization_err_batch):
+    #     import matplotlib.pyplot as plt
+    #     plt.clf()
+    #     plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
+    #     plt.colorbar()
+    #     plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
 
     def _initialize_weights(self):
         for m in self.modules():

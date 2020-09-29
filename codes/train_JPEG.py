@@ -146,9 +146,9 @@ def main():
                     print_rlt['psnr'] = 0
                     model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)
-                    for cur_Z in Z_latent:
+                    for z_num,cur_Z in enumerate(Z_latent):
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,
-                                                 save_images=save_images)
+                                                 save_images=save_images,collect_avg_err_est=z_num==0)
                     model.toggle_running_avg_weight(False)
                     # if save_images: model.average_across_model_snapshots(apply=False)
                     if save_GT_Uncomp:  # Save GT Uncomp images

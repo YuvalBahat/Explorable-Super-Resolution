@@ -713,22 +713,25 @@ class DecompCNNModel(BaseModel):
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
                             if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
-                                with torch.no_grad():
-                                    self.Prepare_D_input(self.netG(self.model_input))
-                                    # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
-                                    post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
-                                    if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
-                                        if not self.discriminator_step:
-                                            pred_d_real = self.netD(self.var_ref)
-                                        self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
-                                            torch.mean(pred_d_real.detach() - post_G_step_D_scores,
-                                                       dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
-                                        if self.GD_update_controller is not None:
-                                            self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
-                                    if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
-                                        self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
-                                            torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
-                                                       dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
+                                # with torch.no_grad():
+                                assert not self.chroma_mode,'Unsupported yet'
+                                self.test()
+                                self.Prepare_D_input(self.fake_H)
+                                # self.Prepare_D_input(self.netG(self.model_input))
+                                # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
+                                post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
+                                if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                    if not self.discriminator_step:
+                                        pred_d_real = self.netD(self.var_ref)
+                                    self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                        torch.mean(pred_d_real.detach() - post_G_step_D_scores,
+                                                   dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                    if self.GD_update_controller is not None:
+                                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
+                                if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
+                                    self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                        torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
+                                                   dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
 
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
@@ -788,6 +791,9 @@ class DecompCNNModel(BaseModel):
             GT_image_collage, quantized_image_collage = [], []
         QF_images_counter = {}
         chroma_mode = 'YCbCr' if self.chroma_mode else 'Y'
+        if collect_avg_err_est:
+            assert not self.chroma_mode,'Unsupported yet'
+            self.netG.module.reset_err_collectiion()
         for val_data in tqdm.tqdm(data_loader):
             if save_images:
                 if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
@@ -833,10 +839,13 @@ class DecompCNNModel(BaseModel):
         if save_images:
             self.generator_changed = False
 
-        if False and collect_avg_err_est:#Disabled until I adapt it to the chroma case
-            self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.netG.module.return_collected_err_avg(),-1)],-1)
-            self.avg_estimated_err_step.append(self.gradient_step_num)
-            # self.log_dict['avg_est_err'].append((self.gradient_step_num,self.netG.module.return_collected_err_avg()))
+        if collect_avg_err_est:
+            import matplotlib.pyplot as plt
+            plt.clf()
+            plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
+            plt.colorbar()
+            plt.title('Log(|estimated errors|)')
+            plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))
         avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
             print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1])/QF_images_counter[QF]
