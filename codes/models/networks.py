@@ -99,12 +99,15 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
             act_type='leakyrelu', mode=opt_net['mode'], upsample_mode='upconv',
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
+        DCT_G = opt_net['DCT_G']
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
-        assert opt_net['in_nc']==64 and opt_net['out_nc']==64
-        in_nc = opt['scale']**2+2*64 if chroma_mode else 64
-        out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        assert not (chroma_mode and not DCT_G),'Unsupported yet'
+        # assert opt_net['in_nc']==64 and opt_net['out_nc']==64
+        in_nc = (opt['scale']**2+2*64 if chroma_mode else 64) if DCT_G else 1
+        out_nc = (2*(opt['scale']**2) if chroma_mode else 64) if DCT_G else 1
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
-                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels,chroma_generator=chroma_mode)
+                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
+                          num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'])
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -156,9 +159,13 @@ def define_D(opt,CEM=None,**kwargs):
     elif 'DnCNN_D' in which_model:
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
-        assert opt_net['DCT_D']==1
-        G_in_nc = opt['scale']**2+2*64 if chroma_mode else 64
-        G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        G_in_nc = opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64
+        if opt_net['DCT_D']==1:
+            G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        else:
+            assert not chroma_mode,'Unsupported yet'
+            assert not opt_net['concat_input'],'To support, need to figure how to concat these inputs with different spatial dimensions.'
+            G_out_nc = 1
         # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
         D_input_channels = G_in_nc+G_out_nc if opt_net['concat_input'] else (opt['scale']**2+G_out_nc if chroma_mode else G_out_nc)
         num_latent_channels = None
@@ -170,7 +177,7 @@ def define_D(opt,CEM=None,**kwargs):
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
-                          pooling_no_FC=opt_net['pooling_no_fc'])
+                          pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

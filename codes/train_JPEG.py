@@ -96,7 +96,7 @@ def main():
             model.gradient_step_num = model.step // (max_accumulation_steps*(2 if model.D_exists and model.opt['train']['G_Dbatch_separation']=='SeparateBatch' else 1))
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
             if not_within_batch:    model.update_running_avg()
-            saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
+            saving_step = (model.gradient_step_num==0 or (time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
 
@@ -146,9 +146,9 @@ def main():
                     print_rlt['psnr'] = 0
                     model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)
-                    for cur_Z in Z_latent:
+                    for z_num,cur_Z in enumerate(Z_latent):
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,
-                                                 save_images=save_images)
+                                                 save_images=save_images,collect_avg_err_est=z_num==0)
                     model.toggle_running_avg_weight(False)
                     # if save_images: model.average_across_model_snapshots(apply=False)
                     if save_GT_Uncomp:  # Save GT Uncomp images

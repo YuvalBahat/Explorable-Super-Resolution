@@ -107,7 +107,8 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,pooling_no_FC=False):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
+                 pooling_no_FC=False,DCT_G=None,norm_input=None):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
@@ -116,9 +117,11 @@ class DnCNN(nn.Module):
             num_kerneled_layers = 1*depth
         else:
             assert num_kerneled_layers<=depth
-        # self.average_err_collection_counter = 0
-        # self.average_abs_err_estimates = np.zeros([8,8])
+
         self.discriminator_net = discriminator
+        self.DCT_generator = DCT_G
+        assert not (norm_input and DCT_G),'Normalizing the input is enabled only when networks are operating directly on the image'
+        self.norm_input = norm_input
         if discriminator:
             # Ideally I should not use padding for the discriminator model. I do use padding in the first layers if the input size is too small,
             # so that the dimension of the fully connected layer's input would be at least MIN_DCT_DIMS_4_D x MIN_DCT_DIMS_4_D
@@ -188,57 +191,58 @@ class DnCNN(nn.Module):
                 if spectral_norm:
                     layers[-1] = SN.spectral_norm(layers[-1])
                 # layers.append(nn.Linear(in_features=64, out_features=1))
-        else:
+        elif self.DCT_generator:
             layers.append(nn.Sigmoid())
-        if False and self.discriminator_net:
-            self.dncnn = nn.Sequential(*layers)
-        else:
-            self.dncnn = nn.ModuleList(layers)
+        self.dncnn = nn.ModuleList(layers)
 
     def forward(self, x):
-        if False and self.discriminator_net:
-            return self.dncnn(x)
+        latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
+        x = 1*quantized_coeffs
+        if self.norm_input:
+            x = x/255-0.5
+        for i, module in enumerate(self.dncnn):
+            if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
+            # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
+                if self.discriminator_net and latent_input.size(2)!=x.size(2):
+                    x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
+                else:
+                    x = torch.cat([latent_input,x],dim=1)
+            x = module(x)
+        if self.discriminator_net:
+            return x
+            # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
         else:
-            latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
-            x = 1*quantized_coeffs
-            for i, module in enumerate(self.dncnn):
-                if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
-                # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
-                    if self.discriminator_net and latent_input.size(2)!=x.size(2):
-                        x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
-                    else:
-                        x = torch.cat([latent_input,x],dim=1)
-                x = module(x)
-            if self.discriminator_net:
-                return x
-                # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
-            quantization_err_estimation = x-0.5
-            # quantization_err_estimation = self.dncnn(x)-0.5
-            # if not next(self.modules()).training:
-            #     self.average_err_collection_counter += 1
-            #     self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
-            #         quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
-            if self.chroma_generator:
-                quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
-                                                                               quantization_err_estimation.size(2),quantization_err_estimation.size(3))
-                quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
-                quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
-                return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
+            if self.DCT_generator:
+                quantization_err_estimation = x-0.5
+                if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
+                    self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
+                    self.average_err_collection_counter += 1
+                if self.chroma_generator:
+                    quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
+                                                                                   quantization_err_estimation.size(2),quantization_err_estimation.size(3))
+                    quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
+                    quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
+                    return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
+                else:
+                    return quantized_coeffs+quantization_err_estimation
             else:
-                return quantized_coeffs+quantization_err_estimation
+                if self.norm_input:
+                    x = 255*x
+                return quantized_coeffs+x
+
+    def reset_err_collectiion(self):
+        self.average_err_collection_counter = 0
+        self.average_abs_err_estimates = np.zeros([8, 8])
 
     def return_collected_err_avg(self):
-        self.average_err_collection_counter = 0
-        natrix_2_return = 1*self.average_abs_err_estimates
-        self.average_abs_err_estimates = np.zeros([8,8])
-        return natrix_2_return
+        return self.average_abs_err_estimates/self.average_err_collection_counter
 
-    def save_estimated_errors_fig(self,quantization_err_batch):
-        import matplotlib.pyplot as plt
-        plt.clf()
-        plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
-        plt.colorbar()
-        plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
+    # def save_estimated_errors_fig(self,quantization_err_batch):
+    #     import matplotlib.pyplot as plt
+    #     plt.clf()
+    #     plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
+    #     plt.colorbar()
+    #     plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
 
     def _initialize_weights(self):
         for m in self.modules():

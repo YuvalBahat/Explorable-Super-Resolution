@@ -93,6 +93,7 @@ class DecompCNNModel(BaseModel):
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.l_gan_w = train_opt['gan_weight']
+            self.DCT_generator = self.opt['network_G']['DCT_G']
             self.D_exists = self.l_gan_w>0 or self.debug
             self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
@@ -100,14 +101,15 @@ class DecompCNNModel(BaseModel):
             if self.D_exists:
                 assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD','SeparateBatch']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
-                if self.DCT_discriminator:
-                    self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
                 if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
                     self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
                     self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
                     self.netD.cuda()
                 self.netD.train()
+            if self.DCT_discriminator or not self.DCT_generator:
+                self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,
+                                                          chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
             self.netG.train()
             self.mixed_Y_4_training = self.D_exists and self.chroma_mode
             self.separate_G_D_batches_counter = util.Counter(2 if (self.D_exists and self.opt['train']['G_Dbatch_separation'] =='SeparateBatch') else 1)
@@ -269,9 +271,22 @@ class DecompCNNModel(BaseModel):
             # return self.jpeg_extractor(self.fake_H)
             return self.output_image
 
+    def Enforce_Consistency(self,input_im,inconsostent_output):
+        if self.DCT_generator:
+            return inconsostent_output
+        else:
+            assert not self.chroma_mode,'Unsupported yet'
+            input_DCT = self.jpeg_compressor(input_im)
+            assert (input_DCT.round()==input_DCT).all(),'Expected to get integer DCT coefficients for input image'
+            inconsistent_DCT = self.jpeg_non_quantized_compressor(inconsostent_output)
+            consistent_DCT = input_DCT+torch.clamp(inconsistent_DCT-input_DCT,-0.5,0.5)
+            return self.jpeg_extractor(consistent_DCT)
+
     def Prepare_Input(self,im_input,latent_input,compressed_input=False):
         if compressed_input:
             self.var_Comp = im_input
+        elif not self.DCT_generator:
+            self.var_Comp = self.jpeg_extractor(self.jpeg_compressor(im_input))
         else:
             chroma_input = im_input.size(1)==3
             if self.chroma_mode and not chroma_input:
@@ -337,11 +352,11 @@ class DecompCNNModel(BaseModel):
         self.QF = data['QF']
         self.jpeg_compressor.Set_Q_Table(self.QF)
         self.jpeg_extractor.Set_Q_Table(self.QF)
-        if self.DCT_discriminator:
+        if self.DCT_discriminator or not self.DCT_generator:
             self.jpeg_non_quantized_compressor.Set_Q_Table(self.QF)
         if self.latent_input is not None:
             input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else [1,1,8,8]*np.array(data['Comp'].size())
-            DCT_dims = list(input_size[2:]//8)
+            DCT_dims = list(input_size[2:]//8 if self.DCT_generator else input_size[2:])
             # DCT_dims = list(np.array(self.var_Comp.size())[2:]) # Spatial dimensions of the latent channel correspond to those of the Y channel DCT coefficients.
             # Z is downsampled for the chroma channels generator
             if 'Z' in data.keys():
@@ -485,13 +500,13 @@ class DecompCNNModel(BaseModel):
                     temp_Z = torch.zeros_like(optimized_Z).repeat([2,1,1,1])
                     temp_Z[self.Y_channel_is_fake] = optimized_Z
                     self.feed_data({'Uncomp':self.var_Uncomp,'QF':stored_QF,'Z':temp_Z}, need_GT=False)
-                    self.fake_H = self.netG(self.model_input)
+                    self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
                 else:
                     self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
-                self.fake_H = self.netG(self.model_input)
-            self.output_image = self.jpeg_extractor(self.fake_H)
+                self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
+            self.output_image = self.jpeg_extractor(self.fake_H) if self.DCT_generator else self.fake_H
             if self.chroma_mode:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
             self.Prepare_D_input(self.fake_H)
@@ -687,7 +702,7 @@ class DecompCNNModel(BaseModel):
                 l_g_total.backward()
                 if self.generator_step:
                     if self.cri_pix:
-                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp), self.var_Uncomp)
+                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp, self.var_Uncomp)
                         self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
                     if self.cri_fea:
                         self.l_g_fea_grad_step.append(l_g_fea.item())
@@ -713,22 +728,25 @@ class DecompCNNModel(BaseModel):
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
                             if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
-                                with torch.no_grad():
-                                    self.Prepare_D_input(self.netG(self.model_input))
-                                    # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
-                                    post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
-                                    if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
-                                        if not self.discriminator_step:
-                                            pred_d_real = self.netD(self.var_ref)
-                                        self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
-                                            torch.mean(pred_d_real.detach() - post_G_step_D_scores,
-                                                       dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
-                                        if self.GD_update_controller is not None:
-                                            self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
-                                    if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
-                                        self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
-                                            torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
-                                                       dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
+                                # with torch.no_grad():
+                                assert not self.chroma_mode,'Unsupported yet'
+                                self.test()
+                                self.Prepare_D_input(self.fake_H)
+                                # self.Prepare_D_input(self.netG(self.model_input))
+                                # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
+                                post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
+                                if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch': # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
+                                    if not self.discriminator_step:
+                                        pred_d_real = self.netD(self.var_ref)
+                                    self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                        torch.mean(pred_d_real.detach() - post_G_step_D_scores,
+                                                   dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
+                                    if self.GD_update_controller is not None:
+                                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
+                                if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
+                                    self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
+                                        torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
+                                                   dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
 
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
@@ -748,8 +766,8 @@ class DecompCNNModel(BaseModel):
             if chroma_input.size(0)!=self.y_channel_input.size(0):
                 chroma_input = chroma_input.repeat([self.y_channel_input.size(0)]+[1]*(chroma_input.ndimension()-1))
             self.Prepare_Input(torch.cat([self.y_channel_input,chroma_input],1),self.GetLatent() if chroma_Z is None else chroma_Z)
-        self.fake_H = self.netG(self.model_input)
-        self.output_image = self.jpeg_extractor(self.fake_H)
+        self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
+        self.output_image = self.jpeg_extractor(self.fake_H) if self.DCT_generator else self.fake_H
         if self.chroma_mode:
             self.output_image = torch.cat([self.y_channel_input,self.output_image],1)
         self.netG.train()
@@ -788,6 +806,9 @@ class DecompCNNModel(BaseModel):
             GT_image_collage, quantized_image_collage = [], []
         QF_images_counter = {}
         chroma_mode = 'YCbCr' if self.chroma_mode else 'Y'
+        if collect_avg_err_est:
+            assert not self.chroma_mode,'Unsupported yet'
+            self.netG.module.reset_err_collectiion()
         for val_data in tqdm.tqdm(data_loader):
             if save_images:
                 if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
@@ -808,7 +829,7 @@ class DecompCNNModel(BaseModel):
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                     if GT_and_quantized:  # Save GT Uncomp images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp),out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
+                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp,out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
                         quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1].copy(), str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
@@ -833,10 +854,13 @@ class DecompCNNModel(BaseModel):
         if save_images:
             self.generator_changed = False
 
-        if False and collect_avg_err_est:#Disabled until I adapt it to the chroma case
-            self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.netG.module.return_collected_err_avg(),-1)],-1)
-            self.avg_estimated_err_step.append(self.gradient_step_num)
-            # self.log_dict['avg_est_err'].append((self.gradient_step_num,self.netG.module.return_collected_err_avg()))
+        if collect_avg_err_est:
+            import matplotlib.pyplot as plt
+            plt.clf()
+            plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
+            plt.colorbar()
+            plt.title('Log(|estimated errors|)')
+            plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))
         avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
             print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1])/QF_images_counter[QF]

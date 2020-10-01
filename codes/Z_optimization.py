@@ -658,6 +658,8 @@ class Z_optimizer():
                     temperature_optimizer = torch.optim.Adam(d_KLdiv_2_d_temperature.optimizable_temperature.parameters(), lr=0.5)
                     temperature_optimizer.zero_grad()
                     initial_image = model.netG(model.var_L).to(self.device)
+                    if self.jpeg_mode:
+                        initial_image = self.model.Enforce_Consistency(self.model.var_L,initial_image)
                     temperatures,gradient_sizes,KL_divs = [],[],[]
                     NUM_ITERS = 50
                     for tempertaure_seeking_iter in range(NUM_ITERS):
@@ -842,6 +844,8 @@ class Z_optimizer():
                 self.data['Uncomp'] = 1 * Uncomp_batch
             self.model.feed_data(self.data, need_GT=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
+            if self.jpeg_mode:#Should see what to feed in the first argument here:
+                self.model.fake_H = self.model.Enforce_Consistency(self.model.var_L, self.model.fake_H)
         return Z_2_return
 
     # def Return_Translated_SubImage(self,image, translation):
