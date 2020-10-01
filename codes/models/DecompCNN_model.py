@@ -93,6 +93,7 @@ class DecompCNNModel(BaseModel):
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.l_gan_w = train_opt['gan_weight']
+            self.DCT_generator = self.opt['network_G']['DCT_G']
             self.D_exists = self.l_gan_w>0 or self.debug
             self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
@@ -100,14 +101,15 @@ class DecompCNNModel(BaseModel):
             if self.D_exists:
                 assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD','SeparateBatch']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
-                if self.DCT_discriminator:
-                    self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
                 if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
                     self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
                     self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
                     self.netD.cuda()
                 self.netD.train()
+            if self.DCT_discriminator or not self.DCT_generator:
+                self.jpeg_non_quantized_compressor = JPEG(compress=True, downsample_and_quantize=False,
+                                                          chroma_mode=self.chroma_mode,block_size=self.opt['scale']).to(self.device)
             self.netG.train()
             self.mixed_Y_4_training = self.D_exists and self.chroma_mode
             self.separate_G_D_batches_counter = util.Counter(2 if (self.D_exists and self.opt['train']['G_Dbatch_separation'] =='SeparateBatch') else 1)
@@ -269,9 +271,22 @@ class DecompCNNModel(BaseModel):
             # return self.jpeg_extractor(self.fake_H)
             return self.output_image
 
+    def Enforce_Consistency(self,input_im,inconsostent_output):
+        if self.DCT_generator:
+            return inconsostent_output
+        else:
+            assert not self.chroma_mode,'Unsupported yet'
+            input_DCT = self.jpeg_compressor(input_im)
+            assert (input_DCT.round()==input_DCT).all(),'Expected to get integer DCT coefficients for input image'
+            inconsistent_DCT = self.jpeg_non_quantized_compressor(inconsostent_output)
+            consistent_DCT = input_DCT+torch.clamp(inconsistent_DCT-input_DCT,-0.5,0.5)
+            return self.jpeg_extractor(consistent_DCT)
+
     def Prepare_Input(self,im_input,latent_input,compressed_input=False):
         if compressed_input:
             self.var_Comp = im_input
+        elif not self.DCT_generator:
+            self.var_Comp = self.jpeg_extractor(self.jpeg_compressor(im_input))
         else:
             chroma_input = im_input.size(1)==3
             if self.chroma_mode and not chroma_input:
@@ -337,11 +352,11 @@ class DecompCNNModel(BaseModel):
         self.QF = data['QF']
         self.jpeg_compressor.Set_Q_Table(self.QF)
         self.jpeg_extractor.Set_Q_Table(self.QF)
-        if self.DCT_discriminator:
+        if self.DCT_discriminator or not self.DCT_generator:
             self.jpeg_non_quantized_compressor.Set_Q_Table(self.QF)
         if self.latent_input is not None:
             input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else [1,1,8,8]*np.array(data['Comp'].size())
-            DCT_dims = list(input_size[2:]//8)
+            DCT_dims = list(input_size[2:]//8 if self.DCT_generator else input_size[2:])
             # DCT_dims = list(np.array(self.var_Comp.size())[2:]) # Spatial dimensions of the latent channel correspond to those of the Y channel DCT coefficients.
             # Z is downsampled for the chroma channels generator
             if 'Z' in data.keys():
@@ -485,13 +500,13 @@ class DecompCNNModel(BaseModel):
                     temp_Z = torch.zeros_like(optimized_Z).repeat([2,1,1,1])
                     temp_Z[self.Y_channel_is_fake] = optimized_Z
                     self.feed_data({'Uncomp':self.var_Uncomp,'QF':stored_QF,'Z':temp_Z}, need_GT=False)
-                    self.fake_H = self.netG(self.model_input)
+                    self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
                 else:
                     self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(self.var_Comp, latent_input=static_Z,compressed_input=True)
-                self.fake_H = self.netG(self.model_input)
-            self.output_image = self.jpeg_extractor(self.fake_H)
+                self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
+            self.output_image = self.jpeg_extractor(self.fake_H) if self.DCT_generator else self.fake_H
             if self.chroma_mode:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
             self.Prepare_D_input(self.fake_H)
@@ -687,7 +702,7 @@ class DecompCNNModel(BaseModel):
                 l_g_total.backward()
                 if self.generator_step:
                     if self.cri_pix:
-                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp), self.var_Uncomp)
+                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp, self.var_Uncomp)
                         self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
                     if self.cri_fea:
                         self.l_g_fea_grad_step.append(l_g_fea.item())
@@ -751,8 +766,8 @@ class DecompCNNModel(BaseModel):
             if chroma_input.size(0)!=self.y_channel_input.size(0):
                 chroma_input = chroma_input.repeat([self.y_channel_input.size(0)]+[1]*(chroma_input.ndimension()-1))
             self.Prepare_Input(torch.cat([self.y_channel_input,chroma_input],1),self.GetLatent() if chroma_Z is None else chroma_Z)
-        self.fake_H = self.netG(self.model_input)
-        self.output_image = self.jpeg_extractor(self.fake_H)
+        self.fake_H = self.Enforce_Consistency(self.var_Comp,self.netG(self.model_input))
+        self.output_image = self.jpeg_extractor(self.fake_H) if self.DCT_generator else self.fake_H
         if self.chroma_mode:
             self.output_image = torch.cat([self.y_channel_input,self.output_image],1)
         self.netG.train()
@@ -814,7 +829,7 @@ class DecompCNNModel(BaseModel):
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                     if GT_and_quantized:  # Save GT Uncomp images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp),out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
+                        quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp,out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
                         quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1].copy(), str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
