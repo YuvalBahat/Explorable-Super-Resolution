@@ -1443,7 +1443,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
         if self.auto_hist_temperature_mode_Enabled:
             self.auto_hist_temperature_mode_button.clicked.connect(lambda checked:self.AutoHistTemperatureMode(checked))
-        self.recurrence_button.clicked.connect(lambda x:self.Optimize_Z_recurrence())
+        if self.recurrence_opt_enabled:
+            self.recurrence_button.clicked.connect(lambda x:self.Optimize_Z_recurrence())
         # Periodicity:
         self.IncreasePeriodicity_2D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         self.IncreasePeriodicity_1D_button.clicked.connect(lambda x:self.Optimize_Z('periodicity_1D', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
