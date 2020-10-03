@@ -18,6 +18,7 @@ class BaseModel():
         self.is_train = opt['is_train']
         self.schedulers = []
         self.optimizers = []
+        self.weights_averaging_counter = 0
 
     def feed_data(self, data):
         pass
@@ -169,7 +170,8 @@ class BaseModel():
         steps_before_eval = [(v%self.opt['train']['val_freq'])==0 for v in translated_step_num]
         if any(steps_before_eval):
             cur_state_dic = self.netG.state_dict()
-            if steps_before_eval[-1]: #If this is the first step of calculating running average:
+            # if steps_before_eval[-1]: #If this is the first step of calculating running average:
+            if self.weights_averaging_counter==0:  # If this is the first step of calculating running average:
                 self.weights_averaging_counter = 1
                 self.running_avg_weights = copy.deepcopy(cur_state_dic)
             else:
@@ -177,6 +179,8 @@ class BaseModel():
                 for key in cur_state_dic:
                     self.running_avg_weights[key] = (self.weights_averaging_counter-1)/self.weights_averaging_counter*self.running_avg_weights[key]+\
                         1/self.weights_averaging_counter*cur_state_dic[key]
+        else:
+            self.weights_averaging_counter = 0
 
     def toggle_running_avg_weight(self,on):
         if on:
