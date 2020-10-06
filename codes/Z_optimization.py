@@ -845,7 +845,7 @@ class Z_optimizer():
             self.model.feed_data(self.data, need_GT=False)
             self.model.fake_H = self.model.netG(self.model.model_input)
             if self.jpeg_mode:#Should see what to feed in the first argument here:
-                self.model.fake_H = self.model.Enforce_Consistency(self.model.var_L, self.model.fake_H)
+                self.model.fake_H = self.model.Enforce_Consistency(self.model.var_Comp, self.model.fake_H)
         return Z_2_return
 
     # def Return_Translated_SubImage(self,image, translation):
