@@ -141,7 +141,7 @@ class DecompCNNModel(BaseModel):
                 if not isinstance(self.opt['train']['Num_Z_iterations'],list):
                     self.opt['train']['Num_Z_iterations'] = list(self.opt['train']['Num_Z_iterations'])
                 # Dividing the batch size in 2 for the case of training a chroma Discriminator. See explanation for self.Y_channel_is_fake
-                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/8)],
+                self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(8 if self.DCT_generator else 1))],
                     model=self,Z_range=1,max_iters=self.opt['train']['Num_Z_iterations'][0],initial_LR=1,batch_size=opt['datasets']['train']['batch_size']//(2 if self.chroma_mode and self.D_exists else 1),
                     HR_unpadder=lambda x:x,jpeg_extractor=self.jpeg_extractor)
                 if self.optimalZ_loss_type == 'l2':
@@ -279,7 +279,10 @@ class DecompCNNModel(BaseModel):
             input_DCT = self.jpeg_compressor(input_im)
             assert (input_DCT.round()==input_DCT).all(),'Expected to get integer DCT coefficients for input image'
             inconsistent_DCT = self.jpeg_non_quantized_compressor(inconsostent_output)
-            consistent_DCT = input_DCT+torch.clamp(inconsistent_DCT-input_DCT,-0.5,0.5)
+            EPSILON = 0.00001 # Using this EPSILON value to avoid rounding issues that may cause output image to be inconsistent with the input JPEG code, once re-compressed. (e.g. the round to nearest even issue: https://en.wikipedia.org/wiki/Rounding#Round_half_to_even)
+            consistent_DCT = input_DCT+torch.clamp(inconsistent_DCT-input_DCT,-0.5+EPSILON,0.5-EPSILON)
+            # Removing the following consistecy check after having verified consistency enforcing works:
+            # assert ((input_DCT-self.jpeg_compressor(self.jpeg_extractor(consistent_DCT))).abs()==0).all().item(),'Output is inconsistent with the input JPEG code. Something went wrong... (probably rounding issues)'
             return self.jpeg_extractor(consistent_DCT)
 
     def Prepare_Input(self,im_input,latent_input,compressed_input=False):
