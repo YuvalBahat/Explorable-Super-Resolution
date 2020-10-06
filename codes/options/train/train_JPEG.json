@@ -18,7 +18,7 @@
       , "use_shuffle": true
       , "n_workers": 2 //2 //4
       , "batch_size": 16
-      , "batch_size_4_grads_G": 32 //16
+      , "batch_size_4_grads_G": 32 // 16
       , "batch_size_4_grads_D": 32 //16
       , "patch_size": 128 //256
       , "use_flip": true
