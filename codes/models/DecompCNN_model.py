@@ -101,10 +101,13 @@ class DecompCNNModel(BaseModel):
             if self.D_exists:
                 assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD','SeparateBatch']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
-                if train_opt['gan_type'] == 'wgan-gp' and not self.DCT_discriminator:
+                if False and 'gp' in train_opt['gan_type'] and not self.DCT_discriminator:#Stopped replacing batch-norm layers with layer-norm layers, as I'm checking one last time WGAN-GP, and supporting this replacement was too much of a head-ache...
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
-                    self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
-                    self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
+                    if self.opt['network_D']['pooling_no_fc']:#Patch-GAN:
+                        self.netD.module.dncnn,input = util.convert_batchNorm_2_layerNorm(self.netD.module.dncnn,input=input)
+                    else:
+                        self.netD.module.features,input = util.convert_batchNorm_2_layerNorm(self.netD.module.features,input=input)
+                        self.netD.module.classifier,_ = util.convert_batchNorm_2_layerNorm(self.netD.module.classifier,input=input)
                     self.netD.cuda()
                 self.netD.train()
             if self.DCT_discriminator or not self.DCT_generator:
@@ -192,7 +195,7 @@ class DecompCNNModel(BaseModel):
                     assert self.separate_G_D_batches_counter.max_val==1,'Separate G-D batches policy not supportedwith automatic controller.'
                 self.D_init_iters = train_opt['D_init_iters'] if train_opt['D_init_iters'] else 0
 
-                if train_opt['gan_type'] == 'wgan-gp':
+                if 'gp' in train_opt['gan_type']:
                     self.random_pt = torch.Tensor(1, 1, 1, 1).to(self.device)
                     # gradient penalty loss
                     self.cri_gp = GradientPenaltyLoss(device=self.device).to(self.device)
@@ -551,7 +554,8 @@ class DecompCNNModel(BaseModel):
 
                         l_d_total += (l_d_real + l_d_fake) / 2
 
-                        if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
+                        if 'gp' in self.opt['train']['gan_type'] and self.l_gp_w>0:
+                        # if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
                             batch_size = self.var_ref.size(0)
                             if self.random_pt.size(0) != batch_size:
                                 self.random_pt.resize_(batch_size, 1, 1, 1)

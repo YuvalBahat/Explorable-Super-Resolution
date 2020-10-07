@@ -356,7 +356,12 @@ def convert_batchNorm_2_layerNorm(model,input):
         else:
             module_layers.append(l)
             input = l(input)
-    return nn.Sequential(*module_layers),input
+    if isinstance(model,nn.Sequential):
+        return nn.Sequential(*module_layers),input
+    elif isinstance(model,nn.ModuleList):
+        return nn.ModuleList(module_layers),input
+    else:
+        raise Exception('Unsupported')
 
 
 from torch.autograd import Variable
