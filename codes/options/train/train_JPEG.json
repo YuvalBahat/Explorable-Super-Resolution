@@ -1,5 +1,5 @@
 {
-  "name": "nf64nb17_BS32PS128_nonDCT_GD_normalizedInput_QF5_AUTOGDRatio_0_1_20_-20_Z1_fromMSE_MAP1e-3_fixedHinge0_3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf64nb17_BS32PS128_nonDCT_GD_normalizedInput_QF5_AUTOGDRatio_0_1_20_-20_Z1_fromAndWithMSE5e-3_MAP1e-3_fixedHinge0_3" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -134,7 +134,7 @@
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
+    , "pixel_weight": 5e-3 //1e-2 //1e-3 //1e-2
     , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))

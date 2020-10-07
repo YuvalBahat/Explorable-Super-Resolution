@@ -665,10 +665,10 @@ class DecompCNNModel(BaseModel):
                 if self.generator_step:
                     if first_grad_accumulation_step_G and first_dual_batch_step and self.GD_update_controller is not None:
                         self.GD_update_controller.Step_performed(True)
-                    if self.cri_pix:  # pixel loss
+                    if self.cri_pix and not optimized_Z_step:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
                         l_g_total += self.l_pix_w(self.gradient_step_num) * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                    if self.cri_fea:  # feature loss
+                    if self.cri_fea and not optimized_Z_step:  # feature loss
                         real_fea = self.netF(self.var_Uncomp).detach()
                         fake_fea = self.netF(self.output_image)
                         l_g_fea = self.cri_fea(fake_fea, real_fea)
@@ -676,7 +676,8 @@ class DecompCNNModel(BaseModel):
                     if self.cri_range: #range loss
                         l_g_range = self.cri_range(self.output_image)
                         l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                    if self.cri_latent and last_dual_batch_step:
+                    # if self.cri_latent and last_dual_batch_step:
+                    if self.cri_latent and not optimized_Z_step:
                         latent_loss_dict = {'Decomp':self.output_image,'Uncomp':self.var_Uncomp,'Z':static_Z}
                         if self.opt['network_G']['latent_channels'] == 'SVD_structure_tensor':
                             latent_loss_dict['SVD'] = self.SVD
@@ -704,11 +705,12 @@ class DecompCNNModel(BaseModel):
                     self.generator_Z_opt_only_step = False#Avoid entering the generator step part in the second dual-batch step, because there is no loss there so optimizer step() and backward() commands shoudn't be called
                 l_g_total.backward()
                 if self.generator_step:
-                    if self.cri_pix:
-                        quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp, self.var_Uncomp)
-                        self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
-                    if self.cri_fea:
-                        self.l_g_fea_grad_step.append(l_g_fea.item())
+                    if not optimized_Z_step:
+                        if self.cri_pix:
+                            quantized_l_pix = self.cri_pix(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp, self.var_Uncomp)
+                            self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
+                        if self.cri_fea:
+                            self.l_g_fea_grad_step.append(l_g_fea.item())
                     if self.cri_gan:
                         self.l_g_gan_grad_step.append(l_g_gan.item())
                     if self.cri_range: #range loss
