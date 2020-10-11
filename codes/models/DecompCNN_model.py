@@ -594,7 +594,8 @@ class DecompCNNModel(BaseModel):
                                             for param_group in self.optimizer_G.param_groups:
                                                 param_group['lr'] = self.lr_G
                                             self.verified_D_saved = True
-                                            self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
+                                            if 'Z_optimizer' in self.__dict__.keys():
+                                                self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
                                             self.save_log()
                                         if self.D_verification=='initial':
                                             self.D_verified = True
