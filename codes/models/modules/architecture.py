@@ -108,7 +108,7 @@ class Flatten(nn.Module):
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
-                 pooling_no_FC=False,DCT_G=None,norm_input=None):
+                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
@@ -121,6 +121,14 @@ class DnCNN(nn.Module):
         self.discriminator_net = discriminator
         self.DCT_generator = DCT_G
         assert not (norm_input and DCT_G),'Normalizing the input is enabled only when networks are operating directly on the image'
+        assert not ((DCT_G or discriminator) and coordinates_input),"Coordinates should be concatenated to input only for the non-DCT generator"
+        if coordinates_input:
+            assert not chroma_generator,'Unsupported yet, consider using 16x16 blocks'
+            self.coordinates_input = torch.stack(torch.meshgrid([torch.linspace(-0.5,0.5,8),torch.linspace(-0.5,0.5,8)]),0).unsqueeze(0)
+            in_nc += 2
+        else:
+            self.coordinates_input = None
+
         self.norm_input = norm_input
         if discriminator:
             # Ideally I should not use padding for the discriminator model. I do use padding in the first layers if the input size is too small,
@@ -200,6 +208,8 @@ class DnCNN(nn.Module):
         x = 1*quantized_coeffs
         if self.norm_input:
             x = x/255-0.5
+        if self.coordinates_input is not None:
+            x = torch.cat([self.coordinates_input.to(x.device).repeat([x.shape[0],1,x.shape[2]//8,x.shape[3]//8]),x],1)
         for i, module in enumerate(self.dncnn):
             if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
             # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
@@ -214,9 +224,9 @@ class DnCNN(nn.Module):
         else:
             if self.DCT_generator:
                 quantization_err_estimation = x-0.5
-                if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
-                    self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
-                    self.average_err_collection_counter += 1
+                # if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
+                #     self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
+                #     self.average_err_collection_counter += 1
                 if self.chroma_generator:
                     quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
                                                                                    quantization_err_estimation.size(2),quantization_err_estimation.size(3))
@@ -230,12 +240,12 @@ class DnCNN(nn.Module):
                     x = 255*x
                 return quantized_coeffs+x
 
-    def reset_err_collectiion(self):
-        self.average_err_collection_counter = 0
-        self.average_abs_err_estimates = np.zeros([8, 8])
-
-    def return_collected_err_avg(self):
-        return self.average_abs_err_estimates/self.average_err_collection_counter
+    # def reset_err_collectiion(self):
+    #     self.average_err_collection_counter = 0
+    #     self.average_abs_err_estimates = np.zeros([8, 8])
+    #
+    # def return_collected_err_avg(self):
+    #     return self.average_abs_err_estimates/self.average_err_collection_counter
 
     # def save_estimated_errors_fig(self,quantization_err_batch):
     #     import matplotlib.pyplot as plt
