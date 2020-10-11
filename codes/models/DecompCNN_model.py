@@ -800,7 +800,17 @@ class DecompCNNModel(BaseModel):
         else:
             self.test_(**kwargs)
 
-    def perform_validation(self,data_loader,cur_Z,print_rlt,GT_and_quantized,save_images,collect_avg_err_est=True):
+    def reset_err_collection(self):
+        self.average_err_collection_counter = 0
+        self.average_abs_err_estimates = np.zeros([8, 8])
+        self.average_abs_GT_err = np.zeros([8, 8])
+
+    def return_collected_err_avg(self,first_eval):
+        if first_eval:
+            self.err_normalizer = self.average_abs_GT_err/self.average_err_collection_counter
+        return self.average_abs_err_estimates/self.average_err_collection_counter/self.err_normalizer
+
+    def perform_validation(self,data_loader,cur_Z,print_rlt,first_eval,save_images,collect_avg_err_est=True):
         SAVE_IMAGE_COLLAGE = True
         avg_psnr, avg_quantized_psnr = [], []
         idx = 0
@@ -818,7 +828,8 @@ class DecompCNNModel(BaseModel):
         chroma_mode = 'YCbCr' if self.chroma_mode else 'Y'
         if collect_avg_err_est:
             assert not self.chroma_mode,'Unsupported yet'
-            self.netG.module.reset_err_collectiion()
+            self.reset_err_collection()
+            # self.netG.module.reset_err_collectiion()
         for val_data in tqdm.tqdm(data_loader):
             if save_images:
                 if idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([]);    quantized_image_collage.append([])
@@ -828,6 +839,11 @@ class DecompCNNModel(BaseModel):
             val_data['Z'] = cur_Z
             self.feed_data(val_data)
             self.test()
+            if collect_avg_err_est:
+                self.average_abs_err_estimates += torch.mean(((self.var_Comp-self.fake_H) if self.DCT_generator else (self.jpeg_compressor(self.var_Comp)-self.jpeg_non_quantized_compressor(self.fake_H))).abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
+                self.average_err_collection_counter += 1
+                if first_eval:
+                    self.average_abs_GT_err += torch.mean(((self.var_Comp if self.DCT_generator else self.jpeg_compressor(self.var_Comp))-self.jpeg_non_quantized_compressor(self.var_Uncomp)).abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
             # self.test(Y_already_computed=True) # I pass Y_already_computed because Y was computed inside feed_data, and self.model_input now comprises the computed Y generator output.
             visuals = self.get_current_visuals()
             sr_img = util.tensor2img(visuals['Decomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
@@ -837,7 +853,7 @@ class DecompCNNModel(BaseModel):
                 if SAVE_IMAGE_COLLAGE:
                     margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                    if GT_and_quantized:  # Save GT Uncomp images
+                    if first_eval:  # Save GT Uncomp images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                         quantized_image = util.tensor2img(self.jpeg_extractor(self.var_Comp) if self.DCT_generator else self.var_Comp,out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
@@ -856,9 +872,9 @@ class DecompCNNModel(BaseModel):
             else:
                 QF_images_counter[QF] = 1
                 print_rlt['psnr_gain_QF%d' % (QF)] = 0
-                if GT_and_quantized:
+                if first_eval:
                     self.log_dict['per_im_psnr_baseline_QF%d' % (QF)] = [(0, 0)]
-            if GT_and_quantized:
+            if first_eval:
                 self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0] = \
                     (0,((QF_images_counter[QF]-1)*self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1] + avg_quantized_psnr[-1])/QF_images_counter[QF])
         if save_images:
@@ -867,9 +883,10 @@ class DecompCNNModel(BaseModel):
         if collect_avg_err_est:
             import matplotlib.pyplot as plt
             plt.clf()
-            plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
+            # plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
+            plt.imshow(np.log(self.return_collected_err_avg(first_eval=first_eval)))
             plt.colorbar()
-            plt.title('Log(|estimated errors|)')
+            plt.title('Log(|estimated errors|/|GT errors|)')
             plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))
         avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
@@ -879,7 +896,7 @@ class DecompCNNModel(BaseModel):
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
             util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
-            if GT_and_quantized:  # Save GT Uncomp images
+            if first_eval:  # Save GT Uncomp images
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                               os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))
                 avg_quantized_psnr = 1 * np.mean(avg_quantized_psnr)

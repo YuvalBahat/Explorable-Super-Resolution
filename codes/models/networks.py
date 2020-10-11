@@ -107,7 +107,8 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
         out_nc = (2*(opt['scale']**2) if chroma_mode else 64) if DCT_G else 1
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
                           latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
-                          num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'])
+                          num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'],
+                          coordinates_input=opt_net['coordinates_input'])
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
