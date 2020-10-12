@@ -160,12 +160,13 @@ def define_D(opt,CEM=None,**kwargs):
     elif 'DnCNN_D' in which_model:
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
-        G_in_nc = opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64
+        G_in_nc = (opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64) if opt_net_G['DCT_G'] else 1
         if opt_net['DCT_D']==1:
             G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
         else:
             assert not chroma_mode,'Unsupported yet'
-            assert not opt_net['concat_input'],'To support, need to figure how to concat these inputs with different spatial dimensions.'
+            # assert not opt_net['concat_input'],'To support, need to figure how to concat these inputs with different spatial dimensions.'
+            assert (not opt_net_G['DCT_G']) or (not opt_net['concat_input']) ,'Unsupported yet'
             G_out_nc = 1
         # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
         D_input_channels = G_in_nc+G_out_nc if opt_net['concat_input'] else (opt['scale']**2+G_out_nc if chroma_mode else G_out_nc)

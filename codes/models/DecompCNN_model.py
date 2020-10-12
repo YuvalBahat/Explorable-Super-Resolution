@@ -423,12 +423,17 @@ class DecompCNNModel(BaseModel):
                     input_ref = torch.cat([self.var_Comp, input_ref], 1)
                 if self.Z_injected_2_D:
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
+            elif self.concatenated_D_input:
+                input_ref = torch.cat([self.var_Comp, input_ref.to(self.device)], 1)
             self.var_ref = input_ref.to(self.device)
 
     def Prepare_D_input(self,fake_H):
         self.D_fake_input = fake_H
         if not self.DCT_discriminator:
-            self.D_fake_input = self.output_image
+            if self.chroma_mode:
+                raise Exception('Unsupported yet')
+            else:
+                self.D_fake_input = torch.clamp(self.output_image,min=16,max=235)
         if self.concatenated_D_input:
             self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
         if self.Z_injected_2_D:

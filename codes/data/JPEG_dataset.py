@@ -87,6 +87,8 @@ class JpegDataset(data.Dataset):
         # modcrop in the validation / test phase
         if self.opt['phase'] != 'train':
             img_Uncomp = util.modcrop(img_Uncomp, self.block_size)
+        if img_Uncomp.shape[2]==1: #Grayscale image:
+            img_Uncomp = np.repeat(img_Uncomp,3,axis=2)
         # change color space if necessary
         img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if 'chroma' in self.opt['mode'] else 'y', [img_Uncomp])[0]
         if 'chroma' in self.opt['mode'] and img_Uncomp.shape[2]==1: #For the case of loading a grayscale image in JPEG format during chroma training:
