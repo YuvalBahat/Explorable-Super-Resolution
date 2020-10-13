@@ -184,15 +184,20 @@ class DecompCNNModel(BaseModel):
                 self.cri_range = None
 
             # GD gan loss
-            self.GD_update_controller = None
+            # self.GD_update_controller = None
             if self.D_exists:
                 self.cri_gan = GANLoss(train_opt['gan_type'], 1.0, 0.0).to(self.device)
                 # D_update_ratio and D_init_iters are for WGAN
                 self.global_D_update_ratio = train_opt['D_update_ratio'] if train_opt['D_update_ratio'] is not None else 1
-                if isinstance(self.global_D_update_ratio,list):
-                    self.GD_update_controller = util.G_D_updates_controller(intervals_range=train_opt['D_update_ratio'][0],values_range=train_opt['D_update_ratio'][1])
+
+                # if self.auto_GD_update_ratio:
+                self.GD_update_controller = util.G_D_updates_controller(intervals_values=self.global_D_update_ratio)
+                self.auto_GD_update_ratio = isinstance(self.global_D_update_ratio, list)
+                if self.auto_GD_update_ratio:
                     assert self.grad_accumulation_steps_D==self.grad_accumulation_steps_G,'Different batch sizes for G and D not supported with automatic controller.'
-                    assert self.separate_G_D_batches_counter.max_val==1,'Separate G-D batches policy not supportedwith automatic controller.'
+                    assert self.separate_G_D_batches_counter.max_val==1,'Separate G-D batches policy not supported with automatic controller.'
+                # else:
+                #     self.GD_update_controller = util.G_D_updates_controller()
                 self.D_init_iters = train_opt['D_init_iters'] if train_opt['D_init_iters'] else 0
 
                 if 'gp' in train_opt['gan_type']:
@@ -453,32 +458,33 @@ class DecompCNNModel(BaseModel):
             if G_step_batch:
                 self.generator_step = self.gradient_step_num > self.D_init_iters
                 if self.generator_step:
-                    if self.GD_update_controller is None:
-                        self.generator_step = self.gradient_step_num % max([1, self.global_D_update_ratio]) == 0
-                        # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                        self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
-                    else:
-                        self.generator_step = self.GD_update_controller.Step_query(True)
+                    # if self.auto_GD_update_ratio:
+                    self.generator_step = self.GD_update_controller.Step_query(True)
+                    # else:
+                    #     self.generator_step = self.gradient_step_num % max([1, self.global_D_update_ratio]) == 0
+                    #     # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
+                    #     self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
+
         # self.discriminator_step = False
         if self.D_exists and first_grad_accumulation_step_D:
             D_step_batch = self.separate_G_D_batches_counter.counter == 0
             if D_step_batch:
                 self.discriminator_step = self.gradient_step_num >= -self.D_init_iters
                 if self.discriminator_step:
-                    if self.GD_update_controller is None:
-                        if SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP and not self.verified_D_saved:
-                            self.discriminator_step = True
-                        else:
-                            self.discriminator_step = self.gradient_step_num % max([1, np.ceil(1 / self.global_D_update_ratio)]) == 0
-                    else:
-                        self.discriminator_step = self.GD_update_controller.Step_query(False)
+                    # if self.GD_update_controller is None:
+                    #     if SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP and not self.verified_D_saved:
+                    #         self.discriminator_step = True
+                    #     else:
+                    #         self.discriminator_step = self.gradient_step_num % max([1, np.ceil(1 / self.global_D_update_ratio)]) == 0
+                    # else:
+                    self.discriminator_step = self.GD_update_controller.Step_query(False)
 
-        if first_grad_accumulation_step_D or self.generator_step:
-            G_grads_retained = True
-            self.Set_Require_Grad_Status(self.netG,True)
-        else:
-            G_grads_retained = False
-            self.Set_Require_Grad_Status(self.netG, False)
+        # if first_grad_accumulation_step_D or self.generator_step:
+        #     G_grads_retained = True
+        #     self.Set_Require_Grad_Status(self.netG,True)
+        # else:
+        #     G_grads_retained = False
+        #     self.Set_Require_Grad_Status(self.netG, False)
         performing_optimized_Z_steps = self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED)
         performing_non_optimized_Z_steps = any([getattr(self,a) is not None for a in ['cri_gan','cri_pix','cri_latent','cri_fea']])
         actual_dual_step_steps = int(performing_optimized_Z_steps)+int(performing_non_optimized_Z_steps) # 2 if I actually have an optimized-Z step, 1 otherwise
@@ -530,7 +536,8 @@ class DecompCNNModel(BaseModel):
             else:
                 if self.discriminator_step or self.D_verification is not None:
                     if self.discriminator_step:
-                        if first_grad_accumulation_step_D and self.GD_update_controller is not None:
+                        # if first_grad_accumulation_step_D and self.GD_update_controller is not None:
+                        if first_grad_accumulation_step_D:
                             self.GD_update_controller.Step_performed(False)
                         self.Set_Require_Grad_Status(self.netD, True)
                         self.Set_Require_Grad_Status(self.netG, False)
@@ -626,15 +633,19 @@ class DecompCNNModel(BaseModel):
                                         slope += 0.5 * cur_slope
                                     self.D_converged = -self.opt['train']['lr_change_ratio'] * np.minimum(-1e-5,slope) < std
                                 self.generator_step = 1*self.D_converged
-                    if self.D_verification=='current' and self.generator_step:
-                        # self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
-                        #     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
-                        self.generator_step = (np.mean(self.D_logits_diff_grad_step[-1]) > np.log(self.opt['train']['min_D_prob_ratio_4_G']))\
-                            and (np.mean([val > 0 for val in self.D_logits_diff_grad_step[-1]])>=self.opt['train']['min_mean_D_correct'])
-                    if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory and forcing controller to switch to D step, if generator step was canceled since D was not verified:
-                            self.D_fake_input = self.D_fake_input.detach()
-                            if self.GD_update_controller is not None:
+                            elif self.D_verification=='current':
+                            # if self.D_verification=='current' and self.generator_step:
+                                # self.generator_step = all([val > 0 for val in self.D_logits_diff_grad_step[-1]]) \
+                                #     and np.mean(self.D_logits_diff_grad_step[-1])>np.log(self.opt['train']['min_D_prob_ratio_4_G'])
+                                self.generator_step = (np.mean(self.D_logits_diff_grad_step[-1]) > np.log(self.opt['train']['min_D_prob_ratio_4_G']))\
+                                    and (np.mean([val > 0 for val in self.D_logits_diff_grad_step[-1]])>=self.opt['train']['min_mean_D_correct'])
+                            if not self.generator_step:
+                            # if G_grads_retained and not self.generator_step:# Freeing up the unnecessary gradients memory and forcing controller to switch to D step, if generator step was canceled since D was not verified:
+                            #     self.D_fake_input = self.D_fake_input.detach()
+                                # if self.GD_update_controller is not None:
+                                print('G step skipped since D was not verified at step %d'%self.gradient_step_num)
                                 self.GD_update_controller.Force_D_step()
+                                # G_grads_retained = False
                     if self.discriminator_step:
                         l_d_total /= (self.grad_accumulation_steps_D*actual_dual_step_steps)
                         l_d_total.backward(retain_graph=self.generator_step or ('wgan' in self.opt['train']['gan_type']))
@@ -662,8 +673,8 @@ class DecompCNNModel(BaseModel):
                     self.Set_Require_Grad_Status(self.netD, False)
                 self.Set_Require_Grad_Status(self.netG, True)
                 if first_grad_accumulation_step_G and first_dual_batch_step:
-                    if self.GD_update_controller is not None:
-                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
+                    # if self.GD_update_controller is not None:
+                    self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
@@ -673,7 +684,8 @@ class DecompCNNModel(BaseModel):
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
                     self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
                 if self.generator_step:
-                    if first_grad_accumulation_step_G and first_dual_batch_step and self.GD_update_controller is not None:
+                    # if first_grad_accumulation_step_G and first_dual_batch_step and self.GD_update_controller is not None:
+                    if first_grad_accumulation_step_G and first_dual_batch_step:
                         self.GD_update_controller.Step_performed(True)
                     if self.cri_pix and not optimized_Z_step:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
@@ -742,7 +754,8 @@ class DecompCNNModel(BaseModel):
                                 self.log_dict['l_g_latent_%d'%(channel_num)].append((self.gradient_step_num, np.mean([val[channel_num] for val in self.l_g_latent_grad_step])))
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
-                            if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
+                            # if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
+                            if True:
                                 # with torch.no_grad():
                                 assert not self.chroma_mode,'Unsupported yet'
                                 self.test()
@@ -756,7 +769,7 @@ class DecompCNNModel(BaseModel):
                                     self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                         torch.mean(pred_d_real.detach() - post_G_step_D_scores,
                                                    dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
-                                    if self.GD_update_controller is not None:
+                                    if self.auto_GD_update_ratio:
                                         self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
                                 if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
                                     self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
@@ -889,7 +902,9 @@ class DecompCNNModel(BaseModel):
             import matplotlib.pyplot as plt
             plt.clf()
             # plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
-            plt.imshow(np.log(self.return_collected_err_avg(first_eval=first_eval)))
+            self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.return_collected_err_avg(first_eval=first_eval),-1)],-1)
+            self.avg_estimated_err_step.append(self.gradient_step_num)
+            plt.imshow(np.log(self.avg_estimated_err[...,-1]))
             plt.colorbar()
             plt.title('Log(|estimated errors|/|GT errors|)')
             plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))

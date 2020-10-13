@@ -79,16 +79,22 @@ class Counter:
         self.counter = (self.counter+1)%self.max_val
 
 class G_D_updates_controller:
-    def __init__(self,intervals_range,values_range):
+    def __init__(self,intervals_values):
         self.DG_steps_ratio = 0
         self.steps_since_D = 0
         self.steps_since_G = 0
         self.force_D_step = False
         self.last_G_step_interval = self.last_D_step_interval = 0
 
-        def interval_func(value):
-            a = (intervals_range[1]-intervals_range[0])/(values_range[1]-values_range[0])
-            return np.maximum(np.min(intervals_range),np.minimum(np.max(intervals_range),a*(value-values_range[1])+intervals_range[1]))
+        if isinstance(intervals_values,list):
+            def interval_func(value):
+                a = (intervals_values[0][1]-intervals_values[0][0])/(intervals_values[1][1]-intervals_values[1][0])
+                return np.maximum(np.min(intervals_values[0]),np.minimum(np.max(intervals_values[0]),a*(value-intervals_values[1][1])+intervals_values[0][1]))
+        else:
+            def interval_func(value):
+                return intervals_values
+
+            self.DG_steps_ratio = intervals_values
 
         self.interval_func = interval_func
 
@@ -118,13 +124,13 @@ class G_D_updates_controller:
 
     def Query_update_ratio(self):
         return -1*self.last_D_step_interval if self.last_D_step_interval>self.last_G_step_interval else self.last_G_step_interval
-        if (self.DG_steps_ratio<0 and self.steps_since_G>-1*self.DG_steps_ratio) or (self.DG_steps_ratio>0 and self.steps_since_D>self.DG_steps_ratio):
-            if self.steps_since_G>self.steps_since_D:
-                return -1*self.steps_since_G
-            else:
-                return self.steps_since_D
-        else:
-            return self.DG_steps_ratio
+        # if (self.DG_steps_ratio<0 and self.steps_since_G>-1*self.DG_steps_ratio) or (self.DG_steps_ratio>0 and self.steps_since_D>self.DG_steps_ratio):
+        #     if self.steps_since_G>self.steps_since_D:
+        #         return -1*self.steps_since_G
+        #     else:
+        #         return self.steps_since_D
+        # else:
+        #     return self.DG_steps_ratio
 
     def Force_D_step(self):
         self.force_D_step = True
