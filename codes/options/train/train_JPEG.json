@@ -1,5 +1,5 @@
 {
-  "name": "nf128nb10_BS16PS128_nonDCT_GD_LR1e-4_DSNandGP_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf128nb10_BS16PS128_nonDCT_GD_LR1e-5_DSNandGP_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -100,7 +100,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
