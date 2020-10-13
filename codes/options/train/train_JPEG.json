@@ -35,10 +35,11 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5_Z5/models/328175_G.pth"
-//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf160nb10_QF5/models/47414_G.pth"
-//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5/models/85000_G.pth"
-    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf128nb10_BS32PS128_nonDCT_G/models/71103_G.pth"
+//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_ImageNetDS/models/500001_G.pth"
+//    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf160nb10QF10_G.pth"
+//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/chroma_nf160nb10_QF5_50_LR1e-4/models/2000001_G.pth"
+//    , "pretrained_model_G": "../pretrained_models/DCTnf160nb10QF5_50_G.pth"
+    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf128nb10_BS32PS128_nonDCT_G/models/71103_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf64nb10_QF5_nonDCT_G/models/30504_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/743643_G.pth"
@@ -100,7 +101,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
