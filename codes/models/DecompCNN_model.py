@@ -457,7 +457,7 @@ class DecompCNNModel(BaseModel):
             self.generator_step = False
             if G_step_batch:
                 self.generator_step = self.gradient_step_num > self.D_init_iters
-                if self.generator_step:
+                if self.generator_step and self.D_exists:
                     # if self.auto_GD_update_ratio:
                     self.generator_step = self.GD_update_controller.Step_query(True)
                     # else:
@@ -674,7 +674,8 @@ class DecompCNNModel(BaseModel):
                 self.Set_Require_Grad_Status(self.netG, True)
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     # if self.GD_update_controller is not None:
-                    self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
+                    if self.D_exists:
+                        self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
@@ -685,7 +686,7 @@ class DecompCNNModel(BaseModel):
                     self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
                 if self.generator_step:
                     # if first_grad_accumulation_step_G and first_dual_batch_step and self.GD_update_controller is not None:
-                    if first_grad_accumulation_step_G and first_dual_batch_step:
+                    if self.D_exists and first_grad_accumulation_step_G and first_dual_batch_step:
                         self.GD_update_controller.Step_performed(True)
                     if self.cri_pix and not optimized_Z_step:  # pixel loss
                         l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
