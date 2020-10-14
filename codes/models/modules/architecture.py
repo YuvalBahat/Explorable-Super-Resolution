@@ -121,7 +121,7 @@ class DnCNN(nn.Module):
         self.discriminator_net = discriminator
         self.DCT_generator = DCT_G
         assert not (norm_input and DCT_G),'Normalizing the input is enabled only when networks are operating directly on the image'
-        assert not ((DCT_G or discriminator) and coordinates_input),"Coordinates should be concatenated to input only for the non-DCT generator"
+        assert not (DCT_G and coordinates_input),"Coordinates should be concatenated to input only for the non-DCT generator"
         if coordinates_input:
             assert not chroma_generator,'Unsupported yet, consider using 16x16 blocks'
             self.coordinates_input = torch.stack(torch.meshgrid([torch.linspace(-0.5,0.5,8),torch.linspace(-0.5,0.5,8)]),0).unsqueeze(0)

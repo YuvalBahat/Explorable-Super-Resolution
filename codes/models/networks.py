@@ -165,6 +165,7 @@ def define_D(opt,CEM=None,**kwargs):
             G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
         else:
             assert not chroma_mode,'Unsupported yet'
+            assert not (opt_net_G['coordinates_input'] and not opt_net['concat_input']),'Should decide what to do in this case'
             # assert not opt_net['concat_input'],'To support, need to figure how to concat these inputs with different spatial dimensions.'
             assert (not opt_net_G['DCT_G']) or (not opt_net['concat_input']) ,'Unsupported yet'
             G_out_nc = 1
@@ -179,7 +180,8 @@ def define_D(opt,CEM=None,**kwargs):
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//(opt['scale'] if opt_net['DCT_D'] else 1),
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
-                          pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'])
+            pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'],
+            coordinates_input=opt_net_G['coordinates_input'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

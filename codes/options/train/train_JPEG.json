@@ -1,5 +1,5 @@
 {
-  "name": "nf128nb10_BS16PS128_nonDCT_GD_LR1e-4_DSNandGP_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf128nb10_BS16PS128_nonDCT_GD_LR1e-5_SN_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -57,7 +57,7 @@
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "DCT_G": 0
     , "normalize_input": 0
-    , "coordinates_input": 0 //Concatenate input with 2 channels of within 8x8 block coordinates (only for the non-DCT generator)
+    , "coordinates_input": 1 //Concatenate input with 2 channels of within 8x8 block coordinates (only for the non-DCT generator)
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "latent_channels": 0 //5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
@@ -102,11 +102,11 @@
 
   , "train": {
     "resume": 1
-    ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-4 //1e-4 //1e-5
+    , "lr_D": 1e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
@@ -121,7 +121,7 @@
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
     , "feature_criterion": "l1"
-    , "gan_type": "wgan-sngp" //,"vanilla","lsgan","wgan-gp","wgan-sn"
+    , "gan_type": "wgan-sn" //,"vanilla","lsgan","wgan-gp","wgan-sn"
     , "hinge_threshold": 1 //0.3 //Comment if not using hinge loss
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
     , "Num_Z_iterations": [10] //[2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
@@ -148,7 +148,7 @@
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
     , "optimalZ_loss_weight": 0 //5e-4 //0 //100
 //    , "range_weight": 0 //1 //0 //5000
-     , "gp_weight": 10 //10
+     , "gp_weight": 0 //10
 
     //for wgan-gp
     // , "D_update_ratio": 1
