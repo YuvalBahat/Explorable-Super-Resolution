@@ -109,6 +109,9 @@ class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
                  pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None):
+
+        BALANCED_NUM_PARAMETERS = True # If True, increasing the number of channels for layers with a 1x1 kernel, to maintain a similar number of parameters.
+
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
@@ -157,9 +160,12 @@ class DnCNN(nn.Module):
             if layer_num>=num_padded_layers:
                 expected_input_size -= (kernel_size - 1)
                 padding = 0
-            if layer_num>=num_kerneled_layers:
+            if layer_num>=num_kerneled_layers and kernel_size!=1:
+                if BALANCED_NUM_PARAMETERS:
+                    n_channels *= kernel_size
                 kernel_size = 1
         layers.append(nn.Conv2d(in_channels=in_nc+self.num_latent_channels, out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=True))
+        prev_out_channels = 1*n_channels
         if spectral_norm:
             layers[-1] = SN.spectral_norm(layers[-1])
         layers.append(nn.ReLU(inplace=True))
@@ -168,26 +174,31 @@ class DnCNN(nn.Module):
                 if layer_num>=num_padded_layers:
                     expected_input_size -= (kernel_size-1)
                     padding = 0
-                if layer_num >= num_kerneled_layers:
+                if layer_num >= num_kerneled_layers and kernel_size!=1:
+                    if BALANCED_NUM_PARAMETERS:
+                        n_channels *= kernel_size
                     kernel_size = 1
-            layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'), out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            layers.append(nn.Conv2d(in_channels=prev_out_channels+self.num_latent_channels*(self.latent_input=='all_layers'), out_channels=n_channels, kernel_size=kernel_size, padding=padding,bias=False))
+            prev_out_channels = 1 * n_channels
             if spectral_norm:
                 layers[-1] = SN.spectral_norm(layers[-1])
             if norm_type=='batch':
-                layers.append(nn.BatchNorm2d(n_channels, eps=0.0001, momentum=0.95))
+                layers.append(nn.BatchNorm2d(prev_out_channels, eps=0.0001, momentum=0.95))
             elif norm_type=='layer':
-                layers.append(nn.LayerNorm(normalized_shape=[n_channels,expected_input_size,expected_input_size],elementwise_affine=False))
+                layers.append(nn.LayerNorm(normalized_shape=[prev_out_channels,expected_input_size,expected_input_size],elementwise_affine=False))
             elif norm_type=='instance':
-                layers.append(nn.InstanceNorm2d(n_channels))
+                layers.append(nn.InstanceNorm2d(prev_out_channels))
             layers.append(nn.LeakyReLU(inplace=True))
         layer_num += 1
         if self.discriminator_net:
             if layer_num >= num_padded_layers:
                 expected_input_size -= (kernel_size - 1)
                 padding = 0
-            if layer_num >= num_kerneled_layers:
+            if layer_num >= num_kerneled_layers and kernel_size!=1:
+                if BALANCED_NUM_PARAMETERS:
+                    n_channels *= kernel_size
                 kernel_size = 1
-        layers.append(nn.Conv2d(in_channels=n_channels+self.num_latent_channels*(self.latent_input=='all_layers'),
+        layers.append(nn.Conv2d(in_channels=prev_out_channels+self.num_latent_channels*(self.latent_input=='all_layers'),
             out_channels=1 if (self.discriminator_net and self.pooling_no_FC) else out_nc, kernel_size=kernel_size, padding=padding,
                                 bias=self.discriminator_net and self.pooling_no_FC)) #When using a fully convolutional D (when pooling_no_FC), allowing bias in the final layer.
         if spectral_norm:

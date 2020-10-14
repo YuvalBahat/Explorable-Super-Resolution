@@ -581,8 +581,8 @@ class DecompCNNModel(BaseModel):
                         self.l_d_fake_grad_step.append(l_d_fake.item())
                     self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
-                    self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
-                    # self.D_logits_diff_grad_step.append(torch.mean(pred_d_real.detach()-pred_d_fake.detach()).item())
+                    # self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
+                    self.D_logits_diff_grad_step.append(list((pred_d_real.detach()-pred_d_fake.detach()).view(-1).data.cpu().numpy()))
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         self.generator_Z_opt_only_step = Z_OPTIMIZATION_WHEN_D_UNVERIFIED and self.generator_step
                         if self.generator_step:
