@@ -663,7 +663,9 @@ class DecompCNNModel(BaseModel):
                         self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
                         self.log_dict['D_fake'].append((self.gradient_step_num,np.mean(self.D_fake_grad_step)))
                         self.log_dict['D_logits_diff'].append((self.gradient_step_num,np.mean(np.concatenate(self.D_logits_diff_grad_step))))
-                        self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
+                        min_outliers_threshold = util.Min_Outliers_Threshold(torch.cat([pred_d_real.view(-1),pred_d_fake.view(-1)]),torch.cat([1*torch.ones_like(pred_d_real.view(-1)),-1*torch.ones_like(pred_d_fake.view(-1))]))
+                        self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,(pred_d_real>min_outliers_threshold).float().mean().item()))
+                        # self.log_dict['Correctly_distinguished'].append((self.gradient_step_num,np.mean([val0>0 for val1 in self.D_logits_diff_grad_step for val0 in val1])))
 
             # G step:
             if self.generator_step or self.generator_Z_opt_only_step:
