@@ -151,6 +151,13 @@ def Varying_weight(step_range, weight_range, log_scale=True):
                     return float((cur_step - step_range[0]) / np.diff(step_range) * np.diff(weight_range[:2]) + weight_range[0])
 
         return cur_weight
+
+def Min_Outliers_Threshold(samples,labels):
+    assert torch.all(torch.unique(labels)==torch.tensor([-1,1]).type(labels.type()))
+    order = torch.argsort(samples)
+    pos_outliers = (labels[order]==1).cumsum(0)
+    neg_outliers = (labels[order.flip(0)]==-1).cumsum(0).flip(0)
+    return samples[order][(pos_outliers-neg_outliers).abs().argmin()]
 ####################
 # image convert
 ####################
