@@ -69,7 +69,8 @@ class DecompCNNModel(BaseModel):
             self.jpeg_extractor_Y = JPEG(compress=False,chroma_mode=False,block_size=8).to(self.device)
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
-                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain',
+                       'clamped_portion']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
@@ -546,8 +547,8 @@ class DecompCNNModel(BaseModel):
                     if first_dual_batch_step:
                         pred_d_real = self.netD(self.var_ref)
                         if first_grad_accumulation_step_D:
-                            self.l_d_real_grad_step, self.l_d_fake_grad_step, self.D_real_grad_step, self.D_fake_grad_step, self.D_logits_diff_grad_step, self.D_G_prob_ratio_grad_step \
-                                = [], [], [], [], [], []
+                            self.l_d_real_grad_step, self.l_d_fake_grad_step, self.D_real_grad_step, self.D_fake_grad_step, self.D_logits_diff_grad_step, self.D_G_prob_ratio_grad_step,self.clamped_portion_grad_step \
+                                = [], [], [], [], [], [],[]
                     pred_d_fake = self.netD(self.D_fake_input.detach())  # detach to avoid BP to G
                     if self.opt['train']['G_Dbatch_separation']=='SameD':
                         pred_g_fake = 1*pred_d_fake
@@ -579,6 +580,7 @@ class DecompCNNModel(BaseModel):
                             l_d_total += l_d_gp
                         self.l_d_real_grad_step.append(-1*l_d_real.item())
                         self.l_d_fake_grad_step.append(l_d_fake.item())
+                        self.clamped_portion_grad_step.append(0.5*((pred_d_real>self.opt['train']['hinge_threshold']).float().mean()+(pred_d_fake<-1*self.opt['train']['hinge_threshold']).float().mean()).item())
                     self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
                     # self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
@@ -656,6 +658,7 @@ class DecompCNNModel(BaseModel):
                             # set log
                             self.log_dict['l_d_real'].append((self.gradient_step_num,np.mean(self.l_d_real_grad_step)))
                             self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
+                            self.log_dict['clamped_portion'].append((self.gradient_step_num,np.mean(self.clamped_portion_grad_step)))
                             self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
                             if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
                                 self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
