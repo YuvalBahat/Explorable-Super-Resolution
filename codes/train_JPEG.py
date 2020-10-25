@@ -141,7 +141,8 @@ def main():
                 if model.generator_changed:
                     print('---------- validation -------------')
                     start_time = time.time()
-                    save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
+                    # save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
+                    save_images = True# Changed to always saving, and pruning saved images as training advances
                     Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
                     print_rlt['psnr'] = 0
                     model.toggle_running_avg_weight(True)
@@ -150,6 +151,7 @@ def main():
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_Uncomp,
                                                  save_images=save_images,collect_avg_err_est=z_num==0)
                     model.toggle_running_avg_weight(False)
+                    util.DelOldValImages(cur_step=model.gradient_step_num,folder=model.opt['path']['val_images'],saving_freq=opt['train']['val_save_freq'])
                     # if save_images: model.average_across_model_snapshots(apply=False)
                     if save_GT_Uncomp:  # Save GT Uncomp images
                         save_GT_Uncomp = False

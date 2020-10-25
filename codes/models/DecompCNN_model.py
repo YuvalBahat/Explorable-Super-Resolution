@@ -24,6 +24,8 @@ ADDITIONALLY_SAVED_ATTRIBUTES = ['D_verified','verified_D_saved','lr_G','lr_D']
 class DecompCNNModel(BaseModel):
     def __init__(self, opt,accumulation_steps_per_batch=None,init_Fnet=None,init_Dnet=None,chroma_mode=False,**kwargs):
         super(DecompCNNModel, self).__init__(opt)
+        if self.opt['network_G']['DCT_G'] is None: #Legacy support
+            self.opt['network_G']['DCT_G'] = 1
         train_opt = opt['train']
         self.log_path = opt['path']['log']
         self.latent_input = opt['network_G']['latent_input'] if opt['network_G']['latent_input']!='None' else None
@@ -100,7 +102,7 @@ class DecompCNNModel(BaseModel):
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
-                assert self.opt['train']['G_Dbatch_separation'] in ['No','SameD','SeparateBatch']
+                assert self.opt['train']['G_Dbatch_separation'] in [None,'No','SameD','SeparateBatch']
                 self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
                 if False and 'gp' in train_opt['gan_type'] and not self.DCT_discriminator:#Stopped replacing batch-norm layers with layer-norm layers, as I'm checking one last time WGAN-GP, and supporting this replacement was too much of a head-ache...
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
@@ -142,6 +144,8 @@ class DecompCNNModel(BaseModel):
             # Reference loss after optimizing latent input:
             if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
+                if self.opt['train']['Num_Z_iterations'] is None: #legacy support
+                    self.opt['train']['Num_Z_iterations'] = [10]
                 if not isinstance(self.opt['train']['Num_Z_iterations'],list):
                     self.opt['train']['Num_Z_iterations'] = list(self.opt['train']['Num_Z_iterations'])
                 # Dividing the batch size in 2 for the case of training a chroma Discriminator. See explanation for self.Y_channel_is_fake
@@ -775,12 +779,12 @@ class DecompCNNModel(BaseModel):
                                     self.log_dict['post_train_D_diff'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                         torch.mean(pred_d_real.detach() - post_G_step_D_scores,
                                                    dim=[d for d in range(1, pred_d_real.dim())]).data.cpu().numpy())])))
-                                    if self.auto_GD_update_ratio:
-                                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict['post_train_D_diff'] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
                                 if self.opt['train']['G_Dbatch_separation'] != 'SameD': #It doesn't make sense to compare with pred_g_fake in this case, because it was computed with D prior its update.
                                     self.log_dict['G_step_D_gain'].append((self.gradient_step_num,np.mean([v.item() for v in list(
                                         torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
                                                    dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
+                    if self.cri_gan and self.auto_GD_update_ratio:
+                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict[self.opt['train']['D_update_measure']] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
 
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
