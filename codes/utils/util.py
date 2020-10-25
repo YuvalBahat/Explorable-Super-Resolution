@@ -10,6 +10,7 @@ from skimage.transform import resize
 from scipy.signal import convolve2d
 import torch
 import torch.nn as nn
+import re
 
 ####################
 # miscellaneous
@@ -77,6 +78,24 @@ class Counter:
 
     def advance(self):
         self.counter = (self.counter+1)%self.max_val
+
+def DelOldValImages(cur_step,folder,saving_freq):
+    val_images = [im_file for im_file in os.listdir(folder) if re.search('^(\d)+_Z-?\dPSNR.*.png',im_file) is not None]
+    corresponding_steps = [int(re.search('^(\d)+(?=_Z)',im_file).group(0)) for im_file in val_images]
+    old_threshold = max(0,cur_step-2*saving_freq)
+    intermediate_threshold = max(0,cur_step-saving_freq)
+    del_ind = []
+    for i,val in enumerate(corresponding_steps):
+        if val<=old_threshold and val%saving_freq:
+            del_ind.append(True)
+        elif val<=intermediate_threshold and val%(saving_freq//5):
+            del_ind.append(True)
+        else:
+            del_ind.append(False)
+    files2delete = [val_images[i] for i in range(len(val_images)) if del_ind[i]]
+    for file in files2delete:
+        os.remove(os.path.join(folder,file))
+
 
 class G_D_updates_controller:
     def __init__(self,intervals_values):

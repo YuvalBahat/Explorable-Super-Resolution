@@ -232,6 +232,8 @@ class BaseModel():
     def plot_curves(self, steps, loss, smoothing='yes'):
         assert smoothing in ['yes','no','extra']
         # SMOOTH_CURVES = True
+        # if smoothing=='yes':
+        #     smoothing = 'no'
         if smoothing!='no':
             steps_induced_upper_bound = np.ceil(1000/np.percentile(np.diff(steps),99)) if len(steps)>1 else 1
             smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)

@@ -1,5 +1,5 @@
 {
-  "name": "nf128nb10_Dnk3balanced_BS32PS128_nonDCT_GcoordInD_LR1e-4_SN_QF5_concatDratio10_verifR1_1C0_9_Z0_fromMSEandDecay_fixedHinge1" // ,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf128nb10_Dnk3balanced_BS32PS128_nonDCT_GcoordInD_LR1e-4_SN_QF5_concatDauto5_15_Init1000_Z0_fromMSE_fixedHinge1_3" // ,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -17,7 +17,7 @@
       , "subset_file": null
       , "use_shuffle": true
       , "n_workers": 2 //2 //4
-      , "batch_size": 8
+      , "batch_size_per_GPU": 8
       , "batch_size_4_grads_G": 32 // 16
       , "batch_size_4_grads_D": 32 //16
       , "patch_size": 128 //256
@@ -129,6 +129,7 @@
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": [[15,5],[2,3.5]] //1 //3 //10 //0 //1
+    , "D_update_measure": "clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
 //      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
