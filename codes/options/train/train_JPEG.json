@@ -1,5 +1,5 @@
 {
-  "name": "nf128nb10_Dnk3balanced_BS16PS128_nonDCT_GD_LR1e-5_SN_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf128nb10_Dnk3balanced_BS16PS128_nonDCT_GD_LR5e-5_SN_QF5_concatDratiClamped_fromMSE" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -101,18 +101,18 @@
   }
 
   , "train": {
-    "resume": 1
-    ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    "resume": 0
+    ,"lr_G": 5e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-5 //1e-4 //1e-5
+    , "lr_D": 5e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
     , "beta2_D": 0.9 //None
     , "lr_scheme": "MultiStepLR"
-    , "steps_4_loss_std": 1 //500
+    , "steps_4_loss_std": 20 //500
     , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
@@ -125,12 +125,12 @@
     , "hinge_threshold": 1 //0.3 //Comment if not using hinge loss
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
     , "Num_Z_iterations": [10] //[2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
-    , "D_verification": "current" //'current', 'convergence', 'past','initial','initial_gradual'
+//    , "D_verification": "current" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": 10 //[[20,-20],[0,1]] //1 //3 //10 //0 //1
-    , "D_update_measure": "post_train_D_diff" //,"clamped_portion" //"post_train_D_diff"
+    , "D_update_ratio": [[20,1],[0.8,0.99]] //1 //3 //10 //0 //1
+    , "D_update_measure": "clamped_portion" //,"clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
 //      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
@@ -153,7 +153,7 @@
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0 //10000 //0
+     , "D_init_iters": 500 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0
