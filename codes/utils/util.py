@@ -80,7 +80,7 @@ class Counter:
         self.counter = (self.counter+1)%self.max_val
 
 def DelOldValImages(cur_step,folder,saving_freq):
-    val_images = [im_file for im_file in os.listdir(folder) if re.search('^(\d)+_Z-?\dPSNR.*.png',im_file) is not None]
+    val_images = [im_file for im_file in os.listdir(folder) if re.search('^(\d)+_Z.*PSNR.*.png$',im_file) is not None]
     corresponding_steps = [int(re.search('^(\d)+(?=_Z)',im_file).group(0)) for im_file in val_images]
     old_threshold = max(0,cur_step-2*saving_freq)
     intermediate_threshold = max(0,cur_step-saving_freq)
