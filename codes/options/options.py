@@ -109,9 +109,9 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     if is_train:
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
         # Legacy support:
-        if opt['datasets']['train']['batch_size_per_GPU'] is None:
+        if 'batch_size_per_GPU' not in opt['datasets']['train'].keys():
             opt['datasets']['train']['batch_size_per_GPU'] = 1*opt['datasets']['train']['batch_size']
-        if opt['train']['D_update_measure'] is None:
+        if 'D_update_measure' not in opt['train'].keys():
             opt['train']['D_update_measure'] = 'post_train_D_diff'
 
         opt['datasets']['train']['batch_size'] = 1*opt['datasets']['train']['batch_size_per_GPU']

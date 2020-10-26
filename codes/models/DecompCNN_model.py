@@ -784,7 +784,8 @@ class DecompCNNModel(BaseModel):
                                         torch.mean(post_G_step_D_scores-pred_g_fake.detach(),
                                                    dim=[d for d in range(1, pred_g_fake.dim())]).data.cpu().numpy())])))
                     if self.cri_gan and self.auto_GD_update_ratio:
-                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict[self.opt['train']['D_update_measure']] if v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std']]))
+                        self.GD_update_controller.Update_ratio(np.mean([v[1] for v in self.log_dict[self.opt['train']['D_update_measure']]\
+                            if (v[0]>=self.gradient_step_num-self.opt['train']['steps_4_loss_std'] and v[0]>self.opt['train']['D_init_iters'])]))
 
                     if self.cri_optimalZ:
                         self.log_dict['l_g_optimalZ'].append((self.gradient_step_num,np.mean(self.l_g_optimalZ_grad_step)))
