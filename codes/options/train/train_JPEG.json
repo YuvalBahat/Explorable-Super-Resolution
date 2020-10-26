@@ -11,7 +11,7 @@
 //      "name": "DIV2K"
       "name": "ImageNet"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 5 //[[5,50]] //[5,10,20,30,40,50,60,70] //10
+      , "jpeg_quality_factor": [[5,95]] //[[5,50]] //[5,10,20,30,40,50,60,70] //10
 //      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
@@ -28,7 +28,7 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 5 //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": [[5,95]] //[[5,50]] //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
@@ -62,8 +62,8 @@
     , "latent_channels": 0 //5 //"SVDinNormedOut_structure_tensor_64" //64 //"SVDinNormedOut_structure_tensor" //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "norm_type": "batch" //"instance" //"batch"
     , "mode": "CNA"
-    , "nf": 128 //160 //94 //320
-    , "nb": 10 //9 //10 //17
+    , "nf": 297 //128 //160 //94 //320
+    , "nb": 15 //10 //9 //10 //17
 //    , "in_nc": 64
 //    , "out_nc": 64
     , "gc": 32
@@ -129,26 +129,26 @@
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": [[20,1],[0.8,0.99]] //1 //3 //10 //0 //1
-    , "D_update_measure": "clamped_portion" //,"clamped_portion" //"post_train_D_diff"
+    , "D_update_ratio": [[100,1],[0,0.99]] //1 //3 //10 //0 //1
+    , "D_update_measure": "clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
 //      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
+    , "pixel_weight": 1e-2 //1e-3 //1e-2
     , "feature_weight": 0 //1
-    , "gan_weight": 5e-3 //1 //5e-3
+//    , "gan_weight": 5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
 //    , "optimalZ_loss_weight": 5e-3 //5e-4 //0 //100
-    , "range_weight": 1 //0 //5000
-//    , "pixel_weight": [[0,100000],[5e-3,5e-6,0]] //1e-3 //1e-2
+//    , "range_weight": 1 //0 //5000
+//    , "pixel_weight": [[0,40000],[1e-2,5e-6,0]] //1e-3 //1e-2
 //    , "feature_weight": 0 //1
-//    , "gan_weight": 0 //5e-3 //1 //5e-3
+    , "gan_weight": 0 //5e-3 //1 //5e-3
     , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
     , "optimalZ_loss_weight": 0 //5e-4 //0 //100
-//    , "range_weight": 0 //1 //0 //5000
+    , "range_weight": 0 //1 //0 //5000
      , "gp_weight": 0 //10
 
     //for wgan-gp
