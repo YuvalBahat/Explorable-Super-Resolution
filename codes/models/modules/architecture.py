@@ -126,8 +126,8 @@ class DnCNN(nn.Module):
         assert not (norm_input and DCT_G),'Normalizing the input is enabled only when networks are operating directly on the image'
         assert not (DCT_G and coordinates_input),"Coordinates should be concatenated to input only for the non-DCT generator"
         if coordinates_input:
-            assert not chroma_generator,'Unsupported yet, consider using 16x16 blocks'
-            self.coordinates_input = torch.stack(torch.meshgrid([torch.linspace(-0.5,0.5,8),torch.linspace(-0.5,0.5,8)]),0).unsqueeze(0)
+            # assert not chroma_generator,'Unsupported yet, consider using 16x16 blocks'
+            self.coordinates_input = torch.stack(torch.meshgrid([torch.linspace(-0.5,0.5,coordinates_input),torch.linspace(-0.5,0.5,coordinates_input)]),0).unsqueeze(0)
             in_nc += 2
         else:
             self.coordinates_input = None
@@ -144,7 +144,7 @@ class DnCNN(nn.Module):
         else:
             spectral_norm = False
         self.chroma_generator = chroma_generator
-        if chroma_generator:
+        if chroma_generator and DCT_G:
             self.block_size = np.sqrt(out_nc/2)
             assert self.block_size==np.round(self.block_size)
             self.block_size = int(self.block_size)
@@ -220,7 +220,7 @@ class DnCNN(nn.Module):
         if self.norm_input:
             x = x/255-0.5
         if self.coordinates_input is not None:
-            x = torch.cat([self.coordinates_input.to(x.device).repeat([x.shape[0],1,x.shape[2]//8,x.shape[3]//8]),x],1)
+            x = torch.cat([self.coordinates_input.to(x.device).repeat([x.shape[0],1,x.shape[2]//self.coordinates_input.shape[2],x.shape[3]//self.coordinates_input.shape[2]]),x],1)
         for i, module in enumerate(self.dncnn):
             if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
             # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):

@@ -9,6 +9,7 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from utils.util import IndexingHelper, Return_Translated_SubImage, Return_Interpolated_SubImage
 from cv2 import dilate
 import models.modules.architecture as arch
+from torchvision import transforms
 
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
@@ -313,6 +314,9 @@ class Optimizable_Z(torch.nn.Module):
 
     def Return_Detached_Z(self):
         return self.forward().detach()
+
+    def Assign_Z(self,Z):
+        self.Z.data = 1*Z
 
 def ArcTanH(input_tensor):
     return 0.5*torch.log((1+input_tensor+torch.finfo(input_tensor.dtype).eps)/(1-input_tensor+torch.finfo(input_tensor.dtype).eps))
@@ -685,6 +689,38 @@ class Z_optimizer():
                 self.rmse_weight = data['rmse_weight']
             elif 'recurrence' in objective:
                 self.netD = arch.Internal_Discriminator()
+            elif objective=='digit':
+                self.SVHN_classifier = self.model.net_SVHN
+                mask_bounds = torch.cat([self.image_mask.nonzero().min(0)[0],self.image_mask.nonzero().max(0)[0]])
+                # self.debug_counter = 0
+                # self.Z_hist = []
+                def transform(image):
+                    return (torch.nn.functional.interpolate(image[...,mask_bounds[0]:mask_bounds[2]+1,mask_bounds[1]:mask_bounds[3]+1],size=(64,64),mode='bilinear')[...,5:-5,5:-5]-0.5)/0.5
+                def classify_image(image):
+                    # import matplotlib.pyplot as plt
+                    # plt.imsave('./debug/debug_%d.png'%(self.debug_counter),(0.5*transform(image)[0]+0.5).data.cpu().numpy().transpose(1,2,0))
+                    # if 'Z' in self.data.keys():
+                    #     diffs_list = [(j,(self.data['Z']-past_Z).abs().max().item()) for j,past_Z in enumerate(self.Z_hist) if past_Z is not None]
+                    #     print(diffs_list)
+                    #     plt.imsave('./debug/debug_%d_Z.png' % (self.debug_counter),0.5*(1+self.data['Z'].view(
+                    #         8,8,self.data['Z'].shape[2],self.data['Z'].shape[3]).permute([2,0,3,1])).data.cpu().numpy().reshape(
+                    #         [8*self.data['Z'].shape[2],8*self.data['Z'].shape[3]]),cmap='gray')
+                    #     self.Z_hist.append(self.data['Z'])
+                    # else:
+                    #     self.Z_hist.append(None)
+                    # print('Classifying #%d'%(self.debug_counter))
+                    # self.debug_counter += 1
+                    # plt.imsave('./debug/debug_org_%.4f.png'%(time.time()%100),image[...,mask_bounds[0]:mask_bounds[2]+1,mask_bounds[1]:mask_bounds[3]+1][0].data.cpu().numpy().transpose(1,2,0))
+                    return self.SVHN_classifier(transform(image))
+                def classifier_loss(image):
+                    classifier_output = classify_image(image)
+                    return torch.stack([torch.nn.functional.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device)),
+                            torch.nn.functional.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda())])
+                initial_classification = classify_image(self.model.Output_Batch(within_0_1=True))
+                print('Initial score for %d: %.3f, estimated # of digits: %d'%(self.data['digit_2_resemble'],
+                    torch.nn.functional.softmax(initial_classification[1])[0,self.data['digit_2_resemble']],initial_classification[0].argmax()))
+                self.loss = classifier_loss
+                self.classify_image = classify_image
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
         else:
             self.optimizer = existing_optimizer
@@ -731,10 +767,11 @@ class Z_optimizer():
 
     def optimize(self):
         DETACH_Y_FOR_CHROMA_TRAINING = False
+        USE_MIN_LOSS_Z = True
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
         self.Manage_Model_Grad_Requirements(verify_disabled=True)
-        self.loss_values = []
+        self.loss_values,per_iter_pre_tanh_Z = [],[]
         if self.random_Z_inits and self.cur_iter==0:
             self.Z_model.Randomize_Z(what_2_shuffle=self.random_Z_inits)
         z_iter = self.cur_iter
@@ -755,6 +792,8 @@ class Z_optimizer():
                     break
             self.optimizer.zero_grad()
             self.data['Z'] = self.Z_model()
+            if USE_MIN_LOSS_Z:
+                per_iter_pre_tanh_Z.append(1*self.Z_model.PreTanhZ())
             if self.model_training and 'Uncomp' in self.data.keys():
                 self.data['Uncomp'] = 1*Uncomp_batch
             self.model.feed_data(self.data, need_GT=False,detach_Y=DETACH_Y_FOR_CHROMA_TRAINING and self.model_training and self.data['Uncomp'].size(1)==3)
@@ -806,6 +845,8 @@ class Z_optimizer():
                 Z_loss = (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean(0)+TV_Loss(self.output_image * self.image_mask).to(self.device)
             elif 'VGG' in self.objective:
                 Z_loss = self.loss(self.model.netF(self.output_image).to(self.device),self.GT_HR_VGG)
+            elif self.objective=='digit':
+                Z_loss = self.loss(self.output_image.to(self.device))
             if 'max' in self.objective:
                 Z_loss = -1*Z_loss
             cur_LR = self.optimizer.param_groups[0]['lr']
@@ -828,16 +869,37 @@ class Z_optimizer():
                 if cur_LR<=1.2*self.MIN_LR:
                     break
             z_iter += 1
+        if USE_MIN_LOSS_Z:
+            if np.min(self.loss_values)==self.loss_values[-1]:
+                USE_MIN_LOSS_Z = False
+            else:
+                min_loss_iter = np.argmin(self.loss_values)
+                print('Minimum loss observed in %d/%d iteration, discarding subsequent iterations.'%(min_loss_iter+1,len(self.loss_values)))
+                self.Z_model.Z.data = 1*per_iter_pre_tanh_Z[min_loss_iter]
+                self.loss_values = self.loss_values[:min_loss_iter+1]
         if 'Adversarial' in self.objective:
             self.model.netG.train(False) # Preventing image padding in the DTE code, to have the output fitD's input size
         if 'random' in self.objective and 'limited' in self.objective:
             self.loss_values[0] = self.loss_values[1] #Replacing the first loss values which is close to 0 in this case, to prevent discarding optimization because loss increased compared to it.
         # if 'STD' in self.objective or 'periodicity' in self.objective:
-        if not self.model_training:
-            print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
         self.cur_iter = z_iter+1
         Z_2_return = self.Z_model.Return_Detached_Z()
         self.Manage_Model_Grad_Requirements(verify_disabled=False)
+        if self.objective=='digit':
+            if USE_MIN_LOSS_Z:
+                self.data['Z'] = Z_2_return
+                if 'Uncomp' in self.data.keys():
+                    self.data['Uncomp'] = 1 * Uncomp_batch
+                self.model.feed_data(self.data, need_GT=False)
+                self.model.test(chroma_input=self.data['chroma_input'])
+                # self.model.fake_H = self.model.netG(self.model.model_input)
+                # if self.jpeg_mode:  # Should see what to feed in the first argument here:
+                #     self.model.fake_H = self.model.Enforce_Consistency(self.model.var_Comp, self.model.fake_H)
+            initial_classification = self.classify_image(self.model.Output_Batch(within_0_1=True))
+            print('Final score for %d: %.3f, estimated # of digits: %d' % (self.data['digit_2_resemble'],
+                torch.nn.functional.softmax(initial_classification[1])[0, self.data['digit_2_resemble']],initial_classification[0].argmax()))
+        if not self.model_training:
+            print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)
             self.data['Z'] = Z_2_return
             if 'Uncomp' in self.data.keys():

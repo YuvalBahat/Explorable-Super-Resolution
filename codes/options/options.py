@@ -54,9 +54,12 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     if JPEG_run:
         if name=='JPEG_chroma':
             opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
-            opt['name'] = 'chroma_'+opt['name']
+            bare_name = opt['name'].split('/')[-1]
+            if  bare_name[:len('chroma_')] != 'chroma_':
+                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),'chroma_'+bare_name)
             for dataset in opt['datasets'].keys():
-                opt['datasets'][dataset]['mode'] += '_chroma'
+                if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
+                    opt['datasets'][dataset]['mode'] += '_chroma'
                 opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
         else:
             opt['input_downsampling'] = 1

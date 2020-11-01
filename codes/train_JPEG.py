@@ -15,10 +15,10 @@ from utils import util
 from data import create_dataloader, create_dataset
 from models import create_model
 from utils.logger import Logger, PrintLogger
-import tqdm
+# import tqdm
 from datetime import datetime
-import cv2
-import copy
+# import cv2
+# import copy
 
 # USE_Y_GENERATOR_4_CHROMA = True
 
@@ -103,12 +103,16 @@ def main():
             # save models
             if lr_too_low or saving_step:
                 model.save_log()
-                recently_saved_models.append(model.save(model.gradient_step_num))
-                if len(recently_saved_models)>3:
-                    model_2_delete = recently_saved_models.popleft()
-                    os.remove(model_2_delete)
-                    if model.D_exists:
-                        os.remove(model_2_delete.replace('_G.','_D.'))
+                model.save(model.gradient_step_num)
+                util.prune_old_files(cur_step=model.gradient_step_num, folder=model.save_dir,
+                                     saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_(G|D).pth$')
+                # recently_saved_models.append(model.save(model.gradient_step_num))
+                # if len(recently_saved_models)>3:
+                #     model_2_delete = recently_saved_models.popleft()
+                #     if os.path.isfile(model_2_delete):
+                #         os.remove(model_2_delete)
+                #     if model.D_exists:
+                #         os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),model.gradient_step_num))
                 if lr_too_low:
                     break
@@ -151,7 +155,8 @@ def main():
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_Uncomp,
                                                  save_images=save_images,collect_avg_err_est=z_num==0)
                     model.toggle_running_avg_weight(False)
-                    util.DelOldValImages(cur_step=model.gradient_step_num,folder=model.opt['path']['val_images'],saving_freq=opt['train']['val_save_freq'])
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
+                                         saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_Z.*PSNR.*.png$')
                     # if save_images: model.average_across_model_snapshots(apply=False)
                     if save_GT_Uncomp:  # Save GT Uncomp images
                         save_GT_Uncomp = False

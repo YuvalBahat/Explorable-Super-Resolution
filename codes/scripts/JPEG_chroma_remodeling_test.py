@@ -9,8 +9,8 @@ import cv2
 dataset_folder = '/media/ybahat/data/Datasets/BSD100_test/BSD100_test_HR'
 images_list = os.listdir(dataset_folder)
 
-jpeg_compressor_8 = JPEG.JPEG(compress=True,downsample_and_quantize=False,chroma_mode=True,block_size=8)
-jpeg_compressor_16 = JPEG.JPEG(compress=True, downsample_and_quantize=True, downsample_only=True, chroma_mode=True, block_size=16)
+jpeg_compressor_8 = JPEG.JPEG(compress=True,downsample_or_quantize=False,chroma_mode=True,block_size=8)
+jpeg_compressor_16 = JPEG.JPEG(compress=True, downsample_or_quantize='downsample_only', chroma_mode=True, block_size=16)
 jpeg_extractor = JPEG.JPEG(compress=False, chroma_mode=True, block_size=16)
 jpeg_compressor_16.Set_Q_Table(torch.tensor(90))
 jpeg_compressor_8.Set_Q_Table(torch.tensor(90))
