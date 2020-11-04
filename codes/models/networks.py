@@ -184,7 +184,7 @@ def define_D(opt,CEM=None,**kwargs):
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//(opt['scale'] if opt_net['DCT_D'] else 1),
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
             pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'],
-            coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None)
+            coordinates_input=opt['scale'] if opt_net_G['coordinates_input'] else None)
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

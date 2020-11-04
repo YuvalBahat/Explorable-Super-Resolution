@@ -1,7 +1,7 @@
 {
 //    "name": "nf320nb10_QF5_50_ImageNetDS",
 //    "name": "nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss"
-    "name": "nf128nb10_Dnk3balanced_BS16PS128_nonDCT_GD_LR1e-5_SN_QF5_concatDverifR1_1C0_9_Z0_fromMSE_fixedHinge1"
+    "name": "nf320nb10_Dnk3balanced_BS16PS104_nonDCTcoord_GD_LR1e-4_SN_QF1_50_concatDratioClampedInit1K_fromMSE_Z1_MAP5e-4"
   , "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -11,14 +11,14 @@
     "test_1": { // the 1st test dataset
       "name": "BSD100"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 49 //[[5,50]]
+      , "jpeg_quality_factor": 5 //[[5,50]]
       , "dataroot_Uncomp": "BSD100_test/BSD100_test_HR"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     },
     "test_2": { // the 2nd test dataset
       "name": "LIVE"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 49 //[[5,50]]
+      , "jpeg_quality_factor": 5 //[[5,50]]
       , "dataroot_Uncomp": "LIVE_release2/refimgs"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     } //,
@@ -44,24 +44,24 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss/models/876435_G.pth"
-    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS/models/727906_G.pth"
+//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss/models/876435_G.pth"
+//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS/models/727906_G.pth",
+//    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_Dnk3balanced_BS16PS104_nonDCTcoord_GD_LR1e-4_SN_QF1_50_concatDratioClampedInit1K_fromMSE_Z1_MAP5e-4/models/84778_G.pth"
+    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_Dnk3balanced_BS16PS104_nonDCTcoord_GD_LR1e-4_SN_QF1_50_concatDratioClampedInit1K_fromMSE_Z1_MAP5e-4/models/84778_G.pth"
   }
 
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
-    , "latent_input": "all_layers" // "first_layer","first_layer","None"
+    , "latent_input": "first_layer" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
-    , "latent_channels": 1 //64
-    , "DCT_G": 0
+    , "latent_channels": 1 //1 //64
+    , "DCT_G": 0 //1 //0
     , "normalize_input": 0
-    , "coordinates_input": 1
+    , "coordinates_input": 1 //0 //1
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "nf": 128 //320
+    , "nf": 320 //128 //320
     , "nb": 10
-//    , "in_nc": 64
-//    , "out_nc": 64
     , "gc": 32
     , "group": 1
   }

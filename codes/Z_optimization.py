@@ -717,8 +717,9 @@ class Z_optimizer():
                     return torch.stack([torch.nn.functional.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device)),
                             torch.nn.functional.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda())])
                 initial_classification = classify_image(self.model.Output_Batch(within_0_1=True))
+                self.initial_digit_score = torch.nn.functional.softmax(initial_classification[1])[0,self.data['digit_2_resemble']].item()
                 print('Initial score for %d: %.3f, estimated # of digits: %d'%(self.data['digit_2_resemble'],
-                    torch.nn.functional.softmax(initial_classification[1])[0,self.data['digit_2_resemble']],initial_classification[0].argmax()))
+                    self.initial_digit_score,initial_classification[0].argmax()))
                 self.loss = classifier_loss
                 self.classify_image = classify_image
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
@@ -767,7 +768,7 @@ class Z_optimizer():
 
     def optimize(self):
         DETACH_Y_FOR_CHROMA_TRAINING = False
-        USE_MIN_LOSS_Z = True
+        USE_MIN_LOSS_Z = True and not self.model_training
         if 'Adversarial' in self.objective:
             self.model.netG.train(True) # Preventing image padding in the CEM code, to have the output fit D's input size
         self.Manage_Model_Grad_Requirements(verify_disabled=True)
@@ -797,7 +798,7 @@ class Z_optimizer():
             if self.model_training and 'Uncomp' in self.data.keys():
                 self.data['Uncomp'] = 1*Uncomp_batch
             self.model.feed_data(self.data, need_GT=False,detach_Y=DETACH_Y_FOR_CHROMA_TRAINING and self.model_training and self.data['Uncomp'].size(1)==3)
-            self.model.test(prevent_grads_calc=False,chroma_input=self.data['chroma_input'] if 'chroma_input' in self.data.keys() else None)
+            self.model.test(prevent_grads_calc=False,uncompressed_chroma=self.data['uncompressed_chroma'] if 'uncompressed_chroma' in self.data.keys() else None)
             self.output_image = self.model.Output_Batch(within_0_1=True)
             if self.model_training:
                 self.output_image = self.HR_unpadder(self.output_image)
@@ -891,13 +892,15 @@ class Z_optimizer():
                 if 'Uncomp' in self.data.keys():
                     self.data['Uncomp'] = 1 * Uncomp_batch
                 self.model.feed_data(self.data, need_GT=False)
-                self.model.test(chroma_input=self.data['chroma_input'])
+                self.model.test(uncompressed_chroma=self.data['uncompressed_chroma'])
                 # self.model.fake_H = self.model.netG(self.model.model_input)
                 # if self.jpeg_mode:  # Should see what to feed in the first argument here:
                 #     self.model.fake_H = self.model.Enforce_Consistency(self.model.var_Comp, self.model.fake_H)
-            initial_classification = self.classify_image(self.model.Output_Batch(within_0_1=True))
+            final_classification = self.classify_image(self.model.Output_Batch(within_0_1=True))
+            self.final_digit_score,self.final_num_digits =\
+                torch.nn.functional.softmax(final_classification[1])[0, self.data['digit_2_resemble']].item(),final_classification[0].argmax().item()
             print('Final score for %d: %.3f, estimated # of digits: %d' % (self.data['digit_2_resemble'],
-                torch.nn.functional.softmax(initial_classification[1])[0, self.data['digit_2_resemble']],initial_classification[0].argmax()))
+                self.final_digit_score,self.final_num_digits))
         if not self.model_training:
             print('Final STDs: ',['%.3e'%(val.item()) for val in self.Masked_STD(first_image_only=False).mean(0)])
         if self.model_training:# Results of all optimization iterations were cropped, so I do another one without cropping and with Gradients computation (for model training)

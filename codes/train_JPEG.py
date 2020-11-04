@@ -148,7 +148,7 @@ def main():
                     # save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
                     save_images = True# Changed to always saving, and pruning saved images as training advances
                     Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
-                    print_rlt['psnr'] = 0
+                    print_rlt['psnr'],print_rlt['niqe'] = 0,0
                     model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)
                     for z_num,cur_Z in enumerate(Z_latent):
@@ -161,7 +161,9 @@ def main():
                     if save_GT_Uncomp:  # Save GT Uncomp images
                         save_GT_Uncomp = False
                     print_rlt['psnr'] /= len(Z_latent)
+                    print_rlt['niqe'] /= len(Z_latent)
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
+                    model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 # time_elapsed = time.time() - start_time
