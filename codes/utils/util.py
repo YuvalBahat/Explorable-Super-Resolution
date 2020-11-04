@@ -79,19 +79,41 @@ class Counter:
     def advance(self):
         self.counter = (self.counter+1)%self.max_val
 
-def DelOldValImages(cur_step,folder,saving_freq):
-    val_images = [im_file for im_file in os.listdir(folder) if re.search('^(\d)+_Z.*PSNR.*.png$',im_file) is not None]
-    corresponding_steps = [int(re.search('^(\d)+(?=_Z)',im_file).group(0)) for im_file in val_images]
+def prune_old_files(cur_step, folder, saving_freq, name_pattern):
+    # val_images = [im_file for im_file in os.listdir(folder) if re.search('^(\d)+_Z.*PSNR.*.png$',im_file) is not None]
+    # corresponding_steps = [int(re.search('^(\d)+(?=_Z)',im_file).group(0)) for im_file in val_images]
+    assert name_pattern[:len('^(\d)+')]=='^(\d)+'
+    int_returning_name_pattern = '^(\d)+(?='+name_pattern[len('^(\d)+'):]+')'
+    val_images = sorted([im_file for im_file in os.listdir(folder) if re.search(name_pattern,im_file) is not None],key=lambda x:int(re.search(int_returning_name_pattern,x).group(0)))
+    corresponding_steps = [int(re.search(int_returning_name_pattern,im_file).group(0)) for im_file in val_images]
     old_threshold = max(0,cur_step-2*saving_freq)
     intermediate_threshold = max(0,cur_step-saving_freq)
-    del_ind = []
+    filled_val,del_ind,prev_marker = None,[],0
+    phase_ind,phases,files_per_freq = 0,[old_threshold,intermediate_threshold],[1,5]
     for i,val in enumerate(corresponding_steps):
-        if val<=old_threshold and val%saving_freq:
-            del_ind.append(True)
-        elif val<=intermediate_threshold and val%(saving_freq//5):
+        if val>phases[phase_ind]:
+            if val>phases[-1]:
+                del_ind += [False for f in range(len(val_images)-len(del_ind))]
+                break
+            else:
+                phase_ind += 1
+                prev_marker = 0
+        # if val<=old_threshold:
+        cur_marker = val//(saving_freq//files_per_freq[phase_ind])
+        if cur_marker>prev_marker:
+            filled_val = None
+            prev_marker = 1*cur_marker
+        if filled_val is not None and val!=filled_val:
             del_ind.append(True)
         else:
             del_ind.append(False)
+            filled_val = 1*val
+        # if val<=old_threshold and val%saving_freq:
+        #     del_ind.append(True)
+        # elif val<=intermediate_threshold and val%(saving_freq//5):
+        #     del_ind.append(True)
+        # else:
+        #     del_ind.append(False)
     files2delete = [val_images[i] for i in range(len(val_images)) if del_ind[i]]
     for file in files2delete:
         os.remove(os.path.join(folder,file))

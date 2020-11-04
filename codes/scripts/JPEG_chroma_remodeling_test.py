@@ -9,13 +9,15 @@ import cv2
 dataset_folder = '/media/ybahat/data/Datasets/BSD100_test/BSD100_test_HR'
 images_list = os.listdir(dataset_folder)
 
-jpeg_compressor_8 = JPEG.JPEG(compress=True,downsample_and_quantize=False,chroma_mode=True,block_size=8)
-jpeg_compressor_16 = JPEG.JPEG(compress=True, downsample_and_quantize=True, downsample_only=True, chroma_mode=True, block_size=16)
+jpeg_compressor_8 = JPEG.JPEG(compress=True,downsample_or_quantize=False,chroma_mode=True,block_size=8)
+jpeg_compressor_16 = JPEG.JPEG(compress=True, downsample_or_quantize='downsample_only', chroma_mode=True, block_size=16)
+jpeg_compressor_16_nonDS = JPEG.JPEG(compress=True, downsample_or_quantize=False, chroma_mode=True, block_size=16)
 jpeg_extractor = JPEG.JPEG(compress=False, chroma_mode=True, block_size=16)
 jpeg_compressor_16.Set_Q_Table(torch.tensor(90))
+jpeg_compressor_16_nonDS.Set_Q_Table(torch.tensor(90))
 jpeg_compressor_8.Set_Q_Table(torch.tensor(90))
 jpeg_extractor.Set_Q_Table(torch.tensor(90))
-rmse_NN,rmse_interp,rmse_NN_orig ,rmse_JPEG = 0,0,0,0
+rmse_NN, rmse_interp, rmse_NN_orig , rmse_JPEG, high_freq_energy_portion = 0, 0, 0, 0, 0
 for im_name in tqdm(images_list):
     image = cv2.imread(os.path.join(dataset_folder,im_name))
     image = bgr2ycbcr(modcrop(image,16), only_y=False).astype(float)
@@ -26,6 +28,9 @@ for im_name in tqdm(images_list):
     recovered_image_interp = cv2.resize(subsampled_chroma,tuple(im_shape[::-1]), interpolation=cv2.INTER_LINEAR)
     recovered_image_interp = 255*ycbcr2rgb(np.concatenate([np.expand_dims(image[...,0],-1),recovered_image_interp],-1)/255)
     image_DCT = jpeg_compressor_16(torch.from_numpy(np.expand_dims(image.transpose((2, 0, 1)), 0)).cuda().float())
+    non_DS_image_DCT = jpeg_compressor_16_nonDS(torch.from_numpy(np.expand_dims(image.transpose((2, 0, 1)), 0)).cuda().float())
+    non_DS_image_DCT = non_DS_image_DCT.view(1,3,2,8,2,8,non_DS_image_DCT.shape[2],non_DS_image_DCT.shape[3])[:,1:,...]
+    high_freq_energy_portion += 1-(non_DS_image_DCT[:, :, 0, :, 0, ...] ** 2).sum() / (non_DS_image_DCT ** 2).sum()
     subsampled_chroma_DCT = jpeg_compressor_8(torch.from_numpy(np.concatenate([np.zeros([1,1,subsampled_chroma.shape[0],subsampled_chroma.shape[1]]),
         np.expand_dims(subsampled_chroma.transpose((2, 0, 1)), 0)],1)).cuda().float())
     subsampled_chroma_DCT = subsampled_chroma_DCT[:,64:,...]
@@ -38,3 +43,4 @@ for im_name in tqdm(images_list):
 
 print('Average RMSE: %.6f/%.6f/%.6f (JPEG/NN/bilinear) gray levels'%(rmse_JPEG/len(images_list),rmse_NN/len(images_list),rmse_interp/len(images_list)))
 print('Average RMSE NN-original: %.6f'%(rmse_NN_orig/len(images_list)))
+print('Average high-frequency (the 3 quartiles except for the upper left in a 16x16 DCT transform) energy portion: %.3e' % (high_freq_energy_portion / len(images_list)))

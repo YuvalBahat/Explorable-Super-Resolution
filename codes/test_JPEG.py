@@ -40,7 +40,7 @@ LATENT_CHANNEL_NUM = 0#Overridden when UnitCircle
 OTHER_CHANNELS_VAL = 0
 SAVE_QUANTIZED = True
 CHROMA = False
-OUTPUT_STD = False
+OUTPUT_STD = True
 SAVE_AVG_METRICS_WHEN_LATENT = True
 # options
 parser = argparse.ArgumentParser()
@@ -80,6 +80,11 @@ if not opt['test']['kernel']=='estimated': #I don't want to create the model in 
 assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_LATENT_OUTPUT,'Use 1 image only for these Z input types'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2 or not SAVE_IMAGE_COLLAGE,'Pick an odd number of samples'
 assert LATENT_DISTRIBUTION == 'rand_Uniform' or TEST_LATENT_OUTPUT!='stats','Why not using rand_uniform when collecting stats?'
+samples_batch_size = 8
+while NUM_SAMPLES%samples_batch_size:
+    samples_batch_size -= 1
+print('Using batch size of %d for Z samples'%(samples_batch_size))
+num_sample_batches = NUM_SAMPLES//samples_batch_size
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
     print('\nTesting [{:s}]...'.format(test_set_name))
@@ -167,22 +172,23 @@ for test_loader in test_loaders:
                 stop_processing_data = True
         image_idx += 1
         image_high_freq_versions = []
-        for z_sample_num,cur_Z_raw in enumerate(Z_latent):
+        for batch_num in range(num_sample_batches):
+            z_batch = Z_latent[batch_num*samples_batch_size:(batch_num+1)*samples_batch_size].squeeze(1)
             if SAVE_IMAGE_COLLAGE:
                 image_collage, GT_image_collage = [], []
             if TEST_LATENT_OUTPUT is None:
                 cur_channel_cur_Z = 0
-                cur_Z = cur_Z_raw
+                cur_Z = z_batch
             elif LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
-                cur_Z_image = cur_Z_raw
+                cur_Z_image = z_batch
             elif LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS+['UnitCircle','rand_Uniform'] and model.num_latent_channels > 1:
                 cur_Z = np.reshape(np.stack((model.num_latent_channels * [OTHER_CHANNELS_VAL])[:LATENT_CHANNEL_NUM] +
-                                            [cur_Z_raw] + (model.num_latent_channels * [OTHER_CHANNELS_VAL])[LATENT_CHANNEL_NUM + 1:],0),[1,-1,1,1])
+                                            [z_batch] + (model.num_latent_channels * [OTHER_CHANNELS_VAL])[LATENT_CHANNEL_NUM + 1:],0),[1,-1,1,1])
                 cur_channel_cur_Z = cur_Z if isinstance(cur_Z, int) else cur_Z[0, LATENT_CHANNEL_NUM].squeeze()
             elif LATENT_DISTRIBUTION=='UnitCircle':
                 cur_channel_cur_Z = np.mod(np.arctan2(cur_Z_raw[0,2],cur_Z_raw[0,1]),2*np.pi)/2/np.pi*360
             elif LATENT_DISTRIBUTION == 'rand_Uniform':
-                cur_Z = cur_Z_raw
+                cur_Z = z_batch
                 if SPECIFIC_DEBUG:
                     cur_Z = np.zeros(cur_Z.shape)
                 cur_channel_cur_Z = None # Not any more: 0 here causes PSNR calculations (and other stuff) to be performed.
@@ -202,75 +208,123 @@ for test_loader in test_loaders:
                     LR_Z = 1e-1
                     Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,loggers=logger,max_iters=NUM_Z_ITERS,data=data)
                     cur_Z = Z_optimizer.optimize()
+            if batch_num==0:
+                for key in data.keys():
+                    if 'path' in key: continue
+                    data[key] = torch.cat([data[key] for i in range(samples_batch_size)],0)
             data['Z'] = cur_Z
             model.feed_data(data, need_GT=need_Uncomp)
 
             model.test()  # test
-            visuals = model.get_current_visuals(need_Uncomp=need_Uncomp)
+            visuals = model.get_current_visuals(need_Uncomp=need_Uncomp,entire_batch=True)
+            for module in model.JPEG.values():
+                module.Set_Q_Table(data['QF'][:1])
+            for z_sample_num,cur_Z_raw in enumerate(z_batch):
+                global_z_num = batch_num*samples_batch_size+z_sample_num
+                # if SAVE_IMAGE_COLLAGE:
+                #     image_collage, GT_image_collage = [], []
+                # if TEST_LATENT_OUTPUT is None:
+                #     cur_channel_cur_Z = 0
+                #     cur_Z = cur_Z_raw
+                # elif LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS:
+                #     cur_Z_image = cur_Z_raw
+                # elif LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS+['UnitCircle','rand_Uniform'] and model.num_latent_channels > 1:
+                #     cur_Z = np.reshape(np.stack((model.num_latent_channels * [OTHER_CHANNELS_VAL])[:LATENT_CHANNEL_NUM] +
+                #                                 [cur_Z_raw] + (model.num_latent_channels * [OTHER_CHANNELS_VAL])[LATENT_CHANNEL_NUM + 1:],0),[1,-1,1,1])
+                #     cur_channel_cur_Z = cur_Z if isinstance(cur_Z, int) else cur_Z[0, LATENT_CHANNEL_NUM].squeeze()
+                # elif LATENT_DISTRIBUTION=='UnitCircle':
+                #     cur_channel_cur_Z = np.mod(np.arctan2(cur_Z_raw[0,2],cur_Z_raw[0,1]),2*np.pi)/2/np.pi*360
+                # elif LATENT_DISTRIBUTION == 'rand_Uniform':
+                #     cur_Z = cur_Z_raw
+                #     if SPECIFIC_DEBUG:
+                #         cur_Z = np.zeros(cur_Z.shape)
+                #     cur_channel_cur_Z = None # Not any more: 0 here causes PSNR calculations (and other stuff) to be performed.
+                # if SAVE_IMAGE_COLLAGE and image_idx % val_images_collage_rows == 0:  image_collage.append([]);   GT_image_collage.append([])
+                # need_Uncomp = True #False if test_loader.dataset.opt['dataroot_HR'] is None else True
+                # img_path = data['Uncomp_path'][0]
+                # img_name = os.path.splitext(os.path.basename(img_path))[0]
+                # if TEST_LATENT_OUTPUT:
+                #     if LATENT_DISTRIBUTION == 'Input_Z_Im':
+                #         cur_Z = util.Convert_Im_2_Zinput(Z_image=cur_Z_image,im_size=data['LR'].size()[2:],Z_range=LATENT_RANGE,single_channel=model.num_latent_channels==1)
+                #     elif 'Desired_Im' in LATENT_DISTRIBUTION:
+                #         LR_Z = 1e-1
+                #         objective = ('max_' if 'UnDesired_Im' in LATENT_DISTRIBUTION else '')+('VGG' if 'VGG' in LATENT_DISTRIBUTION else ('hist' if 'hist' in LATENT_DISTRIBUTION else 'L1'))
+                #         Z_optimizer = util.Z_optimizer(objective=objective,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,loggers=logger,max_iters=NUM_Z_ITERS,data=data)
+                #         cur_Z = Z_optimizer.optimize()
+                #     elif 'STD' in LATENT_DISTRIBUTION:
+                #         LR_Z = 1e-1
+                #         Z_optimizer = util.Z_optimizer(objective=LATENT_DISTRIBUTION,LR_size=data['LR'].size()[2:],model=model,Z_range=LATENT_RANGE,initial_LR=LR_Z,loggers=logger,max_iters=NUM_Z_ITERS,data=data)
+                #         cur_Z = Z_optimizer.optimize()
+                # data['Z'] = cur_Z
+                # model.feed_data(data, need_GT=need_Uncomp)
+                #
+                # model.test()  # test
+                # visuals = model.get_current_visuals(need_Uncomp=need_Uncomp)
+                #
+                sr_img = util.tensor2img(visuals['Decomp'][z_sample_num],out_type=np.uint8,min_max=[0,255],chroma_mode=chroma_mode)  # float32
 
-            sr_img = util.tensor2img(visuals['Decomp'],out_type=np.uint8,min_max=[0,255],chroma_mode=chroma_mode)  # float32
-
-            # save images
-            suffix = opt['suffix']
-            if not SAVE_IMAGE_COLLAGE:
-                if TEST_LATENT_OUTPUT=='stats':
-                    save_img_path = os.path.join(dataset_dir, img_name + '_s%%0%dd'%(len(str(NUM_SAMPLES-1)))%(z_sample_num) + '.png')
-                elif suffix:
-                    save_img_path = os.path.join(dataset_dir, img_name + suffix + '.png')
-                else:
-                    save_img_path = os.path.join(dataset_dir, img_name + '.png')
-                util.save_img((sr_img).astype(np.uint8), save_img_path)
-            if opt['test']['kernel'] == 'estimated':#Saving NN-interpolated version of the LR input, for the figures I create:
-                util.save_img(cv2.resize(data['LR'][0].data.cpu().numpy().transpose((1,2,0)),dsize=tuple(sr_img.shape[:2][::-1]),interpolation=cv2.INTER_NEAREST)[:,:,::-1],
-                              save_img_path.replace('.png','_LR.png'))
-            # calculate PSNR and SSIM
-            if need_Uncomp:
-                if z_sample_num==0:
-                    # gt_img = util.tensor2img(1*visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
-                    gt_img = util.tensor2img(1*gt_im_YCbCr, out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
-                    if OUTPUT_STD and opt['network_G']['latent_channels']>0:
-                        img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
-                        gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
-                        HR_STD = np.std(gt_orthogonal_component,axis=(0,1)).mean()
-                        # gt_img *= 255.
+                # save images
+                suffix = opt['suffix']
+                if not SAVE_IMAGE_COLLAGE:
+                    if TEST_LATENT_OUTPUT=='stats':
+                        save_img_path = os.path.join(dataset_dir, img_name + '_s%%0%dd'%(len(str(NUM_SAMPLES-1)))%(global_z_num) + '.png')
+                    elif suffix:
+                        save_img_path = os.path.join(dataset_dir, img_name + suffix + '.png')
                     else:
-                        HR_STD = 0
-                if TEST_LATENT_OUTPUT=='stats':
-                    if OUTPUT_STD and opt['network_G']['latent_channels']>0:
-                        image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
-                    if z_sample_num==(len(Z_latent)-1):
+                        save_img_path = os.path.join(dataset_dir, img_name + '.png')
+                    util.save_img((sr_img).astype(np.uint8), save_img_path)
+                if opt['test']['kernel'] == 'estimated':#Saving NN-interpolated version of the LR input, for the figures I create:
+                    util.save_img(cv2.resize(data['LR'][0].data.cpu().numpy().transpose((1,2,0)),dsize=tuple(sr_img.shape[:2][::-1]),interpolation=cv2.INTER_NEAREST)[:,:,::-1],
+                                  save_img_path.replace('.png','_LR.png'))
+                # calculate PSNR and SSIM
+                if need_Uncomp:
+                    if global_z_num==0:
+                        # gt_img = util.tensor2img(1*visuals['Uncomp'], out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)  # float32
+                        gt_img = util.tensor2img(1*gt_im_YCbCr, out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
+                        # if OUTPUT_STD and opt['network_G']['latent_channels']>0:
+                        #     img_projected_2_kernel_subspace = model.DTE_net.Project_2_ortho_2_NS(gt_img)
+                        #     gt_orthogonal_component = gt_img-img_projected_2_kernel_subspace #model.DTE_net.Return_Orthogonal_Component(gt_img)
+                        #     HR_STD = np.std(gt_orthogonal_component,axis=(0,1)).mean()
+                        #     # gt_img *= 255.
+                        # else:
+                        #     HR_STD = 0
+                    if TEST_LATENT_OUTPUT=='stats':
                         if OUTPUT_STD and opt['network_G']['latent_channels']>0:
-                            pixels_STDs.append(np.std(np.stack(image_high_freq_versions),0))
-                            pixel_STD = np.mean(pixels_STDs[-1])
+                            # image_high_freq_versions.append(sr_img-img_projected_2_kernel_subspace)
+                            image_high_freq_versions.append(sr_img)
+                        if global_z_num==(len(Z_latent)-1):
+                            if OUTPUT_STD and opt['network_G']['latent_channels']>0:
+                                pixels_STDs.append(np.std(np.stack(image_high_freq_versions),0))
+                                pixel_STD = np.mean(pixels_STDs[-1])
+                            else:
+                                # normalized_pixel_STD = 0
+                                pixel_STD = 0
+                            # Save GT image for reference:
+                            # util.save_img((util.tensor2img(visuals['HR'],out_type=np.uint8,min_max=[0,255])),
+                            #               os.path.join(dataset_dir, img_name + '_HR_STD%.3f_Decomp_STD%.3f.png'%(HR_STD,pixel_STD)))
+                    # sr_img *= 255.
+                    if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0 or SAVE_AVG_METRICS_WHEN_LATENT:
+                        if global_z_num==0:
+                            quantized_image = util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
+                            # quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(data['Uncomp'])), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
+                            if SAVE_QUANTIZED:
+                                util.save_img(quantized_image,os.path.join(dataset_dir+'_Quant', img_name + suffix + '.png'))
+                            test_results['psnr_quantized'].append(util.calculate_psnr(quantized_image,gt_img))
+                            test_results['ssim_quantized'].append(util.calculate_ssim(quantized_image,gt_img))
+                        psnr = util.calculate_psnr(sr_img, gt_img)
+                        ssim = util.calculate_ssim(sr_img, gt_img)
+                        test_results['psnr'].append(psnr)
+                        test_results['ssim'].append(ssim)
+                    if SAVE_IMAGE_COLLAGE:
+                        if len(test_set)>1:
+                            margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
                         else:
-                            # normalized_pixel_STD = 0
-                            pixel_STD = 0
-                        # Save GT image for reference:
-                        # util.save_img((util.tensor2img(visuals['HR'],out_type=np.uint8,min_max=[0,255])),
-                        #               os.path.join(dataset_dir, img_name + '_HR_STD%.3f_Decomp_STD%.3f.png'%(HR_STD,pixel_STD)))
-                # sr_img *= 255.
-                if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0 or SAVE_AVG_METRICS_WHEN_LATENT:
-                    if z_sample_num==0:
-                        quantized_image = util.tensor2img(model.Return_Compressed(gt_im_YCbCr.to(model.device)), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
-                        # quantized_image = util.tensor2img(model.jpeg_extractor(model.jpeg_compressor(data['Uncomp'])), out_type=np.uint8,min_max=[0, 255],chroma_mode=chroma_mode)
-                        if SAVE_QUANTIZED:
-                            util.save_img(quantized_image,os.path.join(dataset_dir+'_Quant', img_name + suffix + '.png'))
-                        test_results['psnr_quantized'].append(util.calculate_psnr(quantized_image,gt_img))
-                        test_results['ssim_quantized'].append(util.calculate_ssim(quantized_image,gt_img))
-                    psnr = util.calculate_psnr(sr_img, gt_img)
-                    ssim = util.calculate_ssim(sr_img, gt_img)
-                    test_results['psnr'].append(psnr)
-                    test_results['ssim'].append(ssim)
-                if SAVE_IMAGE_COLLAGE:
-                    if len(test_set)>1:
-                        margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
-                    else:
-                        margins2crop = [0,0]
-                    image_collage[-1].append(np.clip(util.crop_center(sr_img,margins2crop), 0,255).astype(np.uint8))
-                    if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0:
-                        # Save GT HR images:
-                        GT_image_collage[-1].append(
-                            np.clip(util.crop_center(gt_img,margins2crop), 0,255).astype(np.uint8))
+                            margins2crop = [0,0]
+                        image_collage[-1].append(np.clip(util.crop_center(sr_img,margins2crop), 0,255).astype(np.uint8))
+                        if LATENT_DISTRIBUTION in NON_ARBITRARY_Z_INPUTS or cur_channel_cur_Z==0:
+                            # Save GT HR images:
+                            GT_image_collage[-1].append(
+                                np.clip(util.crop_center(gt_img,margins2crop), 0,255).astype(np.uint8))
             # else:
             #     print(img_name)
         if SAVE_IMAGE_COLLAGE:
@@ -302,7 +356,9 @@ for test_loader in test_loaders:
             os.rename(dataset_dir, dataset_dir + '_PSNR{:.3f}'.format(ave_psnr))
             os.rename(dataset_dir+'_Quant', dataset_dir+'_Quant' + '_PSNR{:.3f}'.format(ave_psnr_quantized))
         else:
-            os.rename(dataset_dir, dataset_dir + '_PSNR{:.3f}to{:.3f}'.format(ave_psnr_quantized,ave_psnr))
+            new_dataset_dir_name = dataset_dir + '_PSNR{:.3f}to{:.3f}'.format(ave_psnr_quantized,ave_psnr)
+            os.rename(dataset_dir,new_dataset_dir_name)
+            dataset_dir = ''+new_dataset_dir_name
     if TEST_LATENT_OUTPUT == 'stats' and opt['network_G']['latent_channels']>0 and OUTPUT_STD:
         pixels_STDs = [v.reshape([-1,3]) for v in pixels_STDs]
         with open(os.path.join(dataset_dir,'stats.txt'),'w') as f:
@@ -310,7 +366,8 @@ for test_loader in test_loaders:
             pixels_STDs = np.concatenate(pixels_STDs, 0)
             f.write('Overall mean pixels STD: %.4f\n'%(pixels_STDs.mean()))
             f.write('Overall STD of pixels STD: %.4f\n' % (np.std(pixels_STDs,0).mean()))
-
+            new_dataset_dir_name = dataset_dir+'_STD%.3f' % (np.concatenate(pixels_STDs, 0).mean())
+            os.rename(dataset_dir, new_dataset_dir_name)
     if TEST_LATENT_OUTPUT in ['GIF','video']:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS else ''))
         if model.num_latent_channels>1 and LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS:

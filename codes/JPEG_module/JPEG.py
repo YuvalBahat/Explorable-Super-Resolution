@@ -30,24 +30,27 @@ CHROMINANCE_QUANTIZATION_TABLE = np.array((
 
 
 class JPEG(nn.Module):
-    def __init__(self,compress,downsample_and_quantize=None,chroma_mode=False,block_size=8,downsample_only=False):
+    def __init__(self,compress,downsample_or_quantize=None,chroma_mode=False,block_size=8):
         # Performing JPEG-like DCT transformation when compress, or inverse DCT transform when not compress.
         #
         # For compress: Expecting input torch tensor of size [batch_size,num_channels,H,W], where currently only supporting num_channels==1. Returning a tensor of size [batch_size,64,H/8,W/8],
         # where dimension 1 corresponds to the DCT coefficients.
         # For not compress (extract): Expected input torch tensor size corresponds to size of output tensor of compress, and vice versa.
         # H and W should currently both be integer multiplications of 8.
-        # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_and_quantize=True
+        # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_or_quantize=True
 
         super(JPEG, self).__init__()
-        assert (compress ^ (downsample_and_quantize is None)),'Quantize argument should be passed iff in compress mode'
         assert FACTORIZE_CHROMA_HIGH_FREQS,'No longer supproting the other option, after dividing the Y channel high freq. coeffs. as well, as I think it would ease the generator''s mapping.'
-        if downsample_only:
-            assert chroma_mode and downsample_and_quantize
-            downsample_and_quantize = True
+        assert (compress ^ (downsample_or_quantize is None)),'Quantize argument should be passed iff in compress mode'
+        if downsample_or_quantize is not None:
+            assert downsample_or_quantize in ['downsample_only',True,False]
+        if downsample_or_quantize=='downsample_only':
+        # if downsample_only:
+            assert chroma_mode# and downsample_or_quantize
+            # downsample_or_quantize = True
         self.compress = compress # Compression or extraction module
-        self.downsample_and_quantize = downsample_and_quantize
-        self.downsample_only = downsample_only
+        self.downsample_or_quantize = downsample_or_quantize
+        # self.downsample_only = downsample_only
         self.device = 'cuda'
         self.block_size = block_size
         self.chroma_mode = chroma_mode
@@ -78,7 +81,7 @@ class JPEG(nn.Module):
             self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.synthetic_Q_table.dtype).to(self.device)
             self.Q_table = torch.clamp((self.factor * self.synthetic_Q_table).round(),1,255)
             if self.chroma_mode and FACTORIZE_CHROMA_HIGH_FREQS:
-                self.padded_Q_table = torch.clamp((self.factor * self.synthetic_padded_Q_table).round(),0,255)
+                self.padded_Q_table = torch.clamp((self.factor * self.synthetic_padded_Q_table).round(),1,255)
         else:
             tables_ratio = np.mean(LUMINANCE_QUANTIZATION_TABLE/QF_or_table[0])
             self.QF = 50*tables_ratio if tables_ratio<1 else 50*np.mean((2*LUMINANCE_QUANTIZATION_TABLE-QF_or_table[0])/LUMINANCE_QUANTIZATION_TABLE)
@@ -136,11 +139,11 @@ class JPEG(nn.Module):
                 output = output.view([input.size(0),3,self.block_size,self.block_size,output.size(3),output.size(4)])
                 output = output/self.padded_Q_table
                 output = output.view([input.size(0),3,self.block_size//8,8,self.block_size//8,8,output.size(4),output.size(5)])
-                if self.downsample_and_quantize:
+                if self.downsample_or_quantize:
                     # Downsampling is done by wiping out DCT coefficients corresponding to higher frequencies (8 and up) in the chroma channels.
                     # Not quantizing y channel coefficients in this case. I'm going to discard these chroma high-frequency coefficients later anyway,
                     # so no need to wipe them out here.
-                    if not self.downsample_only:
+                    if self.downsample_or_quantize!='downsample_only':
                         output[:, 1:, 0, :, 0, :, :, :] = torch.round(output[:, 1:, 0, :, 0, :, :, :])
                     output = torch.cat([output[:,0,...].contiguous().view(output.size(0),self.block_size**2,output.size(6),output.size(7)),
                                           output[:,1,0,:,0,...].contiguous().view(output.size(0),8**2,output.size(6),output.size(7)),
@@ -150,7 +153,7 @@ class JPEG(nn.Module):
                     output = torch.cat([output[:,0,...],output[:,1,...],output[:,2,...]],1)
             else:
                 output = output/self.Q_table
-                if self.downsample_and_quantize:
+                if self.downsample_or_quantize:
                     output = torch.round(output)
                 output = output.contiguous().view([input.size(0),self.block_size**2,input.size(2)//self.block_size,input.size(3)//self.block_size])
         else:# Extraction: Input is DCT blocks

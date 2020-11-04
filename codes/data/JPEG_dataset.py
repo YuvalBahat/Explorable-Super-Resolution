@@ -19,6 +19,7 @@ class JpegDataset(data.Dataset):
     def __init__(self, opt,specific_image=None):
         super(JpegDataset, self).__init__()
         self.opt = opt
+        self.chroma_mode = 'chroma' in self.opt['mode']
         self.paths_Uncomp = None
         self.Uncomp_env = None
         self.block_size = 8
@@ -55,7 +56,7 @@ class JpegDataset(data.Dataset):
             self.paths_Uncomp = new_paths_list
         assert self.paths_Uncomp, 'Error: Uncomp path is empty.'
         if self.opt['phase'] == 'train':
-            assert not self.opt['patch_size']%8,'Training for JPEG compression artifacts removal - Training images should have an integer number of 8x8 blocks.'
+            assert not self.opt['patch_size']%(16 if self.chroma_mode else 8),'Training for JPEG compression artifacts removal - Training images should have an integer number of 8x8 blocks.'
         else:
             # self.per_index_QF = np.round(np.linspace(start=self.quality_factors[0][0],stop=self.quality_factors[0][1]-1,num=len(self))).astype(int)
             if len(self.quality_factors)>=len(self):
@@ -90,8 +91,8 @@ class JpegDataset(data.Dataset):
         if img_Uncomp.shape[2]==1: #Grayscale image:
             img_Uncomp = np.repeat(img_Uncomp,3,axis=2)
         # change color space if necessary
-        img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if 'chroma' in self.opt['mode'] else 'y', [img_Uncomp])[0]
-        if 'chroma' in self.opt['mode'] and img_Uncomp.shape[2]==1: #For the case of loading a grayscale image in JPEG format during chroma training:
+        img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if self.chroma_mode else 'y', [img_Uncomp])[0]
+        if self.chroma_mode and img_Uncomp.shape[2]==1: #For the case of loading a grayscale image in JPEG format during chroma training:
             img_Uncomp = np.tile(img_Uncomp,[1,1,3])
         #     img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
 
