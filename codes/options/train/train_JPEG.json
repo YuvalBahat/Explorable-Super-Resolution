@@ -1,10 +1,10 @@
 {
-  "name": "nf320nb10_Dnk3balanced_BS16PS104_nonDCTcoord_GD_LR1e-4_SN_QF1_50_concatDratioClampedInit1K_fromMSE_Z1_MAP5e-4" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
   , "gpu_ids": [0]
-  , "range": [0,255]
+//  , "range": [0,255]
 
   , "datasets": {
     "train": {

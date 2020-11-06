@@ -147,7 +147,7 @@ def main():
                     start_time = time.time()
                     # save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
                     save_images = True# Changed to always saving, and pruning saved images as training advances
-                    Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']>0) else [])
+                    Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']!=0) else [])
                     print_rlt['psnr'],print_rlt['niqe'] = 0,0
                     model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)

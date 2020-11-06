@@ -190,7 +190,7 @@ class DecompCNNModel(BaseModel):
 
             # Range limiting loss:
             if train_opt['range_weight'] > 0 or self.debug:
-                self.cri_range = CreateRangeLoss(opt['range'],chroma_mode=self.chroma_mode)
+                self.cri_range = CreateRangeLoss([16,235] if self.chroma_mode else [16,240],chroma_mode=self.chroma_mode)
                 self.l_range_w = train_opt['range_weight']
             else:
                 print('Remove range loss.')
@@ -402,7 +402,7 @@ class DecompCNNModel(BaseModel):
             if 'Z' in data.keys():
                 cur_Z = data['Z']
             else:
-                SPATIALLY_UNIFORM_SAMPLED_Z = False
+                SPATIALLY_UNIFORM_SAMPLED_Z = self.cri_latent is not None
                 if SPATIALLY_UNIFORM_SAMPLED_Z:
                     cur_Z = torch.rand([input_size[0], self.num_latent_channels, 1, 1])
                 else:
@@ -612,7 +612,8 @@ class DecompCNNModel(BaseModel):
                             l_d_total += l_d_gp
                         self.l_d_real_grad_step.append(-1*l_d_real.item())
                         self.l_d_fake_grad_step.append(l_d_fake.item())
-                        self.clamped_portion_grad_step.append(0.5*((pred_d_real>self.opt['train']['hinge_threshold']).float().mean()+(pred_d_fake<-1*self.opt['train']['hinge_threshold']).float().mean()).item())
+                        if self.opt['train']['hinge_threshold'] is not None:
+                            self.clamped_portion_grad_step.append(0.5*((pred_d_real>self.opt['train']['hinge_threshold']).float().mean()+(pred_d_fake<-1*self.opt['train']['hinge_threshold']).float().mean()).item())
                     self.D_real_grad_step.append(torch.mean(pred_d_real.detach()).item())
                     self.D_fake_grad_step.append(torch.mean(pred_d_fake.detach()).item())
                     # self.D_logits_diff_grad_step.append(list(torch.mean(pred_d_real.detach()-pred_d_fake.detach(),dim=[d for d in range(1,pred_d_real.dim())]).data.cpu().numpy()))
@@ -692,7 +693,7 @@ class DecompCNNModel(BaseModel):
                             self.log_dict['l_d_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)))
                             self.log_dict['clamped_portion'].append((self.gradient_step_num,np.mean(self.clamped_portion_grad_step)))
                             self.log_dict['l_d_real_fake'].append((self.gradient_step_num,np.mean(self.l_d_fake_grad_step)+np.mean(self.l_d_real_grad_step)))
-                            if self.opt['train']['gan_type'] == 'wgan-gp' and self.l_gp_w>0:
+                            if 'gp' in self.opt['train']['gan_type'] and self.l_gp_w>0:
                                 self.log_dict['l_d_gp'].append((self.gradient_step_num,l_d_gp.item()))
                         # D outputs
                         self.log_dict['D_real'].append((self.gradient_step_num,np.mean(self.D_real_grad_step)))
