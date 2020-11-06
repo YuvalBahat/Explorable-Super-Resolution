@@ -16,7 +16,7 @@
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 0 //2 //4
+      , "n_workers": 2 //2 //4
       , "batch_size_per_GPU": 4
       , "batch_size_4_grads_G": 16 // 16
       , "batch_size_4_grads_D": 16 //16
