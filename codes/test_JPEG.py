@@ -21,6 +21,7 @@ import imageio
 import torch
 import subprocess
 from models.modules.loss import Latent_channels_desc_2_num_channels
+from copy import deepcopy
 
 SPECIFIC_DEBUG = False
 # Parameters:
@@ -63,11 +64,17 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
-    test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE)
-    test_loader = create_dataloader(test_set, dataset_opt)
-    print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
-    test_loaders.append(test_loader)
+    if not isinstance(dataset_opt['jpeg_quality_factor'],list):
+        dataset_opt['jpeg_quality_factor'] = [dataset_opt['jpeg_quality_factor']]
+    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,\
+        'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
+    for QF in dataset_opt['jpeg_quality_factor']:
+        cur_dataset_opt = deepcopy(dataset_opt)
+        cur_dataset_opt['jpeg_quality_factor'] = 1*QF
+        test_set = create_dataset(cur_dataset_opt,specific_image=TEST_IMAGE)
+        test_loader = create_dataloader(test_set, cur_dataset_opt)
+        print('Number of test images in [{:s}, QF {:d}]: {:d}'.format(cur_dataset_opt['name'],cur_dataset_opt['jpeg_quality_factor'], len(test_set)))
+        test_loaders.append(test_loader)
 
 # Create model
 if not opt['test']['kernel']=='estimated': #I don't want to create the model in advance if I'm going to have a per-image kernel.
@@ -366,7 +373,7 @@ for test_loader in test_loaders:
             pixels_STDs = np.concatenate(pixels_STDs, 0)
             f.write('Overall mean pixels STD: %.4f\n'%(pixels_STDs.mean()))
             f.write('Overall STD of pixels STD: %.4f\n' % (np.std(pixels_STDs,0).mean()))
-            new_dataset_dir_name = dataset_dir+'_STD%.3f' % (np.concatenate(pixels_STDs, 0).mean())
+            new_dataset_dir_name = dataset_dir+'_STD%.3f' % (pixels_STDs.mean())
             os.rename(dataset_dir, new_dataset_dir_name)
     if TEST_LATENT_OUTPUT in ['GIF','video']:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS else ''))

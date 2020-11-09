@@ -1,7 +1,7 @@
 {
 //    "name": "nf320nb10_QF5_50_ImageNetDS",
 //    "name": "nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss"
-    "name": "nf320nb10_Dnk3balanced_BS16PS104_nonDCTcoord_GD_LR1e-4_SN_QF1_50_concatDratioClampedInit1K_fromMSE_Z1_MAP5e-4"
+    "name": "nf320nb10_QF5_50_ImageNetDS_DCT_GD_AutoGDRatioClamped_InputConcatDinti1K_SN_fromMSEMap5e-4"
   , "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -11,14 +11,14 @@
     "test_1": { // the 1st test dataset
       "name": "BSD100"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 5 //[[5,50]]
+      , "jpeg_quality_factor": 10 //[[5,50]]
       , "dataroot_Uncomp": "BSD100_test/BSD100_test_HR"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     },
     "test_2": { // the 2nd test dataset
       "name": "LIVE"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": 5 //[[5,50]]
+      , "jpeg_quality_factor": 10 //[[5,50]]
       , "dataroot_Uncomp": "LIVE_release2/refimgs"
 //      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
     } //,
@@ -55,9 +55,9 @@
     , "latent_input": "first_layer" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
     , "latent_channels": 1 //1 //64
-    , "DCT_G": 0 //1 //0
+    , "DCT_G":1 //1 //0
     , "normalize_input": 0
-    , "coordinates_input": 1 //0 //1
+    , "coordinates_input": 0 //0 //1
     , "norm_type": "batch"
     , "mode": "CNA"
     , "nf": 320 //128 //320
