@@ -120,31 +120,14 @@ def main():
             if model.step > total_iters:
                 break
 
-            # time_elapsed = time.time() - start_time
-            # if not_within_batch:    start_time = time.time()
-            # log
-            if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
-                logs = model.get_current_log()
-                print_rlt = OrderedDict()
-                print_rlt['model'] = opt['model']
-                print_rlt['epoch'] = epoch
-                print_rlt['iters'] = model.gradient_step_num
-                # time_elapsed = time.time() - start_time
-                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
-                start_time, start_time_gradient_step = time.time(), model.gradient_step_num
-                for k, v in logs.items():
-                    print_rlt[k] = v
-                print_rlt['lr'] = model.get_current_learning_rate()
-                logger.print_format_results('train', print_rlt,keys_ignore_list=['avg_est_err'])
-                model.display_log_figure()
-
             # validation
+            pre_val_time = time.time()
             if not_within_batch and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
             # if (not_within_batch or i==0) and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
                 print_rlt = OrderedDict()
                 if model.generator_changed:
                     print('---------- validation -------------')
-                    start_time = time.time()
+                    # val_start_time = time.time()
                     # save_images = ((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp
                     save_images = True# Changed to always saving, and pruning saved images as training advances
                     Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']!=0) else [])
@@ -166,17 +149,31 @@ def main():
                     model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
                 else:
                     print('Skipping validation because generator is unchanged')
-                # time_elapsed = time.time() - start_time
                 # Save to log
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = model.gradient_step_num
                 # print_rlt['time'] = time_elapsed
-                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
+                print_rlt['time'] = (time.time() - pre_val_time)/len(Z_latent)/len(val_loader.dataset)
                 # model.display_log_figure()
                 # model.generator_changed = False
                 logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
                 print('-----------------------------------')
+
+            # log
+            if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
+                logs = model.get_current_log()
+                print_rlt = OrderedDict()
+                print_rlt['model'] = opt['model']
+                print_rlt['epoch'] = epoch
+                print_rlt['iters'] = model.gradient_step_num
+                print_rlt['time'] = (pre_val_time - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
+                start_time, start_time_gradient_step = time.time(), model.gradient_step_num
+                for k, v in logs.items():
+                    print_rlt[k] = v
+                print_rlt['lr'] = model.get_current_learning_rate()
+                logger.print_format_results('train', print_rlt,keys_ignore_list=['avg_est_err'])
+                model.display_log_figure()
 
             model.feed_data(train_data,mixed_Y=True)
             model.optimize_parameters()

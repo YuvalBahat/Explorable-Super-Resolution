@@ -288,9 +288,11 @@ class BaseModel():
                     cur_legend_string.append(key+'_smoothed')
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
-                    if (key+'_baseline') in self.log_dict.keys() and len(self.log_dict[key+'_baseline'])>0:
-                        plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[key+'_baseline'][0][1]])
-                        cur_legend_string.append('baseline' + ' (%.2e)' % (self.log_dict[key+'_baseline'][0][1]))
+                    baseline_logs = ['quantized_'+key,'GT_'+key]
+                    for bl_log in baseline_logs:
+                        if bl_log in self.log_dict.keys() and len(self.log_dict[bl_log])>0:
+                            plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[bl_log][0][1]])
+                            cur_legend_string.append('%s (%.2e)' % (bl_log,self.log_dict[bl_log][0][1]))
                     plt.legend(cur_legend_string, loc='best')
                     plt.savefig(os.path.join(self.log_path, 'logs_%s.pdf' % (key)))
                     plt.figure(2)
