@@ -95,17 +95,17 @@
     , "mode": "CNA"
 //    , "nf": 996 //160 //64
 //    , "nb": 5
-//    , "nk": 3 //Number of first layers with 3x3 kernels. Consecutive nb-nk layers would use 1x1 kernels. Must satisfy nk<=nb
+    , "nk": 3 //Number of first layers with 3x3 kernels. Consecutive nb-nk layers would use 1x1 kernels. Must satisfy nk<=nb
 //    , "in_nc": 1
   }
 
   , "train": {
     "resume": 0
-    ,"lr_G": 5e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 5e-5 //1e-4 //1e-5
+    , "lr_D": 1e-4 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0

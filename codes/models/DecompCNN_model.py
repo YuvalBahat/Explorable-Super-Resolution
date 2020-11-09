@@ -879,7 +879,7 @@ class DecompCNNModel(BaseModel):
 
     def perform_validation(self,data_loader,cur_Z,print_rlt,first_eval,save_images,collect_avg_err_est=True):
         SAVE_IMAGE_COLLAGE = True
-        avg_psnr, avg_quantized_psnr,avg_niqe = [], [],[]
+        avg_psnr, avg_quantized_psnr,avg_niqe,avg_quantized_niqe,avg_GT_niqe = [], [],[],[],[]
         idx = 0
         image_collage = []
         if save_images:
@@ -933,6 +933,9 @@ class DecompCNNModel(BaseModel):
                         quantized_image = util.tensor2img(self.JPEG['extractor'](self.var_Comp) if self.DCT_generator else self.var_Comp,out_type=np.uint8, min_max=[0, 255],chroma_mode=chroma_mode)
                         quantized_image_collage[-1].append(quantized_image[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...])
                         avg_quantized_psnr.append(util.calculate_psnr(quantized_image, gt_img))
+                        if not self.chroma_mode:
+                            avg_quantized_niqe.append(niqe(np.expand_dims(quantized_image[...,0],0)))
+                            avg_GT_niqe.append(niqe(np.expand_dims(gt_img[...,0],0)))
                         quantized_image_collage[-1][-1] = cv2.putText(quantized_image_collage[-1][-1].copy(), str(QF), (0, 50),cv2.FONT_HERSHEY_PLAIN, fontScale=4.0,
                                     color=np.mod(255 / 2 + quantized_image_collage[-1][-1][:25, :25].mean(), 255),thickness=2)
                         # if self.chroma_mode: # In this case cv2.putText returns cv2.Umat instead of an ndarray, so it should be converted:
@@ -948,10 +951,18 @@ class DecompCNNModel(BaseModel):
                 QF_images_counter[QF] = 1
                 print_rlt['psnr_gain_QF%d' % (QF)] = 0
                 if first_eval:
-                    self.log_dict['per_im_psnr_baseline_QF%d' % (QF)] = [(0, 0)]
+                    self.log_dict['per_im_quantized_psnr_QF%d' % (QF)] = [(0, 0)]
+                    if not self.chroma_mode:
+                        self.log_dict['per_im_quantized_niqe_QF%d' % (QF)] = [(0, 0)]
+                        self.log_dict['per_im_GT_niqe_QF%d' % (QF)] = [(0, 0)]
             if first_eval:
-                self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0] = \
-                    (0,((QF_images_counter[QF]-1)*self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1] + avg_quantized_psnr[-1])/QF_images_counter[QF])
+                self.log_dict['per_im_quantized_psnr_QF%d' % (QF)][0] = \
+                    (0,((QF_images_counter[QF]-1)*self.log_dict['per_im_quantized_psnr_QF%d' % (QF)][0][1] + avg_quantized_psnr[-1])/QF_images_counter[QF])
+                if not self.chroma_mode:
+                    self.log_dict['per_im_quantized_niqe_QF%d' % (QF)][0] = \
+                        (0, ((QF_images_counter[QF] - 1) * self.log_dict['per_im_quantized_niqe_QF%d' % (QF)][0][1] +avg_quantized_niqe[-1]) / QF_images_counter[QF])
+                    self.log_dict['per_im_GT_niqe_QF%d' % (QF)][0] = \
+                        (0, ((QF_images_counter[QF] - 1) * self.log_dict['per_im_GT_niqe_QF%d' % (QF)][0][1] +avg_GT_niqe[-1]) / QF_images_counter[QF])
         if save_images:
             self.generator_changed = False
 
@@ -967,9 +978,10 @@ class DecompCNNModel(BaseModel):
             plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))
         avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
-            print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_psnr_baseline_QF%d' % (QF)][0][1])/QF_images_counter[QF]
+            print_rlt['psnr_gain_QF%d' % (QF)] += (avg_psnr[i] - self.log_dict['per_im_quantized_psnr_QF%d' % (QF)][0][1])/QF_images_counter[QF]
         avg_psnr = 1 * np.mean(avg_psnr)
-        avg_niqe = 1*np.mean(avg_niqe)
+        if not self.chroma_mode:
+            avg_niqe = 1*np.mean(avg_niqe)
         if SAVE_IMAGE_COLLAGE and save_images:
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
@@ -978,13 +990,21 @@ class DecompCNNModel(BaseModel):
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                               os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))
                 avg_quantized_psnr = 1 * np.mean(avg_quantized_psnr)
-                print_rlt['psnr_baseline'] = avg_quantized_psnr
+                print_rlt['quantized_psnr'] = avg_quantized_psnr
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in quantized_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']),
                        'Quantized_{}_PSNR{:.3f}.png'.format(('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '',avg_quantized_psnr)))
-                self.log_dict['psnr_val_baseline'] = [(self.gradient_step_num, print_rlt['psnr_baseline'])]
+                self.log_dict['quantized_psnr_val'] = [(self.gradient_step_num, print_rlt['quantized_psnr'])]
+                if not self.chroma_mode:
+                    avg_quantized_niqe = 1 * np.mean(avg_quantized_niqe)
+                    print_rlt['quantized_niqe'] = avg_quantized_niqe
+                    self.log_dict['quantized_niqe_val'] = [(self.gradient_step_num, print_rlt['quantized_psnr'])]
+                    avg_GT_niqe = 1 * np.mean(avg_GT_niqe)
+                    print_rlt['GT_niqe'] = avg_GT_niqe
+                    self.log_dict['GT_niqe_val'] = [(self.gradient_step_num, print_rlt['GT_niqe'])]
 
         print_rlt['psnr'] += avg_psnr
-        print_rlt['niqe'] += avg_niqe
+        if not self.chroma_mode:
+            print_rlt['niqe'] += avg_niqe
 
     def update_learning_rate(self,cur_step=None):
         #The returned value is LR_too_low
