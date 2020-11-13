@@ -164,6 +164,10 @@ class JPEG(nn.Module):
                         output = input.view([input.size(0),2,self.block_size,self.block_size, input.size(2), input.size(3)])
                     else:
                         output = input.view([input.size(0),2, self.block_size//8,8,self.block_size//8,8, input.size(2), input.size(3)])
+                elif input.size(1)==2*8**2: #Input is the 2 full chroma channels, hen not reconstructing the chroma's high frequencies:
+                    num_channels = 2
+                    if FACTORIZE_CHROMA_HIGH_FREQS:
+                        output = F.pad(input.view([input.size(0),2,8,8, input.size(2), input.size(3)]),[0,0,0,0,0,8,0,8])
                 elif input.size(1)==(self.block_size**2+2*8**2): #Input is the full Y channel and low frequencies of the chroma channels (the input to the generator):
                     num_channels = 3
                     chroma_padding_arg = [0,0,0,0,0,0,0,self.block_size//8-1,0,0,0,self.block_size//8-1]

@@ -43,6 +43,7 @@ SAVE_QUANTIZED = True
 CHROMA = False
 OUTPUT_STD = True
 SAVE_AVG_METRICS_WHEN_LATENT = True
+SPAITIALLY_UNIFORM_Z = True
 # options
 parser = argparse.ArgumentParser()
 parser.add_argument('-opt', type=str, required=True, help='Path to options JSON file.')
@@ -87,11 +88,15 @@ if not opt['test']['kernel']=='estimated': #I don't want to create the model in 
 assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_LATENT_OUTPUT,'Use 1 image only for these Z input types'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2 or not SAVE_IMAGE_COLLAGE,'Pick an odd number of samples'
 assert LATENT_DISTRIBUTION == 'rand_Uniform' or TEST_LATENT_OUTPUT!='stats','Why not using rand_uniform when collecting stats?'
-samples_batch_size = 8
-while NUM_SAMPLES%samples_batch_size:
-    samples_batch_size -= 1
-print('Using batch size of %d for Z samples'%(samples_batch_size))
-num_sample_batches = NUM_SAMPLES//samples_batch_size
+if opt['network_G']['latent_channels'] == 0:
+    samples_batch_size = 1
+    num_sample_batches = 1
+else:
+    samples_batch_size = 8
+    while NUM_SAMPLES%samples_batch_size:
+        samples_batch_size -= 1
+    print('Using batch size of %d for Z samples'%(samples_batch_size))
+    num_sample_batches = NUM_SAMPLES//samples_batch_size
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
     print('\nTesting [{:s}]...'.format(test_set_name))
@@ -180,7 +185,9 @@ for test_loader in test_loaders:
         image_idx += 1
         image_high_freq_versions = []
         for batch_num in range(num_sample_batches):
-            z_batch = Z_latent[batch_num*samples_batch_size:(batch_num+1)*samples_batch_size].squeeze(1)
+            z_batch = Z_latent[batch_num*samples_batch_size:(batch_num+1)*samples_batch_size]
+            if opt['network_G']['latent_channels']>0:
+                z_batch = z_batch.squeeze(1)
             if SAVE_IMAGE_COLLAGE:
                 image_collage, GT_image_collage = [], []
             if TEST_LATENT_OUTPUT is None:
@@ -219,7 +226,8 @@ for test_loader in test_loaders:
                 for key in data.keys():
                     if 'path' in key: continue
                     data[key] = torch.cat([data[key] for i in range(samples_batch_size)],0)
-            data['Z'] = cur_Z
+            if SPAITIALLY_UNIFORM_Z:
+                data['Z'] = cur_Z
             model.feed_data(data, need_GT=need_Uncomp)
 
             model.test()  # test

@@ -108,7 +108,7 @@ class Flatten(nn.Module):
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
-                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None):
+                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None):
 
         BALANCED_NUM_PARAMETERS = True # If True, increasing the number of channels for layers with a 1x1 kernel, to maintain a similar number of parameters.
 
@@ -148,7 +148,12 @@ class DnCNN(nn.Module):
             self.block_size = np.sqrt(out_nc/2)
             assert self.block_size==np.round(self.block_size)
             self.block_size = int(self.block_size)
-        padding = kernel_size//2
+        if avoid_padding:# Used for generator only:
+            padding = 0
+            self.margins = kernel_size//2*num_kerneled_layers
+        else:
+            padding = kernel_size//2
+            self.margins = 0
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
         # if latent_input is None or 'all_layers' not in latent_input or num_latent_channels is None:
@@ -215,6 +220,8 @@ class DnCNN(nn.Module):
         self.dncnn = nn.ModuleList(layers)
 
     def forward(self, x):
+        if not self.discriminator_net and self.margins and not self.training:
+            x = F.pad(x,4*[self.margins],mode='replicate')
         latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
         x = 1*quantized_coeffs
         if self.norm_input:
@@ -238,10 +245,12 @@ class DnCNN(nn.Module):
                 # if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
                 #     self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
                 #     self.average_err_collection_counter += 1
+                if self.margins:
+                    quantized_coeffs = quantized_coeffs[..., self.margins:-self.margins, self.margins:-self.margins]
                 if self.chroma_generator:
                     quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
                                                                                    quantization_err_estimation.size(2),quantization_err_estimation.size(3))
-                    quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
+                    quantized_coeffs = quantized_coeffs[:,256:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
                     quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
                     return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
                 else:

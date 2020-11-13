@@ -104,14 +104,14 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
         in_nc = (opt['scale']**2+2*64 if chroma_mode else 64) if DCT_G else (3 if chroma_mode else 1)
         if 'no_high_freq_chroma_reconstruction' not in kwargs:
             kwargs['no_high_freq_chroma_reconstruction'] = True
-        if kwargs['no_high_freq_chroma_reconstruction'] and DCT_G:
-            print('Warning: Using high frequency chroma reconstruction, since avoiding it is not yet supported for non-DCT generators.')
-        out_nc = (2*(opt['scale']**2) if chroma_mode else 64) if DCT_G else (3 if chroma_mode else 1)
+        # if kwargs['no_high_freq_chroma_reconstruction'] and DCT_G:
+        #     print('Warning: Using high frequency chroma reconstruction, since avoiding it is not yet supported for DCT generators.')
+        out_nc = ((2*64 if kwargs['no_high_freq_chroma_reconstruction'] else 2*256) if chroma_mode else 64) if DCT_G else (3 if chroma_mode else 1)
         # out_nc = (2*(64 if kwargs['no_high_freq_chroma_reconstruction'] else opt['scale']**2) if chroma_mode else 64) if DCT_G else (3 if chroma_mode else 1)
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
                           latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
                           num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'],
-                          coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None)
+                          coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None,avoid_padding=not bool(opt_net['padding']))
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -164,8 +164,10 @@ def define_D(opt,CEM=None,**kwargs):
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
         G_in_nc = (opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64) if opt_net_G['DCT_G'] else (3 if chroma_mode else 1)
+        if 'no_high_freq_chroma_reconstruction' not in kwargs:
+            kwargs['no_high_freq_chroma_reconstruction'] = True
         if opt_net['DCT_D']==1:
-            G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+            G_out_nc = 2*(64 if kwargs['no_high_freq_chroma_reconstruction'] else 256) if chroma_mode else 64
         else:
             # assert not chroma_mode,'Unsupported yet'
             assert not (opt_net_G['coordinates_input'] and not opt_net['concat_input']),'Should decide what to do in this case'

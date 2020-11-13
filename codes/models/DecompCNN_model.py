@@ -82,6 +82,7 @@ class DecompCNNModel(BaseModel):
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
         self.DCT_generator = self.opt['network_G']['DCT_G']
+        self.G_margins = self.netG.module.margins
         if self.is_train:
             self.batch_size = self.opt['datasets']['train']['batch_size']
             if self.latent_input:
@@ -108,7 +109,7 @@ class DecompCNNModel(BaseModel):
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
                 assert self.opt['train']['G_Dbatch_separation'] in [None,'No','SameD','SeparateBatch']
-                self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode).to(self.device)  # D
+                self.netD = networks.define_D(opt,chroma_mode=self.chroma_mode,no_high_freq_chroma_reconstruction=NO_HIGH_FREQ_CHROMA_RECONSTRUCTION).to(self.device)  # D
                 if False and 'gp' in train_opt['gan_type'] and not self.DCT_discriminator:#Stopped replacing batch-norm layers with layer-norm layers, as I'm checking one last time WGAN-GP, and supporting this replacement was too much of a head-ache...
                     input = torch.zeros([1,1]+2*[opt['datasets']['train']['patch_size']]).to(next(self.netD.parameters()).device)
                     if self.opt['network_D']['pooling_no_fc']:#Patch-GAN:
@@ -123,7 +124,7 @@ class DecompCNNModel(BaseModel):
             self.separate_G_D_batches_counter = util.Counter(2 if (self.D_exists and self.opt['train']['G_Dbatch_separation'] =='SeparateBatch') else 1)
         else:
             self.DCT_discriminator,self.mixed_Y_4_training,self.D_exists = False,False,False
-        if self.DCT_discriminator or not self.DCT_generator:
+        if True or self.DCT_discriminator or not self.DCT_generator: # Now always constructing a non-quantized compressor for to assess GT DCT errors as part of creating the quantization error visualization
             self.JPEG['non_quantized_compressor' + ('_Y' if self.chroma_mode else '')] = JPEG(compress=True, downsample_or_quantize=False,chroma_mode=False, block_size=8).to(self.device)
             if self.chroma_mode:
                 self.JPEG['non_quantized_compressor'] = JPEG(compress=True,
@@ -190,7 +191,7 @@ class DecompCNNModel(BaseModel):
 
             # Range limiting loss:
             if train_opt['range_weight'] > 0 or self.debug:
-                self.cri_range = CreateRangeLoss([16,235] if self.chroma_mode else [16,240],chroma_mode=self.chroma_mode)
+                self.cri_range = CreateRangeLoss([16,240] if self.chroma_mode else [16,235],chroma_mode=self.chroma_mode)
                 self.l_range_w = train_opt['range_weight']
             else:
                 print('Remove range loss.')
@@ -727,7 +728,7 @@ class DecompCNNModel(BaseModel):
                     if self.D_exists and first_grad_accumulation_step_G and first_dual_batch_step:
                         self.GD_update_controller.Step_performed(True)
                     if self.cri_pix and not optimized_Z_step:  # pixel loss
-                        l_g_pix = self.cri_pix(self.output_image, self.var_Uncomp)
+                        l_g_pix = self.cri_pix(self.output_image, self.crop_2_output_shape(self.var_Uncomp,DCT=False))
                         l_g_total += self.l_pix_w(self.gradient_step_num) * l_g_pix/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                     if self.cri_fea and not optimized_Z_step:  # feature loss
                         real_fea = self.netF(self.var_Uncomp).detach()
@@ -768,7 +769,7 @@ class DecompCNNModel(BaseModel):
                 if self.generator_step:
                     if not optimized_Z_step:
                         if self.cri_pix:
-                            quantized_l_pix = self.cri_pix(self.JPEG['extractor'](self.var_Comp) if self.DCT_generator else self.var_Comp, self.var_Uncomp)
+                            quantized_l_pix = self.cri_pix(self.crop_2_output_shape(self.JPEG['extractor'](self.var_Comp),DCT=False) if self.DCT_generator else self.var_Comp, self.crop_2_output_shape(self.var_Uncomp,DCT=False))
                             self.l_g_pix_grad_step.append((l_g_pix/quantized_l_pix).log().item())
                         if self.cri_fea:
                             self.l_g_fea_grad_step.append(l_g_fea.item())
@@ -877,6 +878,18 @@ class DecompCNNModel(BaseModel):
             self.err_normalizer = self.average_abs_GT_err/self.average_err_collection_counter
         return self.average_abs_err_estimates/self.average_err_collection_counter/self.err_normalizer
 
+    def crop_2_output_shape(self,image,DCT):
+        if self.G_margins==0:
+            return image
+        margins = self.G_margins if DCT else self.opt['scale']*self.G_margins
+        if isinstance(image,torch.Tensor):
+            assert image.dim()==4
+            return image[...,margins:-margins,margins:-margins]
+
+        else:#Numpy
+            if image.ndim==3 and image.shape[2] in [1,3] and not DCT:
+                return image[margins:-margins,margins:-margins,:]
+
     def perform_validation(self,data_loader,cur_Z,print_rlt,first_eval,save_images,collect_avg_err_est=True):
         SAVE_IMAGE_COLLAGE = True
         avg_psnr, avg_quantized_psnr,avg_niqe,avg_quantized_niqe,avg_GT_niqe = [], [],[],[],[]
@@ -907,9 +920,11 @@ class DecompCNNModel(BaseModel):
             self.feed_data(val_data)
             self.test()
             if collect_avg_err_est:
-                DCT_diffs = ((self.var_Comp-self.fake_H) if self.DCT_generator else (self.JPEG['compressor'](self.var_Comp)-self.JPEG['non_quantized_compressor'](self.fake_H))).abs()
                 if self.chroma_mode:
-                    DCT_diffs = DCT_diffs[:,256:,...].view(2,64,DCT_diffs.shape[2],DCT_diffs.shape[3])
+                    assert self.DCT_generator
+                    DCT_diffs = (self.var_Comp[:,256:,...]-self.fake_H).view(2,64,self.var_Comp.shape[2],self.var_Comp.shape[3]).abs()
+                else:
+                    DCT_diffs = ((self.var_Comp-self.fake_H) if self.DCT_generator else (self.JPEG['compressor'](self.var_Comp)-self.JPEG['non_quantized_compressor'](self.fake_H))).abs()
                 self.average_abs_err_estimates += torch.mean(DCT_diffs,dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
                 self.average_err_collection_counter += 1
                 if first_eval:
@@ -997,7 +1012,7 @@ class DecompCNNModel(BaseModel):
                 if not self.chroma_mode:
                     avg_quantized_niqe = 1 * np.mean(avg_quantized_niqe)
                     print_rlt['quantized_niqe'] = avg_quantized_niqe
-                    self.log_dict['quantized_niqe_val'] = [(self.gradient_step_num, print_rlt['quantized_psnr'])]
+                    self.log_dict['quantized_niqe_val'] = [(self.gradient_step_num, print_rlt['quantized_niqe'])]
                     avg_GT_niqe = 1 * np.mean(avg_GT_niqe)
                     print_rlt['GT_niqe'] = avg_GT_niqe
                     self.log_dict['GT_niqe_val'] = [(self.gradient_step_num, print_rlt['GT_niqe'])]
@@ -1072,7 +1087,7 @@ class DecompCNNModel(BaseModel):
 
     def load_log(self,max_step=None):
         PREPEND_OLD_LOG = False
-        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
+        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'),allow_pickle=True)
         if PREPEND_OLD_LOG:
             old_log = np.load(os.path.join(self.log_path, 'old_logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])

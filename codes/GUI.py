@@ -964,7 +964,7 @@ class Canvas(QLabel):
         def crop_padding(array):
             return np.pad(array, (tuple(padding[0]), tuple(padding[1])),mode='constant') if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)),mode='constant')
 
-        fixed_im_coeffs = self.model.jpeg_compressor_Y(torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
+        fixed_im_coeffs = self.model.JPEG['compressor_Y'](torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
         original_rectangle = 1 * desired_mask_bounding_rect
         if scribble_mode:
             originally_marked_rectangle_mask = np.zeros_like(desired_im_mask)
@@ -1015,7 +1015,7 @@ class Canvas(QLabel):
                 b_size = int(np.ceil(len(optional_imprints)/calc_batches))
                 try:
                     for b_num in range(calc_batches):
-                        optional_coeffs.append(self.model.jpeg_compressor_Y_non_quantized(torch.from_numpy(np.stack(optional_imprints[b_num*b_size:(b_num+1)*b_size],0)).unsqueeze(1).to(self.model.jpeg_compressor_Y.device)))
+                        optional_coeffs.append(self.model.JPEG['compressor_Y_non_quantized'](torch.from_numpy(np.stack(optional_imprints[b_num*b_size:(b_num+1)*b_size],0)).unsqueeze(1).to(self.model.JPEG['compressor_Y'].device)))
                     success = True
                 except:
                     calc_batches += 1
@@ -1328,7 +1328,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.canvas = Canvas()
         self.setupUi()
-        self.canvas.manual_Z_control = self.opt['network_G']['latent_channels']==3 or not self.JPEG_GUI
+        self.canvas.manual_Z_control = (not self.JPEG_GUI) or self.opt['network_G']['latent_channels']>=3
         # Replace canvas placeholder from QtDesigner.
         self.horizontalLayout.removeWidget(self.canvas)
         # We need to enable mouse tracking to follow the mouse without the button pressed.
@@ -1407,6 +1407,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SaveImageAndData_button.clicked.connect(self.save_file_and_Z_map)
         if self.JPEG_GUI:
             self.QF_box.valueChanged.connect(lambda s: self.Update_QF(s))
+            self.QF_box.setValue(10)
         # Display:
         self.Zdisplay_button.clicked.connect(self.ToggleDisplay_Z_Image)
         self.DecreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=False))
@@ -2000,13 +2001,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.canvas.Z_optimizer_logger.append(Logger(self.canvas.opt,tb_logger_suffix='_%s%s'%(objective,'_%d'%(i) if self.multiple_inits else '')))
             if self.JPEG_GUI:
                 data['Comp'] = data['LR']
-                data['QF'] = self.canvas.model.jpeg_extractor.QF.view(1)
+                data['QF'] = self.canvas.model.JPEG['extractor'].QF.view(1)
                 data['uncompressed_chroma'] = self.uncompressed_chroma
             self.canvas.Z_optimizer = Z_optimizer(objective=objective,Z_size=[val*self.canvas.model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.model,
                 Z_range=self.max_SVD_Lambda,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=self.iters_per_round,
                 image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,auto_set_hist_temperature=self.auto_set_hist_temperature,
                 batch_size=optimization_batch_size,random_Z_inits=self.random_inits,initial_Z=initial_Z,
-                jpeg_extractor=self.canvas.model.jpeg_extractor if self.JPEG_GUI else None,non_local_Z_optimization=NON_LOCAL_Z_OPTIMIZATION)
+                jpeg_extractor=self.canvas.model.JPEG['extractor'] if self.JPEG_GUI else None,non_local_Z_optimization=NON_LOCAL_Z_OPTIMIZATION)
             if self.optimizing_region:
                 self.MasksStorage(False)
             if AUTO_MASK_GRAPHICAL_INPUT and 'scribble' in objective:
@@ -2252,10 +2253,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.Zdisplay_button.isChecked():
             im_2_display = (255/2/self.max_SVD_Lambda*(self.max_SVD_Lambda+self.Z_2_display[0].data.cpu().numpy().transpose(1,2,0)).copy())
             if list(im_2_display.shape[:2])!=self.canvas.HR_size: # Should be satisifeid when JPEG GUI:
+                channel_num_ratio = [self.canvas.HR_size[ind]/im_2_display.shape[ind] for ind in range(2)]
                 if im_2_display.shape[2]==3:
                     im_2_display = util.ResizeScribbleImage(im_2_display,tuple(self.canvas.HR_size))
                 elif im_2_display.shape[2] == 8**2:
                     im_2_display = util.Z_64channels2image(im_2_display)
+                elif all([c==int(c) for c in channel_num_ratio]) and channel_num_ratio[0]==channel_num_ratio[1]:
+                    z_shape = im_2_display.shape
+                    complement = np.prod(self.canvas.HR_size)//np.prod(z_shape)
+                    # complement = complement
+                    im_2_display = np.reshape(np.repeat(np.expand_dims(im_2_display, 3),complement,3),[z_shape[0],z_shape[1],-1])
+                    im_2_display = np.concatenate([im_2_display,im_2_display[...,:np.prod(self.canvas.HR_size[:2])//np.prod(z_shape[:2])-im_2_display.shape[2]]],2).reshape([z_shape[0],z_shape[1],self.canvas.HR_size[0]//z_shape[0],self.canvas.HR_size[1]//z_shape[1]])
+                    im_2_display = im_2_display.transpose(0,2,1,3).reshape(self.canvas.HR_size)
+                    # im_2_display = np.reshape(np.repeat(np.repeat(np.expand_dims(np.expand_dims(im_2_display,2),1),channel_num_ratio[0],1),channel_num_ratio[1],3),self.canvas.HR_size+[1])
                 else:
                     raise Exception('Unsupported # of Z channels for display')
         else:
@@ -2313,35 +2323,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.QF_box.setEnabled(True)
             self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
             QF_or_table = torch.tensor(QF_or_table)
-        self.canvas.model.jpeg_compressor.Set_Q_Table(QF_or_table,QF)
-        self.canvas.model.jpeg_extractor.Set_Q_Table(QF_or_table,QF)
-        self.canvas.model.jpeg_compressor_Y.Set_Q_Table(QF_or_table,QF)
-        self.canvas.model.jpeg_extractor_Y.Set_Q_Table(QF_or_table,QF)
-        self.canvas.model.jpeg_compressor_Y_non_quantized.Set_Q_Table(QF_or_table,QF)
-        self.canvas.model.jpeg_compressor_non_quantized.Set_Q_Table(QF_or_table,QF)
+        for module in self.canvas.model.JPEG.values():
+            module.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_compressor.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_extractor.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_compressor_Y.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_extractor_Y.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_compressor_Y_non_quantized.Set_Q_Table(QF_or_table,QF)
+        # self.canvas.model.jpeg_compressor_non_quantized.Set_Q_Table(QF_or_table,QF)
         if not self.canvas.model.DCT_generator:
-            self.canvas.model.jpeg_non_quantized_compressor_Y.Set_Q_Table(QF_or_table,QF)
-            self.canvas.model.jpeg_non_quantized_compressor.Set_Q_Table(QF_or_table, QF)
+            self.canvas.model.JPEG['non_quantized_compressor_Y'].Set_Q_Table(QF_or_table,QF)
+            self.canvas.model.JPEG['non_quantized_compressor'].Set_Q_Table(QF_or_table, QF)
         if self.real_JPEG_image:
             self.QF_box.setMaximum(1000)
-            self.QF_box.setValue(self.canvas.model.jpeg_compressor_Y.QF)
+            self.QF_box.setValue(self.canvas.model.JPEG['compressor_Y'].QF)
         else:
-            self.Q_Tables = [T for T in self.canvas.model.jpeg_extractor.Q_table.squeeze()[:2].data.cpu().numpy()]
+            self.Q_Tables = [T for T in self.canvas.model.JPEG['extractor'].Q_table.squeeze()[:2].data.cpu().numpy()]
 
     def Update_QF(self,QF):
         self.Assign_Q_Table(QF)
-        self.var_L = self.canvas.model.jpeg_compressor_Y(self.loaded_image[:,:1,...])
+        self.var_L = self.canvas.model.JPEG['compressor_Y'](self.loaded_image[:,:1,...])
         if not self.canvas.model.DCT_generator:
-            self.var_L = self.canvas.model.jpeg_extractor_Y(self.var_L)
+            self.var_L = self.canvas.model.JPEG['extractor_Y'](self.var_L)
         self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.model.Return_Compressed(self.loaded_image)/ 255) , 0, 1)
         self.ReProcess(dont_update_undo_list=True)
 
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         if self.JPEG_GUI:
             self.canvas.model = create_model(self.opt, chroma_mode=True)
-            self.canvas.model.jpeg_compressor_Y_non_quantized = JPEG(compress=True,chroma_mode=False, downsample_or_quantize=False,block_size=8)\
+            self.canvas.model.JPEG['compressor_Y_non_quantized'] = JPEG(compress=True,chroma_mode=False, downsample_or_quantize=False,block_size=8)\
                 .to(self.canvas.model.device)
-            self.canvas.model.jpeg_compressor_non_quantized = JPEG(compress=True,chroma_mode=True, downsample_or_quantize=False,block_size=self.opt['scale'])\
+            self.canvas.model.JPEG['compressor_non_quantized'] = JPEG(compress=True,chroma_mode=True, downsample_or_quantize=False,block_size=self.opt['scale'])\
                 .to(self.canvas.model.device)
         else:
             self.canvas.model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
@@ -2443,8 +2455,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.real_JPEG_image = True
             self.Assign_Q_Table()
             self.var_L = torch.from_numpy(dct_y_input2model).float().to(self.canvas.model.device).unsqueeze(0)
-            self.uncompressed_chroma = self.canvas.model.jpeg_extractor(torch.cat([color_DCT_2_16pix_block_DCT_tensor(dct_cb),color_DCT_2_16pix_block_DCT_tensor(dct_cr)],1))
-            self.loaded_image = torch.cat([self.canvas.model.jpeg_extractor_Y(self.var_L),self.uncompressed_chroma],1)
+            self.uncompressed_chroma = self.canvas.model.JPEG['extractor'](torch.cat([color_DCT_2_16pix_block_DCT_tensor(dct_cb),color_DCT_2_16pix_block_DCT_tensor(dct_cr)],1))
+            self.loaded_image = torch.cat([self.canvas.model.JPEG['extractor_Y'](self.var_L),self.uncompressed_chroma],1)
         else:
             self.real_JPEG_image = True
             self.Assign_Q_Table()
@@ -2455,9 +2467,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             loaded_YCbCr = rgb2ycbcr(1*loaded_rgb,only_y=False)
             loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
             loaded_YCbCr = loaded_YCbCr[:,:,:loaded_YCbCr.size(2)//16*16,:loaded_YCbCr.size(3)//16*16]
-            self.var_L = self.canvas.model.jpeg_compressor_Y(loaded_YCbCr[:,0,...].unsqueeze(1))
-            chroma_input = self.canvas.model.jpeg_extractor(self.canvas.model.jpeg_compressor(loaded_YCbCr))[:,1:,...]
-            loaded_image = torch.cat([self.canvas.model.jpeg_extractor_Y(self.var_L),chroma_input],1)
+            self.var_L = self.canvas.model.JPEG['compressor_Y'](loaded_YCbCr[:,0,...].unsqueeze(1))
+            chroma_input = self.canvas.model.JPEG['extractor'](self.canvas.model.JPEG['compressor'](loaded_YCbCr))[:,1:,...]
+            loaded_image = torch.cat([self.canvas.model.JPEG['extractor_Y'](self.var_L),chroma_input],1)
             loaded_image = torch.clamp(util.Tensor_YCbCR2RGB(loaded_image),0,255).data[0].cpu().numpy().transpose((1,2,0))
             mean_jpeg_deciphering_error = np.abs(loaded_image-loaded_rgb).mean()
             self.statusBar.showMessage('Mean error %.3f gray-levels when deciphering JPEG coefficients'%(mean_jpeg_deciphering_error),INFO_MESSAGE_DURATION)
@@ -2493,12 +2505,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
             if self.JPEG_GUI:
                 self.real_JPEG_image = False
-                self.QF_box.setValue(10)
-                self.Assign_Q_Table(10)
+                # self.QF_box.setValue(10)
+                self.Assign_Q_Table(self.QF_box.value())
                 self.loaded_image = loaded_image
-                self.var_L = self.canvas.model.jpeg_compressor_Y(self.loaded_image[:,:1,...])
+                self.var_L = self.canvas.model.JPEG['compressor_Y'](self.loaded_image[:,:1,...])
                 if not self.canvas.model.DCT_generator:
-                    self.var_L = self.canvas.model.jpeg_extractor_Y(self.var_L)
+                    self.var_L = self.canvas.model.JPEG['extractor_Y'](self.var_L)
                 self.uncompressed_chroma = self.loaded_image[:,1:,...]
             else:
                 self.var_L = self.canvas.model.netG.module.DownscaleOP(loaded_image)
