@@ -43,7 +43,7 @@ class JpegDataset(data.Dataset):
             if opt['dataroot_LR'] is not None:
                 raise NotImplementedError('Now subset only supports generating LR on-the-fly.')
         else:  # read image list from lmdb or image files
-            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],opt['dataroot_Uncomp'])
+            self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],opt['dataroot_Uncomp'],patch_size=opt['patch_size'])
             # self.Uncomp_env, self.paths_Uncomp = util.get_image_paths(opt['data_type'],
             #     opt['dataroot_Uncomp'].replace('GrayScale','HRx4') if '_chroma' in opt['mode'] else opt['dataroot_Uncomp'])
         if opt['scales'] is not None:

@@ -21,6 +21,7 @@ import imageio
 import torch
 import subprocess
 from models.modules.loss import Latent_channels_desc_2_num_channels
+from copy import deepcopy
 
 SPECIFIC_DEBUG = False
 # Parameters:
@@ -42,6 +43,7 @@ SAVE_QUANTIZED = True
 CHROMA = False
 OUTPUT_STD = True
 SAVE_AVG_METRICS_WHEN_LATENT = True
+SPAITIALLY_UNIFORM_Z = True
 # options
 parser = argparse.ArgumentParser()
 parser.add_argument('-opt', type=str, required=True, help='Path to options JSON file.')
@@ -63,11 +65,17 @@ print('\n**********' + util.get_timestamp() + '**********')
 # Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
-    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
-    test_set = create_dataset(dataset_opt,specific_image=TEST_IMAGE)
-    test_loader = create_dataloader(test_set, dataset_opt)
-    print('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
-    test_loaders.append(test_loader)
+    if not isinstance(dataset_opt['jpeg_quality_factor'],list):
+        dataset_opt['jpeg_quality_factor'] = [dataset_opt['jpeg_quality_factor']]
+    assert dataset_opt['dataroot_LR'] is None or dataset_opt['dataroot_HR'] is None,\
+        'Should not rely on saved LR versions when HR images are available. Downscaling images myself using CEM_imresize in the get_item routine.'
+    for QF in dataset_opt['jpeg_quality_factor']:
+        cur_dataset_opt = deepcopy(dataset_opt)
+        cur_dataset_opt['jpeg_quality_factor'] = 1*QF
+        test_set = create_dataset(cur_dataset_opt,specific_image=TEST_IMAGE)
+        test_loader = create_dataloader(test_set, cur_dataset_opt)
+        print('Number of test images in [{:s}, QF {:d}]: {:d}'.format(cur_dataset_opt['name'],cur_dataset_opt['jpeg_quality_factor'], len(test_set)))
+        test_loaders.append(test_loader)
 
 # Create model
 if not opt['test']['kernel']=='estimated': #I don't want to create the model in advance if I'm going to have a per-image kernel.
@@ -80,11 +88,15 @@ if not opt['test']['kernel']=='estimated': #I don't want to create the model in 
 assert len(test_set)==1 or LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS or not TEST_LATENT_OUTPUT,'Use 1 image only for these Z input types'
 assert np.round(NUM_SAMPLES/2)!=NUM_SAMPLES/2 or not SAVE_IMAGE_COLLAGE,'Pick an odd number of samples'
 assert LATENT_DISTRIBUTION == 'rand_Uniform' or TEST_LATENT_OUTPUT!='stats','Why not using rand_uniform when collecting stats?'
-samples_batch_size = 8
-while NUM_SAMPLES%samples_batch_size:
-    samples_batch_size -= 1
-print('Using batch size of %d for Z samples'%(samples_batch_size))
-num_sample_batches = NUM_SAMPLES//samples_batch_size
+if opt['network_G']['latent_channels'] == 0:
+    samples_batch_size = 1
+    num_sample_batches = 1
+else:
+    samples_batch_size = 8
+    while NUM_SAMPLES%samples_batch_size:
+        samples_batch_size -= 1
+    print('Using batch size of %d for Z samples'%(samples_batch_size))
+    num_sample_batches = NUM_SAMPLES//samples_batch_size
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
     print('\nTesting [{:s}]...'.format(test_set_name))
@@ -173,7 +185,9 @@ for test_loader in test_loaders:
         image_idx += 1
         image_high_freq_versions = []
         for batch_num in range(num_sample_batches):
-            z_batch = Z_latent[batch_num*samples_batch_size:(batch_num+1)*samples_batch_size].squeeze(1)
+            z_batch = Z_latent[batch_num*samples_batch_size:(batch_num+1)*samples_batch_size]
+            if opt['network_G']['latent_channels']>0:
+                z_batch = z_batch.squeeze(1)
             if SAVE_IMAGE_COLLAGE:
                 image_collage, GT_image_collage = [], []
             if TEST_LATENT_OUTPUT is None:
@@ -212,7 +226,8 @@ for test_loader in test_loaders:
                 for key in data.keys():
                     if 'path' in key: continue
                     data[key] = torch.cat([data[key] for i in range(samples_batch_size)],0)
-            data['Z'] = cur_Z
+            if SPAITIALLY_UNIFORM_Z:
+                data['Z'] = cur_Z
             model.feed_data(data, need_GT=need_Uncomp)
 
             model.test()  # test
@@ -366,7 +381,7 @@ for test_loader in test_loaders:
             pixels_STDs = np.concatenate(pixels_STDs, 0)
             f.write('Overall mean pixels STD: %.4f\n'%(pixels_STDs.mean()))
             f.write('Overall STD of pixels STD: %.4f\n' % (np.std(pixels_STDs,0).mean()))
-            new_dataset_dir_name = dataset_dir+'_STD%.3f' % (np.concatenate(pixels_STDs, 0).mean())
+            new_dataset_dir_name = dataset_dir+'_STD%.3f' % (pixels_STDs.mean())
             os.rename(dataset_dir, new_dataset_dir_name)
     if TEST_LATENT_OUTPUT in ['GIF','video']:
         folder_name = os.path.join(dataset_dir+ suffix +'_%s'%(LATENT_DISTRIBUTION)+ '_%d%s'%(model.gradient_step_num,'_frames' if LATENT_DISTRIBUTION not in NON_ARBITRARY_Z_INPUTS else ''))

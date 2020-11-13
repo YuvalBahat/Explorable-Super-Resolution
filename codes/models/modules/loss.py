@@ -255,10 +255,12 @@ def CreateRangeLoss(legit_range,chroma_mode=False):
     def RangeLoss(x):
         # Returning the mean deviation from the legitimate range, across all channels and pixels:
         if chroma_mode:
-            raise Exception('Unsupported yet')
-            x = 255*Tensor_YCbCR2RGB(x/255)
+            return torch.max(torch.max(x[:,1:,...] - legit_range[1], other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0] - x[:,1:,...], other=torch.zeros(size=[1]).type(dtype))).mean()
+            # raise Exception('Unsupported yet')
+            # x = 255*Tensor_YCbCR2RGB(x/255)
             # x = (ycbcr2rgb_mat.type(x.type())*x.unsqueeze(1)).sum(2)+ torch.tensor([-222.921, 135.576, -276.836]).type(x.type()).view(1,3,1,1)/255
-        return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
+        else:
+            return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
     return RangeLoss
 
 class GradientPenaltyLoss(nn.Module):

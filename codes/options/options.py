@@ -108,6 +108,8 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         opt['network_G']['latent_input'] = 'None'
     if opt['network_G']['latent_input']=='None':
         opt['network_G']['latent_channels'] = 0
+    if 'padding' not in opt['network_G'].keys():
+        opt['network_G']['padding'] = 1
     opt['path']['log'] = experiments_root
     if is_train:
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
