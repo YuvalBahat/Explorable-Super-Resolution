@@ -28,11 +28,13 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     parser.add_argument('-chroma', action='store_true',help='Training the chroma-channels generator')
+    parser.add_argument('-EMA_eval', action='store_true',help='When evaluating model, use average of opt[''train''][''val_running_avg_steps''] last models')
     if parser.parse_args().single_GPU:
         available_GPUs = util.Assign_GPU(maxMemory=0.66)
     else:
         # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
+    EMA_eval = parser.parse_args().EMA_eval
     opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG'+('_chroma' if parser.parse_args().chroma else ''))
 
     if not opt['train']['resume']:
@@ -95,7 +97,7 @@ def main():
         for i, train_data in enumerate(train_loader):
             model.gradient_step_num = model.step // (max_accumulation_steps*(2 if model.D_exists and model.opt['train']['G_Dbatch_separation']=='SeparateBatch' else 1))
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
-            if not_within_batch:    model.update_running_avg()
+            if EMA_eval and not_within_batch:    model.update_running_avg()
             saving_step = (model.gradient_step_num==0 or (time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
@@ -132,12 +134,14 @@ def main():
                     save_images = True# Changed to always saving, and pruning saved images as training advances
                     Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']!=0) else [])
                     print_rlt['psnr'],print_rlt['niqe'] = 0,0
-                    model.toggle_running_avg_weight(True)
+                    if EMA_eval:
+                        model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)
                     for z_num,cur_Z in enumerate(Z_latent):
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_Uncomp,
                                                  save_images=save_images,collect_avg_err_est=z_num==0)
-                    model.toggle_running_avg_weight(False)
+                    if EMA_eval:
+                        model.toggle_running_avg_weight(False)
                     util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
                                          saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_Z.*PSNR.*.png$')
                     # if save_images: model.average_across_model_snapshots(apply=False)

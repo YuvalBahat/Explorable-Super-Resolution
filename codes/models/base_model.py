@@ -209,7 +209,8 @@ class BaseModel():
                 modified_key_names_counter += 1
             if 'latent_input' in self.__dict__ and self.latent_input is not None and self.num_latent_channels>0 and \
                 'weight' in key and loaded_state_dict[key].dim()>1 and \
-                current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
+                current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1] + np.arange(self.num_latent_channels)+1):
+                # current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
                 # In case we initialize a newly trained model that has latent input, with pre-trained model that doesn't have, add weights corresponding to
                 # the added input layers (added as first layers), whose STD is LATENT_WEIGHTS_RELATIVE_STD*(STD of existing weights in this kernel):
                 additional_channels = current_state_dict[current_key].size()[1]-loaded_state_dict[key].size()[1]

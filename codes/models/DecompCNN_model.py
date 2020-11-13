@@ -190,7 +190,7 @@ class DecompCNNModel(BaseModel):
 
             # Range limiting loss:
             if train_opt['range_weight'] > 0 or self.debug:
-                self.cri_range = CreateRangeLoss([16,235] if self.chroma_mode else [16,240],chroma_mode=self.chroma_mode)
+                self.cri_range = CreateRangeLoss([16,240] if self.chroma_mode else [16,235],chroma_mode=self.chroma_mode)
                 self.l_range_w = train_opt['range_weight']
             else:
                 print('Remove range loss.')
@@ -444,6 +444,9 @@ class DecompCNNModel(BaseModel):
                 data['Uncomp'][:,0,...] = self.y_channel_input.squeeze(1)
             self.Prepare_Input(data['Uncomp'],latent_input=cur_Z)
         if need_GT:  # train or val
+            if self.is_train and self.add_quantization_noise:
+                assert not self.chroma_mode,'Unsupported yet'
+                data['Uncomp'] = torch.clamp(data['Uncomp']+torch.rand_like(data['Uncomp'])-0.5,16,235) # Adding quantization noise to real images to avoid discriminating based on quantization differences between real and fake
             self.var_Uncomp = data['Uncomp'].to(self.device)
             input_ref = data['ref'] if 'ref' in data else data['Uncomp']
             if self.DCT_discriminator:
@@ -997,7 +1000,7 @@ class DecompCNNModel(BaseModel):
                 if not self.chroma_mode:
                     avg_quantized_niqe = 1 * np.mean(avg_quantized_niqe)
                     print_rlt['quantized_niqe'] = avg_quantized_niqe
-                    self.log_dict['quantized_niqe_val'] = [(self.gradient_step_num, print_rlt['quantized_psnr'])]
+                    self.log_dict['quantized_niqe_val'] = [(self.gradient_step_num, print_rlt['quantized_niqe'])]
                     avg_GT_niqe = 1 * np.mean(avg_GT_niqe)
                     print_rlt['GT_niqe'] = avg_GT_niqe
                     self.log_dict['GT_niqe_val'] = [(self.gradient_step_num, print_rlt['GT_niqe'])]
@@ -1072,7 +1075,7 @@ class DecompCNNModel(BaseModel):
 
     def load_log(self,max_step=None):
         PREPEND_OLD_LOG = False
-        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'))
+        loaded_log = np.load(os.path.join(self.log_path,'logs.npz'),allow_pickle=True)
         if PREPEND_OLD_LOG:
             old_log = np.load(os.path.join(self.log_path, 'old_logs.npz'))
         self.log_dict = OrderedDict([val for val in zip(self.log_dict.keys(),[[] for i in self.log_dict.keys()])])
