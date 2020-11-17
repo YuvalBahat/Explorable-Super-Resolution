@@ -77,7 +77,7 @@ class DecompCNNModel(BaseModel):
         logs_2_keep = ['l_g_pix_log_rel', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake',
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
                        'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain','niqe_val',
-                       'clamped_portion']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'per_pix_STD_val','clamped_portion']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         self.avg_estimated_err = np.empty(shape=[8,8,0])
         self.avg_estimated_err_step = []
@@ -151,7 +151,7 @@ class DecompCNNModel(BaseModel):
                 self.cri_pix = None
 
             # Reference loss after optimizing latent input:
-            if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
+            if self.optimalZ_loss_type is not None and opt['network_G']['latent_channels']>0 and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 if self.opt['train']['Num_Z_iterations'] is None: #legacy support
                     self.opt['train']['Num_Z_iterations'] = [10]
@@ -521,7 +521,7 @@ class DecompCNNModel(BaseModel):
         # else:
         #     G_grads_retained = False
         #     self.Set_Require_Grad_Status(self.netG, False)
-        performing_optimized_Z_steps = self.optimalZ_loss_type is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED)
+        performing_optimized_Z_steps = self.cri_optimalZ is not None and (self.generator_started_learning or Z_OPTIMIZATION_WHEN_D_UNVERIFIED)
         performing_non_optimized_Z_steps = any([getattr(self,a) is not None for a in ['cri_gan','cri_pix','cri_latent','cri_fea']])
         actual_dual_step_steps = int(performing_optimized_Z_steps)+int(performing_non_optimized_Z_steps) # 2 if I actually have an optimized-Z step, 1 otherwise
         self.separate_G_D_batches_counter.advance()
@@ -1003,7 +1003,8 @@ class DecompCNNModel(BaseModel):
         if SAVE_IMAGE_COLLAGE and save_images:
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
-            util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
+            self.im_collages.append(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1))
+            util.save_img(self.im_collages[-1], save_img_path)
             if first_eval:  # Save GT Uncomp images
                 util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),
                               os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_Uncomp.png'))

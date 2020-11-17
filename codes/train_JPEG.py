@@ -137,6 +137,7 @@ def main():
                     if EMA_eval:
                         model.toggle_running_avg_weight(True)
                     # if save_images: model.average_across_model_snapshots(apply=True)
+                    model.im_collages = []
                     for z_num,cur_Z in enumerate(Z_latent):
                         model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_Uncomp,
                                                  save_images=save_images,collect_avg_err_est=z_num==0)
@@ -151,6 +152,9 @@ def main():
                     print_rlt['niqe'] /= len(Z_latent)
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
                     model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
+                    if len(Z_latent)>1:
+                        print_rlt['per_pix_STD'] = np.mean(np.std(np.stack(model.im_collages, 0), 0))
+                        model.log_dict['per_pix_STD_val'].append((model.gradient_step_num,print_rlt['per_pix_STD']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 # Save to log
