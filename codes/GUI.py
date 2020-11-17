@@ -53,6 +53,7 @@ ITERS_PER_OPT_ROUND = 5
 HIGH_OPT_ITERS_LIMIT = True
 MARGINS_AROUND_REGION_OF_INTEREST = 30
 RANDOM_OPT_INITS = False
+LIMITED_RANDOM_WITH_STD_NOT_L1 = False
 MULTIPLE_OPT_INITS = False # When True, using random initializations in Z space in addition to the initialization with the current Z, when performing optimization in Z space (when using the variance, imprinting and all other Z optimization tools).
 LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS = True
 TRACK_ADDED_SCRIBLES = True # When True, using the recent modification that allows modifying drawing locations like imprints can be moved, rotated or resized.
@@ -1803,8 +1804,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             UNIFORM_RANDOM = False
             Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
             self.canvas.control_values = Z_mask*torch.stack([self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),
-                self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),self.DrawRandChannel(0,np.pi,uniform=UNIFORM_RANDOM)],
-                0).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.control_values
+                self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),self.DrawRandChannel(0,np.pi,uniform=UNIFORM_RANDOM)],0).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.control_values
             self.Recompose_cur_Z()
             self.canvas.Update_Z_Sliders()
             self.ReProcess()
@@ -1914,7 +1914,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             objective = objective.replace('hist', 'dict')
         if AUTO_CYCLE_LENGTH_4_PERIODICITY:
             objective = objective.replace('periodicity', 'nonInt_periodicity')
-
+        if LIMITED_RANDOM_WITH_STD_NOT_L1:
+            objective = objective.replace('limited', 'local')
         if 'scribble' in objective and self.canvas.current_display_index == self.canvas.scribble_display_index:
             self.Update_Scribble_Data()
         self.random_inits = ('random' in objective and 'limited' not in objective) or RANDOM_OPT_INITS
@@ -2119,8 +2120,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not optimization_failed:
             if objective=='digit':
                 if self.canvas.Z_optimizer.final_num_digits!=1:
-                    self.statusBar.showMessage('Warning: digits classifier idenitifed %d digits (instead of 1)' % (self.canvas.Z_optimizer.final_num_digits),
-                        ERR_MESSAGE_DURATION)
+                    self.statusBar.showMessage('Warning: digits classifier idenitifed %d digits (instead of 1, which got %.3f)' %
+                        (self.canvas.Z_optimizer.final_num_digits,self.canvas.Z_optimizer.final_single_digit_score),ERR_MESSAGE_DURATION)
                 else:
                     self.statusBar.showMessage('Classification score for "%d" increased from %.3f to %.3f' % (self.digit_2_resemble,
                         self.canvas.Z_optimizer.initial_digit_score,self.canvas.Z_optimizer.final_digit_score), INFO_MESSAGE_DURATION)

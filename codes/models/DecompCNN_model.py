@@ -88,7 +88,7 @@ class DecompCNNModel(BaseModel):
             if self.latent_input:
                 # self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 # self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
-                if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight']>0 or self.debug):
+                if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight'] or self.debug):
                     self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past','initial','initial_gradual',None]
@@ -330,7 +330,7 @@ class DecompCNNModel(BaseModel):
                     self.var_Comp = self.JPEG['extractor_Y'](self.var_Comp)
                 else:
                     self.var_Comp = self.JPEG['extractor'](self.var_Comp)
-        if latent_input is not None:
+        if latent_input is not None and latent_input.numel()>0:
             if self.var_Comp.size()[2:]!=latent_input.size()[2:]:
                 assert np.all(2*np.array(self.var_Comp.size()[2:])==np.array(latent_input.size()[2:])),'dimensions are not as expected' #Should happen due to differences in block size between chroma and Y models - There are twice as many blocks in Y, so spatial dimensions should be doubled.
                 latent_input = nn.functional.interpolate(latent_input, size=self.var_Comp.size()[2:], mode='bilinear', align_corners=True)
