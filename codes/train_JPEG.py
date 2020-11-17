@@ -104,15 +104,17 @@ def main():
             if lr_too_low or saving_step:
                 model.save_log()
                 model.save(model.gradient_step_num)
-                util.prune_old_files(cur_step=model.gradient_step_num, folder=model.save_dir,
-                                     saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_(G|D).pth$')
-                # recently_saved_models.append(model.save(model.gradient_step_num))
-                # if len(recently_saved_models)>3:
-                #     model_2_delete = recently_saved_models.popleft()
-                #     if os.path.isfile(model_2_delete):
-                #         os.remove(model_2_delete)
-                #     if model.D_exists:
-                #         os.remove(model_2_delete.replace('_G.','_D.'))
+                if opt['logger']['keep_old_models']:
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.save_dir,
+                                         saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_(G|D).pth$')
+                else:
+                    recently_saved_models.append(model.save(model.gradient_step_num))
+                    if len(recently_saved_models)>3:
+                        model_2_delete = recently_saved_models.popleft()
+                        if os.path.isfile(model_2_delete):
+                            os.remove(model_2_delete)
+                        if model.D_exists:
+                            os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),model.gradient_step_num))
                 if lr_too_low:
                     break

@@ -9,7 +9,8 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from utils.util import IndexingHelper, Return_Translated_SubImage, Return_Interpolated_SubImage
 from cv2 import dilate
 import models.modules.architecture as arch
-from torchvision import transforms
+import torch.nn.functional as F
+# from torchvision import transforms
 
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
@@ -336,7 +337,7 @@ class Recurrence_Optimizer:
         self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=LR_D)
         self.cur_iter = 0
         self.HR_size = self.model.opt['network_G']['scale']*np.array(self.data['LR'].shape[2:])
-        self.scaling_OP = lambda x: torch.nn.functional.interpolate(x,size=tuple(np.round(scale*self.HR_size).astype(np.int)),mode='bicubic').clamp(min=0,max=1)
+        self.scaling_OP = lambda x: F.interpolate(x,size=tuple(np.round(scale*self.HR_size).astype(np.int)),mode='bicubic').clamp(min=0,max=1)
         self.criterion = GANLoss("wgan-sn_hinge",1.0,0.0).to(self.model.device)
         self.auto_iter_z_steps = D_G_ratio is None
         self.D_G_ratio = 1 if self.auto_iter_z_steps else D_G_ratio
@@ -526,7 +527,7 @@ class Z_optimizer():
             if self.non_local_Z_optimization:
                 self.constraining_mask = (1-(self.image_mask>0)).type(self.image_mask.type())
                 def constraining_loss(produced_im):
-                    return torch.nn.functional.l1_loss(input=produced_im * self.constraining_mask,target=self.initial_output * self.constraining_mask)
+                    return F.l1_loss(input=produced_im * self.constraining_mask,target=self.initial_output * self.constraining_mask)
                 self.constraining_loss = constraining_loss
                 self.constraining_loss_weight = 0.1 # Setting a default weight, that should probably be adjusted for each different tool
         if 'local' in objective:#Used in relative STD change and periodicity objective cases:
@@ -565,7 +566,7 @@ class Z_optimizer():
                     def Scribble_Loss(produced_im,GT_im):
                         loss_per_im = []
                         for im_num in range(produced_im.size(0)):
-                            loss_per_im.append(torch.nn.functional.l1_loss(input=produced_im[im_num].unsqueeze(0) * L1_loss_mask.to(self.device),
+                            loss_per_im.append(F.l1_loss(input=produced_im[im_num].unsqueeze(0) * L1_loss_mask.to(self.device),
                                                             target=GT_im * L1_loss_mask.to(self.device)).to(torch.device('cuda')))
                             # if torch.any(TV_loss_mask.type(torch.uint8)):
                             if len(TV_loss_masks)>0:
@@ -689,37 +690,39 @@ class Z_optimizer():
                 self.rmse_weight = data['rmse_weight']
             elif 'recurrence' in objective:
                 self.netD = arch.Internal_Discriminator()
+            elif 'random' in objective:
+                self.STD_PRESERVING_WEIGHT = 1e3
             elif objective=='digit':
                 self.SVHN_classifier = self.model.net_SVHN
                 mask_bounds = torch.cat([self.image_mask.nonzero().min(0)[0],self.image_mask.nonzero().max(0)[0]])
-                # self.debug_counter = 0
-                # self.Z_hist = []
+                self.constraining_loss_weight = 100
+                EXPECTED_ASPECT_RATIO = 1
+                CONVERT_2_Y = False
                 def transform(image):
-                    return (torch.nn.functional.interpolate(image[...,mask_bounds[0]:mask_bounds[2]+1,mask_bounds[1]:mask_bounds[3]+1],size=(64,64),mode='bilinear')[...,5:-5,5:-5]-0.5)/0.5
+                    cropped_im = image[..., mask_bounds[0]:mask_bounds[2] + 1, mask_bounds[1]:mask_bounds[3] + 1]
+                    assert cropped_im.shape[3]<=cropped_im.shape[2],'Currently expecting marked digit to have aspect ratio<=1'
+                    resize_factor = 54/cropped_im.shape[2]
+                    cropped_im = F.interpolate(cropped_im,size=(54,int(np.round((resize_factor*cropped_im.shape[3])))),mode='bilinear')
+                    expected_width = (EXPECTED_ASPECT_RATIO*cropped_im.shape[2])
+                    if expected_width>cropped_im.shape[3]:
+                        padding = (expected_width-cropped_im.shape[3])//2
+                        padding = [padding,expected_width-cropped_im.shape[3]-padding,0,0]
+                        cropped_im = F.pad(cropped_im,padding,mode='replicate')
+                    if CONVERT_2_Y:
+                        rgb2y_mat = torch.from_numpy(np.array([65.481, 128.553, 24.966]) / 219).type(cropped_im.type())
+                        cropped_im = (rgb2y_mat.type(cropped_im.type()).view(1,-1, 1, 1) * cropped_im).sum(1).repeat([1,3,1,1])
+                    return (cropped_im-0.5)/0.5
                 def classify_image(image):
-                    # import matplotlib.pyplot as plt
-                    # plt.imsave('./debug/debug_%d.png'%(self.debug_counter),(0.5*transform(image)[0]+0.5).data.cpu().numpy().transpose(1,2,0))
-                    # if 'Z' in self.data.keys():
-                    #     diffs_list = [(j,(self.data['Z']-past_Z).abs().max().item()) for j,past_Z in enumerate(self.Z_hist) if past_Z is not None]
-                    #     print(diffs_list)
-                    #     plt.imsave('./debug/debug_%d_Z.png' % (self.debug_counter),0.5*(1+self.data['Z'].view(
-                    #         8,8,self.data['Z'].shape[2],self.data['Z'].shape[3]).permute([2,0,3,1])).data.cpu().numpy().reshape(
-                    #         [8*self.data['Z'].shape[2],8*self.data['Z'].shape[3]]),cmap='gray')
-                    #     self.Z_hist.append(self.data['Z'])
-                    # else:
-                    #     self.Z_hist.append(None)
-                    # print('Classifying #%d'%(self.debug_counter))
-                    # self.debug_counter += 1
-                    # plt.imsave('./debug/debug_org_%.4f.png'%(time.time()%100),image[...,mask_bounds[0]:mask_bounds[2]+1,mask_bounds[1]:mask_bounds[3]+1][0].data.cpu().numpy().transpose(1,2,0))
                     return self.SVHN_classifier(transform(image))
                 def classifier_loss(image):
                     classifier_output = classify_image(image)
-                    return torch.stack([torch.nn.functional.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device)),
-                            torch.nn.functional.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda())])
+                    return torch.stack([F.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device).repeat([classifier_output[1].shape[0]]),reduce=False),
+                            F.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda().repeat([classifier_output[0].shape[0]]),reduce=False)],-1)
                 initial_classification = classify_image(self.model.Output_Batch(within_0_1=True))
-                self.initial_digit_score = torch.nn.functional.softmax(initial_classification[1])[0,self.data['digit_2_resemble']].item()
-                print('Initial score for %d: %.3f, estimated # of digits: %d'%(self.data['digit_2_resemble'],
-                    self.initial_digit_score,initial_classification[0].argmax()))
+                self.initial_digit_score = F.softmax(initial_classification[1])[0,self.data['digit_2_resemble']].item()
+                print('Initial score for %d: %.3f, estimated # of digits: %d, classified as %d (%.3f)'%(self.data['digit_2_resemble'],
+                    self.initial_digit_score,initial_classification[0].argmax(),initial_classification[1].argmax(1),
+                    F.softmax(initial_classification[1])[0,initial_classification[1].argmax(1)].item()))
                 self.loss = classifier_loss
                 self.classify_image = classify_image
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
@@ -815,8 +818,12 @@ class Z_optimizer():
                         rmse_weight = 1*self.rmse_weight#*Z_loss.mean().item()/rmse.mean().item()
                     Z_loss = Z_loss-rmse_weight*rmse
                 if self.Z_mask is not None:
-                    Z_loss = Z_loss*self.Z_mask
+                    # Switchingthe next line in the JPEG case, should make sure this works for SR as well
+                    # Z_loss = Z_loss*self.Z_mask
+                    Z_loss = Z_loss * self.image_mask
                 Z_loss = -1*Z_loss.mean(dim=(1,2,3))
+                if 'local' in self.objective:
+                    Z_loss = Z_loss + self.STD_PRESERVING_WEIGHT * ((self.Masked_STD(first_image_only=False) - self.initial_STD) ** 2).mean()
             elif any([phrase in self.objective for phrase in ['l1','scribble']]):
                 Z_loss = self.loss(self.output_image.to(self.device), self.desired_im.to(self.device))
             elif 'desired_SVD' in self.objective:
@@ -853,10 +860,10 @@ class Z_optimizer():
             cur_LR = self.optimizer.param_groups[0]['lr']
             if self.loggers is not None:
                 for logger_num,logger in enumerate(self.loggers):
-                    cur_value = Z_loss[logger_num].item() if Z_loss.dim()>0 else Z_loss.item()
+                    cur_value = Z_loss[logger_num].mean().item() if Z_loss.dim()>0 else Z_loss.mean().item()
                     logger.print_format_results('val', {'epoch': 0, 'iters': z_iter, 'time': time.time(), 'model': '','lr': cur_LR, 'Z_loss': cur_value}, dont_print=True)
             if not self.model_training:
-                self.latest_Z_loss_values = [val.item() for val in Z_loss]
+                self.latest_Z_loss_values = [val.mean().item() for val in Z_loss]
             Z_loss = Z_loss.mean()
             if self.non_local_Z_optimization:
                 # if z_iter==self.cur_iter: #First iteration:
@@ -897,8 +904,9 @@ class Z_optimizer():
                 # if self.jpeg_mode:  # Should see what to feed in the first argument here:
                 #     self.model.fake_H = self.model.Enforce_Consistency(self.model.var_Comp, self.model.fake_H)
             final_classification = self.classify_image(self.model.Output_Batch(within_0_1=True))
-            self.final_digit_score,self.final_num_digits =\
-                torch.nn.functional.softmax(final_classification[1])[0, self.data['digit_2_resemble']].item(),final_classification[0].argmax().item()
+            self.final_digit_score,self.final_num_digits,self.final_single_digit_score =\
+                F.softmax(final_classification[1])[:, self.data['digit_2_resemble']].mean().item(),final_classification[0].argmax(1).float().mean().item(),\
+                F.softmax(final_classification[0])[:,1].mean().item()
             print('Final score for %d: %.3f, estimated # of digits: %d' % (self.data['digit_2_resemble'],
                 self.final_digit_score,self.final_num_digits))
         if not self.model_training:
@@ -918,7 +926,7 @@ class Z_optimizer():
     #     return image[:, :, y_range[0]:y_range[1], x_range[0]:x_range[1]]
     #
     # def Return_Interpolated_SubImage(self,image, grid):
-    #     return torch.nn.functional.grid_sample(image, grid.repeat([image.size(0),1,1,1]))
+    #     return F.grid_sample(image, grid.repeat([image.size(0),1,1,1]))
 
     def PeriodicityLoss(self):
         loss = 0 if 'Plus' in self.objective and self.PLUS_MEANS_STD_INCREASE else (self.STD_PRESERVING_WEIGHT*(self.Masked_STD(first_image_only=False)-self.initial_STD)**2).mean()
