@@ -35,7 +35,7 @@ class DecompCNNModel(BaseModel):
         if self.latent_input is not None:
             self.Z_size_factor = 1
         self.num_latent_channels = 0
-        self.debug = 'debug' in opt['path']['log']
+        # self.debug = 'debug' in opt['path']['log']
         self.chroma_mode = chroma_mode
         self.cri_latent = None
         self.optimalZ_loss_type = None
@@ -47,7 +47,7 @@ class DecompCNNModel(BaseModel):
             if self.is_train:
                 # Loss encouraging effect of Z:
                 self.l_latent_w = train_opt['latent_weight']
-                if train_opt['latent_weight']>0 or self.debug:
+                if train_opt['latent_weight'] is not None:
                     self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'],task='JPEG',gray_scale=not self.chroma_mode)
             else:
                 assert isinstance(opt['network_G']['latent_channels'],int)
@@ -88,7 +88,7 @@ class DecompCNNModel(BaseModel):
             if self.latent_input:
                 # self.latent_grads_multiplier = train_opt['lr_latent']/train_opt['lr_G'] if train_opt['lr_latent'] else 1
                 # self.channels_idx_4_grad_amplification = [[] for i in self.netG.parameters()]
-                if opt['train']['optimalZ_loss_type'] is not None and (opt['train']['optimalZ_loss_weight'] or self.debug):
+                if opt['train']['optimalZ_loss_type'] is not None and opt['train']['optimalZ_loss_weight']:
                     self.optimalZ_loss_type = opt['train']['optimalZ_loss_type']
             self.D_verification = opt['train']['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past','initial','initial_gradual',None]
@@ -103,7 +103,7 @@ class DecompCNNModel(BaseModel):
             self.grad_accumulation_steps_G = opt['train']['grad_accumulation_steps_G']
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.l_gan_w = train_opt['gan_weight']
-            self.D_exists = self.l_gan_w>0 or self.debug
+            self.D_exists = self.l_gan_w is not None
             self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
@@ -134,7 +134,7 @@ class DecompCNNModel(BaseModel):
         # define losses, optimizer and scheduler
         if self.is_train:
             # G pixel loss
-            if isinstance(train_opt['pixel_weight'],list) or train_opt['pixel_weight'] > 0 or self.debug:
+            if isinstance(train_opt['pixel_weight'],list) or train_opt['pixel_weight'] is not None:
                 l_pix_type = train_opt['pixel_criterion']
                 if l_pix_type == 'l1':
                     self.cri_pix = nn.L1Loss().to(self.device)
@@ -151,7 +151,7 @@ class DecompCNNModel(BaseModel):
                 self.cri_pix = None
 
             # Reference loss after optimizing latent input:
-            if self.optimalZ_loss_type is not None and opt['network_G']['latent_channels']>0 and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
+            if self.optimalZ_loss_type is not None and train_opt['optimalZ_loss_weight'] is not None:
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 if self.opt['train']['Num_Z_iterations'] is None: #legacy support
                     self.opt['train']['Num_Z_iterations'] = [10]
@@ -174,7 +174,7 @@ class DecompCNNModel(BaseModel):
                 self.cri_optimalZ = None
 
             # G feature loss
-            if train_opt['feature_weight'] > 0 or self.debug:
+            if train_opt['feature_weight'] is not None:
                 l_fea_type = train_opt['feature_criterion']
                 if l_fea_type == 'l1':
                     self.cri_fea = nn.L1Loss().to(self.device)
@@ -190,7 +190,7 @@ class DecompCNNModel(BaseModel):
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
             # Range limiting loss:
-            if train_opt['range_weight'] > 0 or self.debug:
+            if train_opt['range_weight'] is not None:
                 self.cri_range = CreateRangeLoss([16,240] if self.chroma_mode else [16,235],chroma_mode=self.chroma_mode)
                 self.l_range_w = train_opt['range_weight']
             else:
@@ -764,7 +764,7 @@ class DecompCNNModel(BaseModel):
                         else:
                             l_g_gan = self.cri_gan(pred_g_fake, True)/(self.grad_accumulation_steps_G*actual_dual_step_steps)
 
-                    l_g_total += self.l_gan_w *l_g_gan
+                        l_g_total += self.l_gan_w *l_g_gan
                 else:
                     last_dual_batch_step = True # When self.generator_step==False but self.generator_Z_opt_only_step==True, I don't have the second part of the generator step without the Z-optimization, so optimization step and logs saving should be done in the first part.
                     self.generator_Z_opt_only_step = False#Avoid entering the generator step part in the second dual-batch step, because there is no loss there so optimizer step() and backward() commands shoudn't be called
