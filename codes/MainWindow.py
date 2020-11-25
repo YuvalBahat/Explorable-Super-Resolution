@@ -128,7 +128,7 @@ class Ui_MainWindow(object):
         self.centralWidget = QtWidgets.QWidget()
         self.centralWidget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.centralWidget.sizePolicy().hasHeightForWidth()))
         self.centralWidget.setObjectName("centralWidget")
-        MainWindow.setWindowTitle("Explorable Super Resolution")
+        MainWindow.setWindowTitle("Explorable Image Decompression" if self.JPEG_GUI else "Explorable Super Resolution")
         MainWindow.setCentralWidget(self.centralWidget)
         self.horizontalLayout = QtWidgets.QHBoxLayout(self.centralWidget)
         self.horizontalLayout.setSpacing(6)

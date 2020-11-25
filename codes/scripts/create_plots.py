@@ -7,14 +7,16 @@ import re
 import os
 from glob import glob
 
-CHROMA = True
+CHROMA = False
 EXCLUDE_GAN = False
 PSNR_GAIN = False
-HIDE_TITLE = True
+SUPP_CONFIG = True
+QF_range = [0,50]
 
 titles=dict(LIVE='LIVE1',BSD100='BSD-100')
 RESULT_FOLDERS = {'ours_MSE':'/media/ybahat/data/projects/SRGAN/results/JPEG/nf370nb10_QF1_99_ImageNetDS_DCT_noPad',
-				  'ours_GAN':'/media/ybahat/data/projects/SRGAN/results/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss',
+				  # 'ours_GAN':'/media/ybahat/data/projects/SRGAN/results/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss',
+				  'ours_GAN':'/media/ybahat/data/projects/SRGAN/results/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss_NeuroIPS',
 				  'DnCNN':'/home/ybahat/PycharmProjects/KAIR/results/our_pipeline',
 				  'AGARNet':'/media/ybahat/data/projects/AGARNet/results/our_pipeline'}
 
@@ -48,17 +50,17 @@ symbols = dict(
 if CHROMA:
 	for key in ['DnCNN','AGARNet']:
 		RESULT_FOLDERS[key] += '_color'
-	RESULT_FOLDERS['ours_MSE'] = '/media/ybahat/data/projects/SRGAN/results/JPEG/chroma_nf160nb10_QF5_50_LR1e-4'
+	RESULT_FOLDERS['ours_MSE'] = '/media/ybahat/data/projects/SRGAN/results/JPEG/chroma_nf160nb10				_QF5_50_LR1e-4'
 	RESULT_FOLDERS['ours_GAN'] = '/media/ybahat/data/projects/SRGAN/results/JPEG/chroma_nf160nb10_QF5_50_multiScaleDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss'
 
 def string_qualifier(string,regexp):
-	return re.search(regexp,string) is not None
+	return re.search(regexp,string) is not None and (len(QF_range)==0 or QF_range[0]<=int(re.search(regexp,string).group(0))<=QF_range[1])
 
 for score in ['PSNR'+(' gain' if PSNR_GAIN else ''),'NIQE']:
 	for DATASET in ['BSD100','LIVE']:
 		QFs,JPEG_score,ours_MSE_score,ours_GAN_score,DnCNN_score,AGARNet_score = [],[],[],[],[],[]
 		if 'PSNR' in score:
-			for dir_name in sorted([d for d in os.listdir(RESULT_FOLDERS['ours_MSE']) if string_qualifier(d,'(?<='+DATASET+'_QF)(\d)+_PSNR')],key=lambda x:int(re.search('(?<='+DATASET+'_QF)(\d)+',x).group(0))):
+			for dir_name in sorted([d for d in os.listdir(RESULT_FOLDERS['ours_MSE']) if string_qualifier(d,'(?<='+DATASET+'_QF)(\d)+(?=_PSNR)')],key=lambda x:int(re.search('(?<='+DATASET+'_QF)(\d)+',x).group(0))):
 				if DATASET not in dir_name or '_Quant' in dir_name:
 					continue
 				QFs.append(int(re.search('(?<='+DATASET+'_QF)(\d)+',dir_name).group(0)))
@@ -96,7 +98,7 @@ for score in ['PSNR'+(' gain' if PSNR_GAIN else ''),'NIQE']:
 			# our_GAN:
 			if not EXCLUDE_GAN:
 				GAN_QFs = []
-				for dir_name in sorted([d for d in os.listdir(RESULT_FOLDERS['ours_GAN']) if string_qualifier(d, '(?<='+DATASET+'_QF)(\d)+_PSNR')],
+				for dir_name in sorted([d for d in os.listdir(RESULT_FOLDERS['ours_GAN']) if string_qualifier(d, '(?<='+DATASET+'_QF)(\d)+(?=_PSNR)')],
 						key=lambda x: int(re.search('(?<='+DATASET+'_QF)(\d)+',x).group(0))):
 					GAN_QFs.append(int(re.search('(?<='+DATASET+'_QF)(\d)+',dir_name).group(0)))
 					ours_GAN_score.append(float(re.search('(?<=to)(\d)+\.(\d)+(?=($|_STD))', dir_name).group(0)))
@@ -119,7 +121,14 @@ for score in ['PSNR'+(' gain' if PSNR_GAIN else ''),'NIQE']:
 					DnCNN_score.append(float(re.search('(?<=DnCNN: )(\d)+\.(\d)+(?=,)', line).group(0)))
 					GT_score.append(float(re.search('(?<=GT: )(\d)+\.(\d)+(?=,)', line).group(0)))
 			assert all([v==GT_score[0] for v in GT_score])
-		plt.figure(figsize=(5,2.3))
+		fig_size_multiplier = 1#2.2 if SUPP_CONFIG else 1
+		plt.figure(figsize=(5*fig_size_multiplier,2.5*fig_size_multiplier))
+		# if SUPP_CONFIG:
+		# 	# font = {'family': 'normal','weight': 'bold','size': 20}
+		# 	font = {'size': 20}
+		# 	matplotlib.rc('font', **font)
+		# 	# plt.rcParams['font.size'] *= 2
+		# 	# plt.rcParams['legend.fontsize'] *= 2
 		if score=='NIQE':
 			plt.plot(QFs, GT_score,symbols['GT'] + '-',color=clrs['GT'],label='Ground truth')
 		if not PSNR_GAIN:
@@ -131,8 +140,8 @@ for score in ['PSNR'+(' gain' if PSNR_GAIN else ''),'NIQE']:
 			plt.plot(GAN_QFs, ours_GAN_score,symbols['ours_GAN']+'-',color=clrs['ours_GAN'],label='Ours, GAN')
 		plt.xlabel('QF')
 		plt.ylabel(score)
-		if not HIDE_TITLE:
+		if SUPP_CONFIG:
 			plt.title(titles[DATASET])
 		plt.legend(loc=0)
-		plt.savefig('../../plots/%s_%s.pdf'%(DATASET,score.replace(' ','_')), bbox_inches='tight')
+		plt.savefig('../../plots/%s_%s%s%s.pdf'%(DATASET,score.replace(' ','_'),'_supp' if SUPP_CONFIG else '','' if CHROMA else '_grayscale'), bbox_inches='tight')
 		plt.show()
