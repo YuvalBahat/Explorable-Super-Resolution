@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF1_50_ImageNetDS_DCnoPadT_LR1e-5_GDRatio5_Z0_InCatDnk1inti1K_SN_fromRangeMSE" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF1_50_ImageNetDS_DCnoPadT_LR1e-5_GDRatio5_Z0_InCatDnk1inti10K_SN_fromRangeMSE" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -20,7 +20,7 @@
       , "batch_size_per_GPU": 16
       , "batch_size_4_grads_G": 16 // 16
       , "batch_size_4_grads_D": 16 //16
-      , "patch_size": 256 //8 //256
+      , "patch_size": 296 //8 //256
       , "use_flip": true
       , "use_rot": true
 //      , "scales": [0,0,1]
@@ -149,7 +149,7 @@
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 1000 //10000 //0
+     , "D_init_iters": 10000 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0

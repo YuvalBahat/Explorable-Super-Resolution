@@ -465,9 +465,9 @@ class DecompCNNModel(BaseModel):
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             elif self.D_exists and self.concatenated_D_input:
                 input_ref = torch.cat([self.var_Comp, input_ref.to(self.device)], 1)
-            self.var_ref = input_ref.to(self.device)
+            self.var_ref = input_ref.to(self.device)[...,self.netG.module.margins:-self.netG.module.margins,self.netG.module.margins:-self.netG.module.margins]
 
-    def Prepare_D_input(self,fake_H):
+    def Prepare_D_input(self,fake_H,margins = None):
         self.D_fake_input = fake_H
         if not self.DCT_discriminator:
             if self.chroma_mode:
@@ -476,7 +476,7 @@ class DecompCNNModel(BaseModel):
             else:
                 self.D_fake_input = torch.clamp(self.output_image,min=16,max=235)
         if self.concatenated_D_input:
-            self.D_fake_input = torch.cat([self.var_Comp, self.D_fake_input], 1)
+            self.D_fake_input = torch.cat([self.var_Comp[...,margins:-margins,margins:-margins] if margins else self.var_Comp,self.D_fake_input], 1)
         if self.Z_injected_2_D:
             self.D_fake_input = torch.cat([self.GetLatent().type(self.D_fake_input.type()), self.D_fake_input], 1)
 
@@ -563,7 +563,7 @@ class DecompCNNModel(BaseModel):
             if self.chroma_mode and self.DCT_generator:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
             if self.D_exists:
-                self.Prepare_D_input(self.fake_H)
+                self.Prepare_D_input(self.fake_H,margins=self.netG.module.margins)
 
             # D
             l_d_total = 0
@@ -798,7 +798,7 @@ class DecompCNNModel(BaseModel):
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
                             # if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
-                            if True:
+                            if self.auto_GD_update_ratio:
                                 # with torch.no_grad():
                                 # assert not self.chroma_mode,'Unsupported yet'
                                 self.test()
