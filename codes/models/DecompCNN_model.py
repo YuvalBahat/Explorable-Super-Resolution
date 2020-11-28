@@ -722,7 +722,7 @@ class DecompCNNModel(BaseModel):
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,\
                         self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step,self.Z_effect_grad_step = [],[],[],[],[],[],[]
                 if optimized_Z_step:
-                    l_g_optimalZ = self.cri_optimalZ(self.output_image, self.var_Uncomp)
+                    l_g_optimalZ = self.cri_optimalZ(self.output_image, self.crop_2_output_shape(self.var_Uncomp,DCT=False))
                     l_g_total += self.l_g_optimalZ_w * l_g_optimalZ/self.grad_accumulation_steps_G
                     self.l_g_optimalZ_grad_step.append(l_g_optimalZ.item())
                     self.Z_effect_grad_step.append(np.diff(self.Z_optimizer.loss_values)[0])
@@ -798,7 +798,7 @@ class DecompCNNModel(BaseModel):
                         if self.cri_gan:
                             self.log_dict['l_g_gan'].append((self.gradient_step_num,np.mean(self.l_g_gan_grad_step)))
                             # if self.GD_update_controller is not None or self.gradient_step_num%self.opt['train']['val_freq']==0: # Following Tamar's idea, recomputing G's output after its training step, to see if it is able to follow D:
-                            if self.auto_GD_update_ratio:
+                            if self.auto_GD_update_ratio and self.opt['train']['D_update_measure'] in ['post_train_D_diff','G_step_D_gain']:
                                 # with torch.no_grad():
                                 # assert not self.chroma_mode,'Unsupported yet'
                                 self.test()
