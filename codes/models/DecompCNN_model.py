@@ -465,7 +465,7 @@ class DecompCNNModel(BaseModel):
                     input_ref = torch.cat([cur_Z.type(input_ref.type()), input_ref], 1)
             elif self.D_exists and self.concatenated_D_input:
                 input_ref = torch.cat([self.var_Comp, input_ref.to(self.device)], 1)
-            self.var_ref = input_ref.to(self.device)[...,self.netG.module.margins:-self.netG.module.margins,self.netG.module.margins:-self.netG.module.margins]
+            self.var_ref = (input_ref[...,self.G_margins:-self.G_margins,self.G_margins:-self.G_margins] if self.G_margins>0 else input_ref).to(self.device)
 
     def Prepare_D_input(self,fake_H,margins = None):
         self.D_fake_input = fake_H
@@ -563,7 +563,7 @@ class DecompCNNModel(BaseModel):
             if self.chroma_mode and self.DCT_generator:
                 self.output_image = torch.cat([self.y_channel_input, self.output_image], 1)
             if self.D_exists:
-                self.Prepare_D_input(self.fake_H,margins=self.netG.module.margins)
+                self.Prepare_D_input(self.fake_H,margins=self.G_margins)
 
             # D
             l_d_total = 0
@@ -1105,7 +1105,11 @@ class DecompCNNModel(BaseModel):
             #     self.D_verified = bool(loaded_log[key])
             #     continue
             else:
-                self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
+                try:
+                    self.log_dict[key] = (list(old_log[key]) if PREPEND_OLD_LOG else [])+list(loaded_log[key])
+                except:
+                    print('Problem reading %s log'%(key))
+                    continue
                 if len(self.log_dict[key])>0 and isinstance(self.log_dict[key][0][1],torch.Tensor):#Supporting old files where data was not converted from tensor - Causes slowness.
                     self.log_dict[key] = [[val[0],val[1].item()] for val in self.log_dict[key]]
             if max_step is not None:
