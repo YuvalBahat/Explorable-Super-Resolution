@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF1_50_ImageNetDS_DCnoPadT_LR1e-5_AutoGDRatioCorrDistMid08_Z1_InCatDnk1_SN" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF1_50_ImageNetDS_DCnoPadT_LR1e-4_AutoGDRatioCorrDistMid08_Z1_InCatDnk1_SN" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -11,7 +11,7 @@
 //      "name": "DIV2K"
       "name": "ImageNet"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": [[1,50]] //[[5,50]] //[5,10,20,30,40,50,60,70] //10
+      , "jpeg_quality_factor": [[5,50]] //[[5,50]] //[5,10,20,30,40,50,60,70] //10
 //      , "dataroot_Uncomp": "DIV2K_train/DIV2K_train_HR.lmdb"
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
@@ -28,7 +28,7 @@
     , "val": {
       "name": "val_set14_part"
       , "mode": "JPEG"
-      , "jpeg_quality_factor": [[1,10]] //[[5,50]] //[[5,50]] //[5,10,20,30,40,50,60,70]
+      , "jpeg_quality_factor": [[5,10]] //[[5,50]] //[[5,50]] //[5,10,20,30,40,50,60,70]
       , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
     }
   }
@@ -97,12 +97,12 @@
   }
 
   , "train": {
-    "resume": 0
-    ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    "resume": 1
+    ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-5 //1e-4 //1e-5
+    , "lr_D": 1e-4 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
