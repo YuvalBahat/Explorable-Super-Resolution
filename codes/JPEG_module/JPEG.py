@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 FACTORIZE_CHROMA_HIGH_FREQS = True # When True, Padding chroma Q-table with edge values to multiply the reconstructed high frequencies, allowing for more energy in these frequencies,
 # due to the Sigmoid that limits the generator's output range.
+HIGH_FREQS_ONLY = False #for debug
 
 LUMINANCE_QUANTIZATION_TABLE = np.array((
     (16, 11, 10, 16, 24, 40, 51, 61),
@@ -40,6 +41,8 @@ class JPEG(nn.Module):
         # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_or_quantize=True
 
         super(JPEG, self).__init__()
+        if HIGH_FREQS_ONLY:
+            print('WARNING: JPEG QUANTIZATION APPLIES TO HIGH FREQUENCIES ONLY (FOR DEEBUGGING)')
         assert FACTORIZE_CHROMA_HIGH_FREQS,'No longer supproting the other option, after dividing the Y channel high freq. coeffs. as well, as I think it would ease the generator''s mapping.'
         assert (compress ^ (downsample_or_quantize is None)),'Quantize argument should be passed iff in compress mode'
         if downsample_or_quantize is not None:
@@ -92,6 +95,9 @@ class JPEG(nn.Module):
                     self.padded_Q_table = torch.cat([self.process_Q_table(np.pad(QF_or_table[0],((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
                         self.process_Q_table(np.pad(QF_or_table[1],((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
 
+    def Multiply_By_Q_table(self,input):
+        input_shape = input.shape
+        return (input.view(input_shape[0],8,8,input_shape[2],input_shape[3])*self.Q_table).view(input_shape)
 
     def Image_2_Blocks(self,image):
         image_shape = list(image.size())
@@ -154,7 +160,11 @@ class JPEG(nn.Module):
             else:
                 output = output/self.Q_table
                 if self.downsample_or_quantize:
-                    output = torch.round(output)
+                    if HIGH_FREQS_ONLY:
+                        output[:,:,-1,...] = torch.round(output[:,:,-1,...])
+                        output[:, -1, ...] = torch.round(output[:, -1, ...])
+                    else:
+                        output = torch.round(output)
                 output = output.contiguous().view([input.size(0),self.block_size**2,input.size(2)//self.block_size,input.size(3)//self.block_size])
         else:# Extraction: Input is DCT blocks
             if self.chroma_mode:

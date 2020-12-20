@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF1_50_ImageNetDS_DCnoPadT_LR1e-4_AutoGDRatioCorrDistMid08_Z1_InCatDnk1_SN" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LR1e-5_GDRatio1_Z1_DpostmultInCatDnk1_SN" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -55,6 +55,7 @@
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "DCT_G": 1
+    , "residual": 1
     , "normalize_input": 0
     , "coordinates_input": 0 //Concatenate input with 2 channels of within 8x8 block coordinates (only for the non-DCT generator)
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
@@ -83,7 +84,7 @@
     , "relativistic": 0
     , "concat_input": 1 //1
     , "inject_Z": 0 //1
-    , "DCT_D": 1 //1
+    , "input_type": "DCT_postmult" //'image','DCT_premult','DCT_postmult'
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
     , "pooling_no_fc": 1 //Last layer should be an average pooling layer rather than a fully connected layer.
@@ -97,12 +98,12 @@
   }
 
   , "train": {
-    "resume": 1
-    ,"lr_G": 1e-4 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    "resume": 0
+    ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-4 //1e-4 //1e-5
+    , "lr_D": 1e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
@@ -125,7 +126,7 @@
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": [[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
+    , "D_update_ratio": 1 //[[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
     , "D_update_measure": "Correctly_distinguished" //"clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,

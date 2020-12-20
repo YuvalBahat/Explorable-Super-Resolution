@@ -108,9 +108,12 @@ class Flatten(nn.Module):
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
-                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None):
+                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None,residual=None):
 
         BALANCED_NUM_PARAMETERS = True # If True, increasing the number of channels for layers with a 1x1 kernel, to maintain a similar number of parameters.
+        self.HIGH_FREQS_ONLY = False
+        if self.HIGH_FREQS_ONLY:
+            print('WARNING: JPEG QUANTIZATION APPLIES TO HIGH FREQUENCIES ONLY (FOR DEEBUGGING)')
 
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
@@ -123,6 +126,7 @@ class DnCNN(nn.Module):
 
         self.discriminator_net = discriminator
         self.DCT_generator = DCT_G
+        self.residual = residual #For generator only
         assert not (norm_input and DCT_G),'Normalizing the input is enabled only when networks are operating directly on the image'
         assert not (DCT_G and coordinates_input),"Coordinates should be concatenated to input only for the non-DCT generator"
         if coordinates_input:
@@ -142,6 +146,7 @@ class DnCNN(nn.Module):
             layer_num = 0
             self.pooling_no_FC = pooling_no_FC
         else:
+            assert DCT_G or residual, "Non-residual generator unsupported for operating in pixel domain yet"
             spectral_norm = False
         self.chroma_generator = chroma_generator
         if chroma_generator and DCT_G:
@@ -215,7 +220,7 @@ class DnCNN(nn.Module):
                 if spectral_norm:
                     layers[-1] = SN.spectral_norm(layers[-1])
                 # layers.append(nn.Linear(in_features=64, out_features=1))
-        elif self.DCT_generator:
+        elif self.DCT_generator and self.residual:
             layers.append(nn.Sigmoid())
         self.dncnn = nn.ModuleList(layers)
 
@@ -241,20 +246,27 @@ class DnCNN(nn.Module):
             # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
         else:
             if self.DCT_generator:
-                quantization_err_estimation = x-0.5
-                # if not self.training and x.shape[0]==1:#I use the second condition to distinguish calls from within the training process (e.g. when calculating the generator's D score gain), from calls during evaluation, which are the ones I want.
-                #     self.average_abs_err_estimates += torch.mean(quantization_err_estimation.abs(),dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
-                #     self.average_err_collection_counter += 1
                 if self.margins:
                     quantized_coeffs = quantized_coeffs[..., self.margins:-self.margins, self.margins:-self.margins]
-                if self.chroma_generator:
-                    quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
-                                                                                   quantization_err_estimation.size(2),quantization_err_estimation.size(3))
-                    quantized_coeffs = quantized_coeffs[:,256:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
-                    quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
-                    return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
+                if self.residual:
+                    quantization_err_estimation = x - 0.5
+                    if self.chroma_generator:
+                        quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
+                                                                                       quantization_err_estimation.size(2),quantization_err_estimation.size(3))
+                        quantized_coeffs = quantized_coeffs[:,256:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
+                        quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
+                        return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
+                    else:
+                        if self.HIGH_FREQS_ONLY:
+                            quantization_err_estimation.view(x.shape[0],8,8,x.shape[2],x.shape[3])[:,:7,:7,...] = 0
+                        return quantized_coeffs+quantization_err_estimation
                 else:
-                    return quantized_coeffs+quantization_err_estimation
+                    assert not self.chroma_generator, 'Should verify chroma is adapted to non-residal generator'
+                    if self.HIGH_FREQS_ONLY:
+                        x = x.view(x.shape[0],8,8,x.shape[2],x.shape[3])
+                        x[:,:7,:7,...] = quantized_coeffs.view(quantized_coeffs.shape[0],8,8,quantized_coeffs.shape[2],quantized_coeffs.shape[3])[:,:7,:7,...]
+                        x = x.view(x.shape[0],64,x.shape[3],x.shape[4])
+                    return quantized_coeffs+torch.clamp(x-quantized_coeffs,-0.5,0.5)
             else:
                 if self.norm_input:
                     x = 255*x
