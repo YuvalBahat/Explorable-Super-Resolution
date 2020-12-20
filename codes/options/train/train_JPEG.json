@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNetDS_DCnoPadT_LR1e-5_AutoGDRatio_CorrDist08_Z1_InCatDnk1inti0_SN_fromMSE_MAP5e-4" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LR1e-5_GDRatio1_Z1_DpostmultInCatDnk1_SN" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -36,7 +36,7 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_CoarsestScale/models/493052_G.pth"
-    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF1_50_ImageNetDS_DCT_noPad/models/478609_G.pth"
+//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF1_50_ImageNetDS_DCT_Range_noPad/models/1292750_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf128nb10_BS16PS128_nonDCT_G_inputCoords/models/45426_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf128nb10_BS32PS128_nonDCT_G/models/71103_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf64nb10_QF5_nonDCT_G/models/30504_G.pth"
@@ -55,6 +55,7 @@
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "DCT_G": 1
+    , "residual": 1
     , "normalize_input": 0
     , "coordinates_input": 0 //Concatenate input with 2 channels of within 8x8 block coordinates (only for the non-DCT generator)
     , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
@@ -83,7 +84,7 @@
     , "relativistic": 0
     , "concat_input": 1 //1
     , "inject_Z": 0 //1
-    , "DCT_D": 1 //1
+    , "input_type": "DCT_postmult" //'image','DCT_premult','DCT_postmult'
     , "pre_clipping": 0 //1
     , "add_quantization_noise": 0 //1
     , "pooling_no_fc": 1 //Last layer should be an average pooling layer rather than a fully connected layer.
@@ -125,7 +126,7 @@
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": [[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
+    , "D_update_ratio": 1 //[[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
     , "D_update_measure": "Correctly_distinguished" //"clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
@@ -143,13 +144,13 @@
 //    , "feature_weight": 0 //1
 //    , "gan_weight": 0 //5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-    , "optimalZ_loss_weight": 5e-4 //0 //100
+//    , "optimalZ_loss_weight": 0 //5e-4 //0 //100
 //    , "range_weight": 0 //1 //0 //5000
 //     , "gp_weight": 0 //10
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0 //10000 //0
+     , "D_init_iters": 0 //10000 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0

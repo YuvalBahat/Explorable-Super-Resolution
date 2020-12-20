@@ -17,6 +17,7 @@ from models import create_model
 from utils.logger import Logger, PrintLogger
 # import tqdm
 from datetime import datetime
+# from copy import deepcopy
 # import cv2
 # import copy
 
@@ -27,6 +28,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
+    parser.add_argument('-single_image', action='store_true',help='Train to overfit a single image')
     parser.add_argument('-chroma', action='store_true',help='Training the chroma-channels generator')
     parser.add_argument('-EMA_eval', action='store_true',help='When evaluating model, use average of opt[''train''][''val_running_avg_steps''] last models')
     if parser.parse_args().single_GPU:
@@ -35,7 +37,12 @@ def main():
         # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
     EMA_eval = parser.parse_args().EMA_eval
-    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG'+('_chroma' if parser.parse_args().chroma else ''))
+    name_ext = ''
+    if parser.parse_args().chroma:
+        name_ext = '_chroma'
+    elif parser.parse_args().single_image:
+        name_ext = '_singleIm'
+    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG'+name_ext)
 
     if not opt['train']['resume']:
         util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists
@@ -60,6 +67,8 @@ def main():
         if phase == 'train':
             max_accumulation_steps = max([opt['train']['grad_accumulation_steps_G'], opt['train']['grad_accumulation_steps_D']])
             train_set = create_dataset(dataset_opt)
+            if parser.parse_args().single_image:
+                train_set.paths_Uncomp = [train_set.paths_Uncomp[0] for i in train_set.paths_Uncomp]
             train_size = int(math.ceil(len(train_set) / dataset_opt['batch_size']))
             print('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
             total_iters = int(opt['train']['niter']*max_accumulation_steps)#-current_step
@@ -67,8 +76,11 @@ def main():
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
             train_loader = create_dataloader(train_set, dataset_opt)
         elif phase == 'val':
-            val_dataset_opt = dataset_opt
+            # val_dataset_opt = dataset_opt
             val_set = create_dataset(dataset_opt)
+            if parser.parse_args().single_image:
+                val_set.paths_Uncomp = [train_set.paths_Uncomp[0] for i in val_set.per_index_QF]
+                # val_set.per_index_QF = val_set.per_index_QF[:1]
             val_loader = create_dataloader(val_set, dataset_opt)
             print('Number of val images in [{:s}]: {:d}'.format(dataset_opt['name'], len(val_set)))
         else:

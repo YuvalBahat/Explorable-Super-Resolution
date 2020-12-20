@@ -52,20 +52,25 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
     JPEG_run = name is not None and 'JPEG' in name
     if JPEG_run:
-        if name=='JPEG_chroma':
-            opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
+        opt['input_downsampling'] = 1
+        if name != 'JPEG':
+            suffix = name[len('JPEG_'):]
+            if suffix=='chroma':
+                opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
+                for dataset in opt['datasets'].keys():
+                    if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
+                        opt['datasets'][dataset]['mode'] += '_chroma'
+                    opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
             bare_name = opt['name'].split('/')[-1]
-            if  bare_name[:len('chroma_')] != 'chroma_':
-                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),'chroma_'+bare_name)
-            for dataset in opt['datasets'].keys():
-                if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
-                    opt['datasets'][dataset]['mode'] += '_chroma'
-                opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
-        else:
-            opt['input_downsampling'] = 1
+            if  bare_name[:len(suffix)+1] != suffix+'_':
+                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),suffix+'_'+bare_name)
         if opt['name'][:len('JPEG/')]!='JPEG/': #Accomodating the case where the name was already modified, in which case I shouldn't add another 'JPEG/' prefix:
             opt['name'] = os.path.join('JPEG', opt['name'])
         opt['scale'] = 8*opt['input_downsampling']
+        if 'residual' not in opt['network_G']:
+            opt['network_G']['residual'] = 1
+        if 'input_type' not in opt['network_D']:
+            opt['network_D']['input_type'] = 'DCT_premult' if opt['network_D']['DCT_D'] else 'image'
     scale = opt['scale']
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train

@@ -111,7 +111,8 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
                           latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
                           num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'],
-                          coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None,avoid_padding=not bool(opt_net['padding']))
+                          coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None,avoid_padding=not bool(opt_net['padding']),
+                          residual=opt_net['residual'])
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -166,7 +167,7 @@ def define_D(opt,CEM=None,**kwargs):
         G_in_nc = (opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64) if opt_net_G['DCT_G'] else (3 if chroma_mode else 1)
         if 'no_high_freq_chroma_reconstruction' not in kwargs:
             kwargs['no_high_freq_chroma_reconstruction'] = True
-        if opt_net['DCT_D']==1:
+        if 'DCT' in opt_net['input_type']:
             G_out_nc = 2*(64 if kwargs['no_high_freq_chroma_reconstruction'] else 256) if chroma_mode else 64
         else:
             # assert not chroma_mode,'Unsupported yet'
@@ -184,7 +185,7 @@ def define_D(opt,CEM=None,**kwargs):
         netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],
             depth=opt_net_G['nb'] if opt_net['nb'] is None else opt_net['nb'],in_nc=D_input_channels,num_kerneled_layers=opt_net['nk'],
             norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and norm_type=='batch') else norm_type,
-            discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//(opt['scale'] if opt_net['DCT_D'] else 1),
+            discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//(opt['scale'] if 'DCT' in opt_net['input_type'] else 1),
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
             pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'],
             coordinates_input=opt['scale'] if opt_net_G['coordinates_input'] else None)

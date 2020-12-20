@@ -104,7 +104,9 @@ class DecompCNNModel(BaseModel):
             self.grad_accumulation_steps_D = opt['train']['grad_accumulation_steps_D']
             self.l_gan_w = train_opt['gan_weight']
             self.D_exists = self.l_gan_w is not None
-            self.DCT_discriminator = self.D_exists and self.opt['network_D']['DCT_D']
+            assert self.opt['network_D']['input_type'] in ['image','DCT_postmult','DCT_premult']
+            self.DCT_discriminator = self.D_exists and 'DCT' in self.opt['network_D']['input_type']
+            self.post_mult_discriminator = self.DCT_discriminator and self.opt['network_D']['input_type']=='DCT_postmult'
             self.concatenated_D_input = self.D_exists and self.opt['network_D']['concat_input']
             self.Z_injected_2_D = self.D_exists and self.latent_input and self.opt['network_D']['inject_Z']
             if self.D_exists:
@@ -123,7 +125,7 @@ class DecompCNNModel(BaseModel):
             self.mixed_Y_4_training = self.D_exists and self.chroma_mode
             self.separate_G_D_batches_counter = util.Counter(2 if (self.D_exists and self.opt['train']['G_Dbatch_separation'] =='SeparateBatch') else 1)
         else:
-            self.DCT_discriminator,self.mixed_Y_4_training,self.D_exists = False,False,False
+            self.DCT_discriminator,self.mixed_Y_4_training,self.D_exists,self.post_mult_discriminator = False,False,False,False
         if True or self.DCT_discriminator or not self.DCT_generator: # Now always constructing a non-quantized compressor for to assess GT DCT errors as part of creating the quantization error visualization
             self.JPEG['non_quantized_compressor' + ('_Y' if self.chroma_mode else '')] = JPEG(compress=True, downsample_or_quantize=False,chroma_mode=False, block_size=8).to(self.device)
             if self.chroma_mode:
@@ -389,12 +391,6 @@ class DecompCNNModel(BaseModel):
         self.QF = data['QF']
         for module in self.JPEG.values():
             module.Set_Q_Table(self.QF)
-        # self.JPEG['compressor'].Set_Q_Table(self.QF)
-        # self.JPEG['extractor'].Set_Q_Table(self.QF)
-        # if self.DCT_discriminator or not self.DCT_generator:
-        #     self.JPEG['non_quantized_compressor'].Set_Q_Table(self.QF)
-        #     if self.chroma_mode:
-        #         self.JPEG['non_quantized_compressor_Y'].Set_Q_Table(self.QF)
         if self.latent_input is not None:
             input_size = np.array(data['Uncomp'].size()) if 'Uncomp' in data.keys() else [1,1,8,8]*np.array(data['Comp'].size())
             DCT_dims = list(input_size[2:]//8 if self.DCT_generator else input_size[2:])
@@ -452,6 +448,9 @@ class DecompCNNModel(BaseModel):
             input_ref = data['ref'] if 'ref' in data else data['Uncomp']
             if self.DCT_discriminator:
                 input_ref = self.JPEG['non_quantized_compressor'](input_ref)
+                if self.post_mult_discriminator:
+                    assert not self.chroma_mode,'Unsupported yet'
+                    input_ref = self.JPEG['extractor'].Multiply_By_Q_table(input_ref)
                 if self.chroma_mode:
                     input_ref = input_ref[:,self.opt['scale']**2:,...]
                     # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
@@ -469,6 +468,9 @@ class DecompCNNModel(BaseModel):
 
     def Prepare_D_input(self,fake_H,margins = None):
         self.D_fake_input = fake_H
+        if self.post_mult_discriminator:
+            assert not self.chroma_mode, 'Unsupported yet'
+            self.D_fake_input = self.JPEG['compressor'].Multiply_By_Q_table(self.D_fake_input)
         if not self.DCT_discriminator:
             if self.chroma_mode:
                 # raise Exception('Unsupported yet')
@@ -879,7 +881,7 @@ class DecompCNNModel(BaseModel):
     def return_collected_err_avg(self,first_eval):
         if first_eval:
             self.err_normalizer = self.average_abs_GT_err/self.average_err_collection_counter
-        return self.average_abs_err_estimates/self.average_err_collection_counter/self.err_normalizer
+        return self.average_abs_err_estimates/self.average_err_collection_counter/(self.err_normalizer+0.00001)
 
     def crop_2_output_shape(self,image,DCT):
         if self.G_margins==0:
@@ -928,12 +930,16 @@ class DecompCNNModel(BaseModel):
                     DCT_diffs = (self.var_Comp[:,256:,...]-self.fake_H).view(2,64,self.var_Comp.shape[2],self.var_Comp.shape[3]).abs()
                 else:
                     DCT_diffs = ((self.var_Comp-self.fake_H) if self.DCT_generator else (self.JPEG['compressor'](self.var_Comp)-self.JPEG['non_quantized_compressor'](self.fake_H))).abs()
+                if self.G_margins != 0:
+                    DCT_diffs = DCT_diffs[...,self.G_margins:-self.G_margins,self.G_margins:-self.G_margins]
                 self.average_abs_err_estimates += torch.mean(DCT_diffs,dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
                 self.average_err_collection_counter += 1
                 if first_eval:
                     GT_DCT_diffs = ((self.var_Comp if self.DCT_generator else self.JPEG['compressor'](self.var_Comp))-self.JPEG['non_quantized_compressor'](self.var_Uncomp)).abs()
                     if self.chroma_mode:
                         GT_DCT_diffs = GT_DCT_diffs[:, 256:, ...].view(2, 64, GT_DCT_diffs.shape[2], GT_DCT_diffs.shape[3])
+                    if self.G_margins != 0:
+                        GT_DCT_diffs = GT_DCT_diffs[..., self.G_margins:-self.G_margins, self.G_margins:-self.G_margins]
                     self.average_abs_GT_err += torch.mean(GT_DCT_diffs,dim=(0,2,3)).view([8,8]).detach().cpu().numpy()
             # self.test(Y_already_computed=True) # I pass Y_already_computed because Y was computed inside feed_data, and self.model_input now comprises the computed Y generator output.
             visuals = self.get_current_visuals()
@@ -990,9 +996,11 @@ class DecompCNNModel(BaseModel):
             # plt.imshow(np.log(self.netG.module.return_collected_err_avg()))
             self.avg_estimated_err = np.concatenate([self.avg_estimated_err,np.expand_dims(self.return_collected_err_avg(first_eval=first_eval),-1)],-1)
             self.avg_estimated_err_step.append(self.gradient_step_num)
-            plt.imshow(np.log(self.avg_estimated_err[...,-1]))
-            plt.colorbar()
-            plt.title('Log(|estimated errors|/|GT errors|)')
+            log_im = np.log(self.avg_estimated_err[...,-1])
+            plt.imshow(np.stack([np.clip(-1*log_im,0,1),np.clip(log_im,0,1),np.zeros_like(log_im)],-1))
+            plt.imshow(np.stack([np.clip(-1*log_im,0,1),np.clip(log_im,0,1),np.zeros_like(log_im)],-1))
+            # plt.colorbar()
+            plt.title('Log(|estimated errors|/|GT errors|). Mean absolute: %.2f'%(np.mean(np.abs(log_im))))
             plt.savefig(os.path.join(self.log_path,'Est_quantization_errors.png'))
         avg_psnr = [51.14 if np.isinf(v) else v for v in avg_psnr] # Replacing inf values with PSNR corresponding to the error being the quantization error (0.5), to prevent contaminating the average
         for i, QF in enumerate(data_loader.dataset.per_index_QF):
