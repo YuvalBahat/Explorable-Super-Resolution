@@ -9,18 +9,25 @@
   , "gpu_ids": [0]
   , "use_tb_logger": 1
   , "datasets": {
-//    "test_1": { // the 1st test dataset
-//      "name": "BSD100"
-//      , "mode": "JPEG"
-//      , "jpeg_quality_factor": [5,10] //[1,5,10,15,20,25,30,35,40,45,49] //,54,59,64,69,74,79,84,89] //[5,10] //[[5,50]]
-//      , "dataroot_Uncomp": "BSD100_test/BSD100_test_HR"
-////      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
-//    },
-//    "test_2": { // the 2nd test dataset
-//      "name": "LIVE"
-//      , "mode": "JPEG"
-//      , "jpeg_quality_factor": [5,10] //[1,5,10,15,20,25,30,35,40,45,49] //,54,59,64,69,74,79,84,89] //[5,10] //[[5,50]]
-//      , "dataroot_Uncomp": "LIVE_release2/refimgs"
+    "test_1": { // the 1st test dataset
+      "name": "BSD100"
+      , "mode": "JPEG"
+      , "jpeg_quality_factor": [5,10,15,20,25,30,35,40,45,49] //,54,59,64,69,74,79,84,89] //[5,10] //[[5,50]]
+      , "dataroot_Uncomp": "BSD100_test/BSD100_test_HR"
+//      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
+    },
+    "test_2": { // the 2nd test dataset
+      "name": "LIVE"
+      , "mode": "JPEG"
+      , "jpeg_quality_factor": [5,10,15,20,25,30,35,40,45,49] //,54,59,64,69,74,79,84,89] //[5,10] //[[5,50]]
+      , "dataroot_Uncomp": "LIVE_release2/refimgs"
+//      , "dataroot_LR": "BSD100_test/BSD100_test_bicLRx4"
+    } //,
+//    "test_1": { // the 2nd test dataset
+//      "name": "Real_LR"
+//      , "mode": "LR"
+////      , "dataroot_LR": "Real_Images/KernelGAN"
+//      , "dataroot_LR": "Real_Images/Olympus"
 //    } //,
 //    "test_3": { // the 2nd test dataset
 //      "name": "DIV2K"
@@ -54,7 +61,7 @@
     , "coordinates_input": 0 //0 //1
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "padding": 1 //1
+    , "padding": 0
     , "nf": 320 //128 //320
     , "nb": 10
     , "gc": 32

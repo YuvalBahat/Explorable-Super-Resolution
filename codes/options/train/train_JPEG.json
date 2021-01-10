@@ -42,14 +42,6 @@
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf64nb10_QF5_nonDCT_G/models/30504_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth"
 //    , "Y_channel_model_G": "../pretrained_models/743643_G.pth"
-//    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_DCT_LR1e-5_GD_AutoGDRatioCorDisting_LowerMid0_8Z5_InputConcatDnk1inti1K_SN_fromMSEMap5e-4/models/50448_G.pth"
-//    , "pretrained_model_D": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_DCT_LR1e-5_GD_AutoGDRatioCorDisting_LowerMid0_8Z5_InputConcatDnk1inti1K_SN_fromMSEMap5e-4/models/50448_D.pth"
-//    , "pretrained_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrained_model_D": "../pretrained_models/ConcatInput_SN_DCTnf160nb10QF5_50_verifiedD.pth"
-//    , "pretrained_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrained_model_D": "../pretrained_models/chroma_ConcatInputDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrained_model_D": "../pretrained_models/ConcatInputDCTnf160nb10QF10_verifiedD.pth"
-//    , "pretrained_model_D": "../pretrained_models/NonConcatDCTnf160nb10QF10_verifiedD.pth"
 }
 
   , "network_G": {
@@ -139,18 +131,18 @@
     , "gan_weight": 5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
 //    , "optimalZ_loss_weight": 5e-4 //5e-4 //0 //100
-    , "range_weight": 0 //0 //5000
+    , "range_weight": 0 //1 //0 //5000
 //    , "pixel_weight": 1e-2 //[[0,40000],[1e-2,5e-6,0]] //1e-3 //1e-2
 //    , "feature_weight": 0 //1
 //    , "gan_weight": 0 //5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
-//    , "optimalZ_loss_weight": 0 //5e-4 //0 //100
+//    , "optimalZ_loss_weight": 5e-4 //0 //100
 //    , "range_weight": 0 //1 //0 //5000
 //     , "gp_weight": 0 //10
 
     //for wgan-gp
     // , "D_update_ratio": 1
-     , "D_init_iters": 0 //10000 //10000 //0
+     , "D_init_iters": 0 //1000 //10000 //10000 //0
      , "E_init_iters": 40000
 
     , "manual_seed": 0
