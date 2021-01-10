@@ -1,7 +1,7 @@
 import os
 import sys
 from utils.util import get_timestamp
-
+import numpy as np
 
 # print to file and std_out simultaneously
 class PrintLogger(object):
@@ -61,10 +61,13 @@ class Logger(object):
         for label, value in rlt.items():
             if label in keys_ignore_list or any([prefix in label for prefix in ['GT_','quantized_']]):
                 continue
-            if mode == 'train':
+            # if mode == 'train':
+            if np.abs(value)>1e-1:
+                message += '{:s}: {:.3f} '.format(label, value)
+            else:
                 message += '{:s}: {:.4e} '.format(label, value)
-            elif mode == 'val':
-                message += '{:s}: {:.4e} '.format(label, value)
+            # elif mode == 'val':
+            #     message += '{:s}: {:.4e} '.format(label, value)
             # tensorboard logger
             if self.use_tb_logger:# and 'debug' not in self.exp_name:
                 self.tb_logger.log_value(label, value, iters)
