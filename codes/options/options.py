@@ -69,7 +69,7 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         opt['scale'] = 8*opt['input_downsampling']
         if 'residual' not in opt['network_G']:
             opt['network_G']['residual'] = 1
-        if 'input_type' not in opt['network_D']:
+        if is_train and 'input_type' not in opt['network_D']:
             opt['network_D']['input_type'] = 'DCT_premult' if opt['network_D']['DCT_D'] else 'image'
     scale = opt['scale']
     opt['timestamp'] = get_timestamp()
