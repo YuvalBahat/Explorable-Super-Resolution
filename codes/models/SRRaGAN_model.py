@@ -27,7 +27,7 @@ class SRRaGANModel(BaseModel):
         if self.latent_input is not None:
             self.Z_size_factor = opt['scale'] if 'HR' in opt['network_G']['latent_input_domain'] else 1
         self.num_latent_channels = 0
-        self.debug = 'debug' in opt['path']['log']
+        # self.debug = 'debug' in opt['path']['log']
         self.cri_latent = None
         self.optimalZ_loss_type = None
         self.generator_started_learning = False #I'm adding this flag to avoid wasting time optimizing over the Z space when D is still in its early learning phase. I don't change it when resuming training of a saved model - it would change by itself after 1 generator step.
@@ -36,7 +36,7 @@ class SRRaGANModel(BaseModel):
             if self.is_train:
                 # Loss encouraging effect of Z:
                 self.l_latent_w = train_opt['latent_weight']
-                if train_opt['latent_weight']>0 or self.debug:
+                if train_opt['latent_weight'] is not None:
                     self.cri_latent = FilterLoss(latent_channels=opt['network_G']['latent_channels'])
             else:
                 assert isinstance(opt['network_G']['latent_channels'],int)
@@ -65,7 +65,7 @@ class SRRaGANModel(BaseModel):
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         if self.is_train:
             if self.latent_input:
-                if train_opt['optimalZ_loss_type'] is not None and (train_opt['optimalZ_loss_weight']>0 or self.debug):
+                if train_opt['optimalZ_loss_type'] is not None and train_opt['optimalZ_loss_weight'] is not None:
                     self.optimalZ_loss_type = train_opt['optimalZ_loss_type']
             self.D_verification = train_opt['D_verification']
             assert self.D_verification in ['current', 'convergence', 'past',None]
@@ -83,7 +83,7 @@ class SRRaGANModel(BaseModel):
             self.decomposed_output = self.CEM_arch and bool(opt['network_D']['decomposed_input'])
             self.netG.train()
             self.l_gan_w = train_opt['gan_weight']
-            self.D_exists = self.l_gan_w>0 or self.debug
+            self.D_exists = self.l_gan_w is not None
             if self.D_exists:
                 self.netD = networks.define_D(opt,CEM=self.CEM_net).to(self.device)  # D
                 self.netD.train()
@@ -91,7 +91,7 @@ class SRRaGANModel(BaseModel):
         # define losses, optimizer and scheduler
         if self.is_train:
             # G pixel loss
-            if train_opt['pixel_weight'] > 0 or self.debug:
+            if train_opt['pixel_weight'] is not None:
                 l_pix_type = train_opt['pixel_criterion']
                 if l_pix_type == 'l1':
                     self.cri_pix = nn.L1Loss().to(self.device)
@@ -104,7 +104,7 @@ class SRRaGANModel(BaseModel):
                 print('Remove pixel loss.')
                 self.cri_pix = None
 
-            if train_opt['shift_invariant_weight'] is not None and train_opt['shift_invariant_weight'] > 0 or self.debug:
+            if train_opt['shift_invariant_weight'] is not None:
                 import sys
                 sys.path.append(os.path.abspath('../../RandomPooling'))
                 from shift_invariant_loss import ShiftInvariant_Loss
@@ -115,7 +115,7 @@ class SRRaGANModel(BaseModel):
                 self.cri_shift_invariant = None
 
             # Reference loss after optimizing latent input:
-            if self.optimalZ_loss_type is not None and (train_opt['optimalZ_loss_weight'] > 0 or self.debug):
+            if self.optimalZ_loss_type is not None and train_opt['optimalZ_loss_weight'] is not None:
                 self.l_g_optimalZ_w = train_opt['optimalZ_loss_weight']
                 self.Z_optimizer = Z_optimizer(objective=self.optimalZ_loss_type,Z_size=2*[int(opt['datasets']['train']['patch_size']/(opt['scale']/self.Z_size_factor))],model=self,Z_range=1,
                     max_iters=10,initial_LR=1,batch_size=opt['datasets']['train']['batch_size'],HR_unpadder=self.CEM_net.HR_unpadder)
@@ -132,7 +132,7 @@ class SRRaGANModel(BaseModel):
                 self.cri_optimalZ = None
 
             # G feature loss
-            if train_opt['feature_weight'] > 0 or self.debug:
+            if train_opt['feature_weight'] is not None:
                 l_fea_type = train_opt['feature_criterion']
                 if l_fea_type == 'l1':
                     self.cri_fea = nn.L1Loss().to(self.device)
@@ -163,7 +163,7 @@ class SRRaGANModel(BaseModel):
                     self.netF = networks.define_F(opt, use_bn=False).to(self.device)
 
             # Range limiting loss:
-            if train_opt['range_weight'] > 0 or self.debug:
+            if train_opt['range_weight'] is not None:
                 self.cri_range = CreateRangeLoss(opt['range'])
                 self.l_range_w = train_opt['range_weight']
             else:
@@ -341,13 +341,9 @@ class SRRaGANModel(BaseModel):
         if first_grad_accumulation_step_D or self.generator_step:
             G_grads_retained = True
             self.Set_Require_Grad_Status(self.netG,True)
-            # for p in self.netG.parameters():
-            #     p.requires_grad = True
         else:
             G_grads_retained = False
             self.Set_Require_Grad_Status(self.netG, False)
-            # for p in self.netG.parameters():
-            #     p.requires_grad = False
         actual_dual_step_steps = int(self.optimalZ_loss_type is not None and self.generator_started_learning)+1 # 2 if I actually have an optimized-Z step, 1 otherwise
         for possible_dual_step_num in range(actual_dual_step_steps):
             optimized_Z_step = possible_dual_step_num==(actual_dual_step_steps-2)#I first perform optimized Z step to avoid saving Gradients for the Z optimization, then I restore the assigned Z and perform the static Z step.
@@ -380,10 +376,6 @@ class SRRaGANModel(BaseModel):
                         self.GD_update_controller.Step_performed(False)
                     self.Set_Require_Grad_Status(self.netD, True)
                     self.Set_Require_Grad_Status(self.netG, False)
-                    # for p in self.netD.parameters():
-                    #     p.requires_grad = True
-                    # for p in self.netG.parameters():
-                    #     p.requires_grad = False
                     if first_grad_accumulation_step_D and first_dual_batch_step:
                         self.optimizer_D.zero_grad()
                         self.l_d_real_grad_step,self.l_d_fake_grad_step,self.D_real_grad_step,self.D_fake_grad_step,self.D_logits_diff_grad_step = [],[],[],[],[]
@@ -391,12 +383,13 @@ class SRRaGANModel(BaseModel):
                         pred_d_real = self.netD([self.fake_H[0],self.var_ref-self.fake_H[0]] if self.decomposed_output else self.var_ref)
                     pred_d_fake = self.netD([t.detach() for t in self.fake_H] if self.decomposed_output else self.fake_H.detach())  # detach to avoid BP to G
                     if self.relativistic_D:
+                        assert self.opt['train']['hinge_threshold'] is None, 'Unsupported yet, should think whether it reuires special adaptation of hinge loss'
                         l_d_real = self.cri_gan(pred_d_real - torch.mean(pred_d_fake), True)
                         l_d_fake = self.cri_gan(pred_d_fake - torch.mean(pred_d_real), False)
                     else:
                         if first_dual_batch_step:
-                            l_d_real = 2*self.cri_gan(pred_d_real, True)#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
-                        l_d_fake = 2*self.cri_gan(pred_d_fake, False)
+                            l_d_real = 2*self.cri_gan(pred_d_real, True,self.opt['train']['hinge_threshold'])#Multiplying by 2 to be consistent with the SRGAN code, where losses are summed and not averaged.
+                        l_d_fake = 2*self.cri_gan(pred_d_fake, False,self.opt['train']['hinge_threshold'])
 
                     l_d_total += (l_d_real + l_d_fake) / 2
 
@@ -466,10 +459,6 @@ class SRRaGANModel(BaseModel):
                 if self.D_exists:
                     self.Set_Require_Grad_Status(self.netD, False)
                 self.Set_Require_Grad_Status(self.netG, True)
-                #     for p in self.netD.parameters():
-                #             p.requires_grad = False
-                # for p in self.netG.parameters():
-                #     p.requires_grad = True
                 if first_grad_accumulation_step_G and first_dual_batch_step:
                     if self.GD_update_controller is not None:
                         self.log_dict['D_update_ratio'].append((self.gradient_step_num, self.GD_update_controller.Query_update_ratio()))
@@ -587,7 +576,7 @@ class SRRaGANModel(BaseModel):
                                 # self.Prepare_D_input(self.netG(self.model_input))
                                 # I'm performing averaging in two steps to allow measuring the correctly distinguished portion in the future:
                                 # post_G_step_D_scores = self.netD(self.D_fake_input.detach()).detach()
-                                post_G_step_D_scores = self.netD(self.netG(self.model_input).detach()).detach()
+                                post_G_step_D_scores = self.netD(self.CEM_net.HR_unpadder(self.netG(self.model_input).detach())).detach()
                                 if self.opt['train']['G_Dbatch_separation'] != 'SeparateBatch':  # I can't compute this without pred_d_real (hence the discriminator_step condition), and it doesn't make sense to compare with pred_d_real in this case, because it was computed on a different batch.
                                     if not self.discriminator_step:
                                         pred_d_real = self.netD(self.var_ref)
@@ -616,7 +605,7 @@ class SRRaGANModel(BaseModel):
         self.output_image = 1*self.fake_H
         self.netG.train()
 
-    def perform_validation(self,data_loader,cur_Z,print_rlt,save_GT_HR,save_images):
+    def perform_validation(self,data_loader,cur_Z,print_rlt,first_eval,save_images):
         SAVE_IMAGE_COLLAGE = True
         avg_psnr = []
         idx = 0
@@ -648,7 +637,7 @@ class SRRaGANModel(BaseModel):
                 if SAVE_IMAGE_COLLAGE:
                     margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
-                    if save_GT_HR:  # Save GT HR images
+                    if first_eval:  # Save GT HR images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                 else:
                     # Save SR images for reference
@@ -663,8 +652,8 @@ class SRRaGANModel(BaseModel):
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
             util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
-            if save_GT_HR:  # Save GT HR images
-                util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_HR.png'))
+        if first_eval:  # Save GT HR images
+            util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_HR.png'))
         print_rlt['psnr'] += avg_psnr
         return sr_images
 

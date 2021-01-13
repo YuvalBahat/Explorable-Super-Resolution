@@ -302,8 +302,9 @@ class RRDBNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, gc=32, upscale=4, norm_type=None, \
             act_type='leakyrelu', mode='CNA', upsample_mode='upconv',latent_input=None,num_latent_channels=None):
         super(RRDBNet, self).__init__()
-        self.latent_input = latent_input
+        self.latent_input = None
         if num_latent_channels is not None and num_latent_channels>0:
+            self.latent_input = latent_input
             num_latent_channels_HR = 1 * num_latent_channels
             if 'HR_rearranged' in latent_input:
                 num_latent_channels *= upscale**2
@@ -335,7 +336,7 @@ class RRDBNet(nn.Module):
             upsampler = [upsample_block(nf, nf, act_type=act_type) for _ in range(n_upscale)]
         if latent_input is not None and 'all_layers' in latent_input:
             if 'LR' in latent_input:
-                self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
+                self.latent_upsampler = nn.functional.interpolate(scale_factor=upscale if upscale==3 else 2)
         HR_conv0 = B.conv_block(nf+num_latent_channels_HR, nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_MODULE_LISTS)
         HR_conv1 = B.conv_block(nf+num_latent_channels_HR, out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_MODULE_LISTS)
 
@@ -455,13 +456,6 @@ class PatchGAN_Discriminator(nn.Module):
                 nn.Conv2d(ndf * nf_mult_prev+in_ch_addition, min(max_out_channels, ndf * nf_mult), kernel_size=kw,
                           stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
                           padding=padw, bias=use_bias), norm_layer(ndf * nf_mult), nn.LeakyReLU(0.2, True)]))
-            # if self.decomposed_input:
-            #     projected_component_sequences.append(
-            #         nn.Conv2d(input_nc,input_nc, kernel_size=kw,
-            #                   stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
-            #                   padding=padw, bias=use_bias))
-
-        # nf_mult_prev = nf_mult
         nf_mult_prev = min(max_out_channels, ndf * nf_mult) // ndf
         nf_mult = min(2 ** n_layers, 8)
         sequences.append(nn.Sequential(*[
@@ -469,10 +463,6 @@ class PatchGAN_Discriminator(nn.Module):
                       padding=padw, bias=use_bias),
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)]))
-        # if self.decomposed_input:
-        #     projected_component_sequences.append(
-        #     nn.Conv2d(input_nc,input_nc, kernel_size=kw, stride=1,
-        #               padding=padw, bias=use_bias))
         sequences.append(nn.Sequential(*[
             nn.Conv2d(min(max_out_channels, ndf * nf_mult)+in_ch_addition, 1, kernel_size=kw, stride=1,
                       padding=padw)]))  # output 1 channel prediction map

@@ -1,5 +1,5 @@
 {
-  "name": "fromMSE_Z0_patchDhinge1SN" // Model name (a folder with this name will be created if resume=0). Terminate name with "_debug" to calculate and log all possible loss terms
+  "name": "Z1_patchDhinge1_nl6_GDratio1_AdvOnly" // Model name (a folder with this name will be created if resume=0).
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -15,10 +15,10 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 0 //2
-      , "batch_size": 6
-      , "batch_size_4_grads_G": 48
-      , "batch_size_4_grads_D": 48
+      , "n_workers": 2 //2
+      , "batch_size_per_GPU": 8
+      , "batch_size_4_grads_G": 16
+      , "batch_size_4_grads_D": 16
       , "patch_size": 256
       , "use_flip": true
       , "use_rot": true
@@ -33,14 +33,14 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" // Path to weights initialization model of the same architecture (but the Z input). For example, ESRGAN
+//    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" // Path to weights initialization model of the same architecture (but the Z input). For example, ESRGAN
 }
 
   , "network_G": {
     "which_model_G": "RRDB_net"
     , "CEM_arch": 1 //Wrap architecture with CEM for consistency
     , "sigmoid_range_limit": 0
-    , "latent_input": "None" // Concatenate Z signal to which model layers: "all_layers" /  "first_layer" / "None"
+    , "latent_input": "first_layer" // Concatenate Z signal to which model layers: "all_layers" /  "first_layer" / "None"
     , "latent_input_domain": "HR_downscaled" // Spatial dimenssions of Z correspond to "HR_downscaled" / "HR_rearranged","LR"
     , "latent_channels": "SVDinNormedOut_structure_tensor" // What kind of L_struct loss term is used: ""SVDinNormedOut_structure_tensor"" / "STD_1dir" / "STD_directional" / "structure_tensor" / "SVD_structure_tensor"
     , "norm_type": null
@@ -68,11 +68,11 @@
 
   , "train": {
     "resume":0 // Set to 1 if resuming the training of a model with the same name.
-    ,"lr_G": 1e-4 //1e-5
+    ,"lr_G": 1e-5 //1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-4 //1e-5
+    , "lr_D": 1e-5 //1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
     , "beta2_D": 0.9 //None
@@ -87,22 +87,22 @@
     , "feature_domain": "HR"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-sn" //,"vanilla","lsgan","wgan-gp"
-    , "hinge_threshold": 0.3 //Comment if not using hinge loss
+    , "hinge_threshold": 1 //Comment if not using hinge loss
     , "optimalZ_loss_type": "l1"  //"None","hist","l1"
 //    , "D_verification": "past" //'current', 'convergence', 'past'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.05 //Average D prob ratio should be at least this on all preceeding D_valid_Steps_4_G_update steps
     , "min_mean_D_correct": 0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": [[4,-10],[0,0.1]] //10 //0
+    , "D_update_ratio": 1 //[[4,-10],[0,0.1]] //10 //0
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if actually using the CEM or not.
 
-    , "pixel_weight": 0 //1e-2
-    , "feature_weight": 0 //1
+//    , "pixel_weight": 1e-2
+//    , "feature_weight": 0 //1
     , "gan_weight": 1 // Weight for adversarial loss term L_adv
-    , "latent_weight": 0 //1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
-    , "optimalZ_loss_weight": 0 // L_map loss term weight
-    , "range_weight": 5000 // L_range loss term weight
+//    , "latent_weight": 0 //1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
+//    , "optimalZ_loss_weight": 0 // L_map loss term weight
+//    , "range_weight": 5000 // L_range loss term weight
 
      , "D_init_iters": 0
      , "gp_weight": 0 //10
