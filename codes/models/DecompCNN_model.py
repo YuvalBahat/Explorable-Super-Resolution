@@ -494,27 +494,15 @@ class DecompCNNModel(BaseModel):
             G_step_batch = self.separate_G_D_batches_counter.max_val == 1 or self.separate_G_D_batches_counter.counter == 1
             self.generator_step = False
             if G_step_batch:
-                self.generator_step = self.gradient_step_num > self.D_init_iters
+                self.generator_step = self.gradient_step_num >= self.D_init_iters
                 if self.generator_step and self.D_exists:
-                    # if self.auto_GD_update_ratio:
                     self.generator_step = self.GD_update_controller.Step_query(True)
-                    # else:
-                    #     self.generator_step = self.gradient_step_num % max([1, self.global_D_update_ratio]) == 0
-                    #     # When D batch is larger than G batch, run G iter on final D iter steps, to avoid updating G in the middle of calculating D gradients.
-                    #     self.generator_step = self.generator_step and self.step % self.grad_accumulation_steps_D >= self.grad_accumulation_steps_D - self.grad_accumulation_steps_G
 
-        # self.discriminator_step = False
         if self.D_exists and first_grad_accumulation_step_D:
             D_step_batch = self.separate_G_D_batches_counter.counter == 0
             if D_step_batch:
                 self.discriminator_step = self.gradient_step_num >= -self.D_init_iters
                 if self.discriminator_step:
-                    # if self.GD_update_controller is None:
-                    #     if SINGLE_D_UPDATE_UNTIL_FIRST_G_STEP and not self.verified_D_saved:
-                    #         self.discriminator_step = True
-                    #     else:
-                    #         self.discriminator_step = self.gradient_step_num % max([1, np.ceil(1 / self.global_D_update_ratio)]) == 0
-                    # else:
                     self.discriminator_step = self.GD_update_controller.Step_query(False)
 
         # if first_grad_accumulation_step_D or self.generator_step:
