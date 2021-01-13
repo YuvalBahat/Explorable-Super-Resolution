@@ -290,12 +290,21 @@ def pixelshuffle_block(in_nc, out_nc, upscale_factor=2, kernel_size=3, stride=1,
     a = act(act_type) if act_type else None
     return sequential(conv, pixel_shuffle, n, a)
 
+class Upsampler(nn.Module):
+    def __init__(self,upscale_factor,mode):
+        super(Upsampler, self).__init__()
+        self.upscale_factor = upscale_factor
+        self.mode = mode
+
+    def forward(self, input):
+        return nn.functional.interpolate(input,scale_factor=self.upscale_factor,mode=self.mode)
 
 def upconv_blcok(in_nc, out_nc, upscale_factor=2, kernel_size=3, stride=1, bias=True, \
                 pad_type='zero', norm_type=None, act_type='relu', mode='nearest'):
     # Up conv
     # described in https://distill.pub/2016/deconv-checkerboard/
-    upsample = nn.Upsample(scale_factor=upscale_factor, mode=mode)
+    # upsample = lambda x:nn.functional.interpolate(scale_factor=upscale_factor, mode=mode)
+    upsample = Upsampler(upscale_factor,mode)
     conv = conv_block(in_nc, out_nc, kernel_size, stride, bias=bias, \
                         pad_type=pad_type, norm_type=norm_type, act_type=act_type)
     return sequential(upsample, conv)

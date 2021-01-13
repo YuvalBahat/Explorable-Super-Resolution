@@ -220,7 +220,7 @@ class BaseModel():
                                                               loaded_state_dict[key].cuda()],1)
                 # self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
                 zero_extended_weights_counter += 1
-            elif self.chroma_mode and i==(len(loaded_state_dict.keys())-1) and loaded_size[0]==2*256 and current_size[0]==2*64:
+            elif 'DecompCNN_model' in str(type(self)) and self.chroma_mode and i==(len(loaded_state_dict.keys())-1) and loaded_size[0]==2*256 and current_size[0]==2*64:
                 #     patchy fix to use chroma models trained to output 256 coefficients per chroma channel to initialize models with 64 outputs per chroma channel:
                 def extract_upper_left_block(weight_tensor):
                     return weight_tensor.view(16,16,weight_tensor.shape[1],weight_tensor.shape[2],weight_tensor.shape[3])[:8,:8,...]\
