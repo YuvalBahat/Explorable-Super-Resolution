@@ -24,6 +24,67 @@ def Latent_channels_desc_2_num_channels(latent_channels_desc):
         else:
             return 3
 
+class FIDLoss(nn.Module):
+    def __init__(self,calc_iters,real_images_buffer_size=None):
+        super(FIDLoss,self).__init__()
+        assert real_images_buffer_size is None,'Not yet supporting accumulation of features corresponding to real images'
+        self.buffer_size = real_images_buffer_size
+        self.calc_iterations = calc_iters
+        # torch.autograd.set_detect_anomaly(True)
+
+    def covariance(self,M,M_mean):
+        meanlessM = M-M_mean
+        meanlessM = meanlessM.permute(1,0,2,3).contiguous().view(meanlessM.shape[1],-1)
+        return torch.matmul(meanlessM,meanlessM.permute(1,0))/(meanlessM.shape[1]-1)
+
+    # def compute_error(self,A, sA):
+    #     normA = torch.sqrt(torch.sum(torch.sum(A * A, dim=1), dim=1))
+    #     error = A - torch.bmm(sA, sA)
+    #     error = torch.sqrt((error * error).sum(dim=1).sum(dim=1)) / normA
+    #     return torch.mean(error)
+    #
+    # def sqrt_newton_schulz_autograd(self,A, dtype=None,return_error=False):
+    #     A = A.unsqueeze(0)
+    #     if dtype is None:
+    #         dtype = A.type()
+    #     batchSize = A.data.shape[0]
+    #     dim = A.data.shape[1]
+    #     # normA = torch.matmul(A,A).sum().sqrt()
+    #     normA = A.mul(A).sum(dim=1).sum(dim=1).sqrt()
+    #     Y = A.div(normA.view(batchSize, 1, 1).expand_as(A));
+    #     I = torch.eye(dim, dim).view(1, dim, dim).repeat(batchSize, 1, 1).type(dtype)
+    #     Z = torch.eye(dim, dim).view(1, dim, dim).repeat(batchSize, 1, 1).type(dtype)
+    #
+    #     for i in range(self.calc_iterations):
+    #         T = 0.5 * (3.0 * I - Z.bmm(Y))
+    #         Y = Y.bmm(T)
+    #         Z = T.bmm(Z)
+    #     sA = Y * torch.sqrt(normA).view(batchSize, 1, 1).expand_as(A)
+    #     error = self.compute_error(A, sA)
+    #     if return_error:
+    #         return sA.squeeze(0), error
+    #     else:
+    #         return  sA.squeeze(0)
+
+    def sqrtm_Newton_Schultz(self, M):
+        normM = torch.matmul(M,M).sum().sqrt()
+        Y,Z,U = [M/normM],[torch.eye(M.shape[0]).to(M.device)],[]
+        for iter in range(self.calc_iterations):
+            U.append(0.5*(3*torch.eye(M.shape[0]).to(M.device)-torch.matmul(Z[-1],Y[-1])))
+            Y.append(torch.matmul(Y[-1],U[-1]))
+            Z.append(torch.matmul(U[-1],Z[-1]))
+            # print('Current error: %.3e'%((torch.matmul(Y[-1],Y[-1])-M/normM).mean().item()))
+        return Y[-1]*normM.sqrt()
+
+    def forward(self, fake_features,real_features):
+        fake_mean,real_mean = torch.mean(fake_features,dim=(0,2,3),keepdim=True),torch.mean(real_features,dim=(0,2,3),keepdim=True)
+        mean_diff_norm = torch.norm(fake_mean-real_mean)
+        fake_cov = self.covariance(fake_features,fake_mean)
+        real_cov = self.covariance(real_features,real_mean)
+        return mean_diff_norm+torch.trace(fake_cov)+torch.trace(real_cov)-2*torch.trace(self.sqrtm_Newton_Schultz(torch.matmul(fake_cov, real_cov)))
+        # return mean_diff_norm+torch.trace(fake_cov)+torch.trace(real_cov)-2*torch.trace(self.sqrt_newton_schulz_autograd(torch.matmul(fake_cov, real_cov)))
+
+
 class FilterLoss(nn.Module):
     def __init__(self,latent_channels,constant_Z=None,reference_images=None,masks=None,task='SR',gray_scale=False):
         super(FilterLoss,self).__init__()

@@ -6,7 +6,7 @@ from torch.optim import lr_scheduler
 import re
 import models.networks as networks
 from .base_model import BaseModel
-from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels
+from models.modules.loss import GANLoss, GradientPenaltyLoss,CreateRangeLoss,FilterLoss,Latent_channels_desc_2_num_channels,FIDLoss
 import CEM.CEMnet as CEMnet
 import numpy as np
 from collections import deque
@@ -60,7 +60,7 @@ class SRRaGANModel(BaseModel):
         self.netG = networks.define_G(opt,CEM=self.CEM_net,num_latent_channels=self.num_latent_channels)  # G
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake','l_g_highpass','l_g_shift_invariant',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp',
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp','l_g_FID',
                        'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         if self.is_train:
@@ -144,7 +144,15 @@ class SRRaGANModel(BaseModel):
             else:
                 print('Remove feature loss.')
                 self.cri_fea = None
-            if self.cri_fea:  # load VGG perceptual loss
+            #G FID loss
+            if train_opt['FID_weight'] is not None:
+                self.cri_FID = FIDLoss(calc_iters=10)
+                self.l_FID_w = train_opt['FID_weight']
+            else:
+                print('Remove FID loss')
+                self.cri_FID = None
+
+            if self.cri_fea or self.cri_FID:  # load VGG perceptual loss
                 self.reshuffle_netF_weights = False
                 if 'feature_pooling' in train_opt or 'feature_model_arch' in train_opt:
                     if 'feature_model_arch' not in train_opt:
@@ -465,7 +473,7 @@ class SRRaGANModel(BaseModel):
                         self.GD_update_controller.Step_performed(True)
                     self.optimizer_G.zero_grad()
                     self.l_g_pix_grad_step,self.l_g_fea_grad_step,self.l_g_gan_grad_step,self.l_g_range_grad_step,self.l_g_latent_grad_step,self.l_g_optimalZ_grad_step = [],[],[],[],[],[]
-                    self.l_g_highpass_grad_step,self.l_g_shift_invariant_grad_step = [],[]
+                    self.l_g_highpass_grad_step,self.l_g_shift_invariant_grad_step,self.l_g_FID_grad_step = [],[],[]
                 if self.cri_pix:  # pixel loss
                     if 'pixel_domain' in self.opt['train'] and self.opt['train']['pixel_domain']=='LR':
                         LR_size = list(self.var_L.size()[-2:])
@@ -479,7 +487,7 @@ class SRRaGANModel(BaseModel):
                 if self.cri_shift_invariant:  # Shift invariant loss
                     l_g_shift_invariant = self.cri_shift_invariant(self.fake_H, self.var_H)
                     l_g_total += self.l_shift_invariant_w * l_g_shift_invariant/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_fea:  # feature loss
+                if self.cri_fea or self.cri_FID:  # feature loss
                     if 'feature_domain' in self.opt['train'] and self.opt['train']['feature_domain']=='LR':
                         LR_size = list(self.var_L.size()[-2:])
                         real_fea = self.netF(self.Convert_2_LR(LR_size)(self.var_H)).detach()
@@ -487,8 +495,13 @@ class SRRaGANModel(BaseModel):
                     else:
                         real_fea = self.netF(self.var_H).detach()
                         fake_fea = self.netF((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
-                    l_g_fea = self.cri_fea(fake_fea, real_fea)
-                    l_g_total += self.l_fea_w * l_g_fea/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    if self.cri_fea:
+                        l_g_fea = self.cri_fea(fake_fea, real_fea)
+                        l_g_total += self.l_fea_w * l_g_fea/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                    if self.cri_FID:
+                        l_g_FID = self.cri_FID(fake_fea, real_fea)
+                        l_g_total += self.l_FID_w * l_g_FID/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+
                 if self.cri_range: #range loss
                     l_g_range = self.cri_range((self.fake_H[0]+self.fake_H[1]) if self.decomposed_output else self.fake_H)
                     l_g_total += self.l_range_w * l_g_range/(self.grad_accumulation_steps_G*actual_dual_step_steps)
@@ -527,6 +540,8 @@ class SRRaGANModel(BaseModel):
                     self.l_g_shift_invariant_grad_step.append(l_g_shift_invariant.item())
                 if self.cri_fea:
                     self.l_g_fea_grad_step.append(l_g_fea.item())
+                if self.cri_FID:
+                    self.l_g_FID_grad_step.append(l_g_FID.item())
                 if self.cri_gan:
                     self.l_g_gan_grad_step.append(l_g_gan.item())
                 if self.cri_range: #range loss
@@ -545,11 +560,13 @@ class SRRaGANModel(BaseModel):
                     #     self.log_dict['l_g_highpass'].append((self.gradient_step_num,np.mean(self.l_g_highpass_grad_step)))
                     if self.cri_shift_invariant:
                         self.log_dict['l_g_shift_invariant'].append((self.gradient_step_num,np.mean(self.l_g_shift_invariant_grad_step)))
+                    if self.cri_FID:
+                        self.log_dict['l_g_FID'].append((self.gradient_step_num,np.mean(self.l_g_FID_grad_step)))
                     if self.cri_fea:
                         self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
                         if self.reshuffle_netF_weights:
                             self.netF.module._initialize_weights()
-                        if self.step<=1:
+                        if self.step<=1 and self.opt['train']['feature_pooling'] is not None:
                             if 'max_2_random_max_size_once' in self.opt['train']['feature_pooling']:
                                 sys.path.append(os.path.abspath('../../RandomPooling'))
                                 from RandomMaxArea import RandomMaxArea
