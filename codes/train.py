@@ -161,10 +161,10 @@ def main():
                         sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_HR,save_images=True)
                         if logger.use_tb_logger:
                             logger.tb_logger.log_images('validation_Z%.2f'%(cur_Z), [im[:,:,[2,1,0]] for im in sr_images], model.gradient_step_num)
-                        util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
-                                             saving_freq=opt['train']['val_save_freq'],name_pattern='^(\d)+_Z.*PSNR.*.png$')
                         if save_GT_HR:  # Save GT Uncomp images
                             save_GT_HR = False
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
+                                         saving_freq=opt['train']['val_save_freq'],name_pattern='^(\d)+'+('_Z' if len(Z_latent)>1 else '')+'.*PSNR.*.png$')
                     # model.toggle_running_avg_weight(False)
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']/len(Z_latent)))
                 else:

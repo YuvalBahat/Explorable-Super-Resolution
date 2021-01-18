@@ -112,7 +112,7 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
                           latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
                           num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'],
                           coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None,avoid_padding=not bool(opt_net['padding']),
-                          residual=opt_net['residual'])
+                          residual=opt_net['residual'],low_coeffs_debug=opt['train']['low_DCT_coeffs'])
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -188,7 +188,7 @@ def define_D(opt,CEM=None,**kwargs):
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//(opt['scale'] if 'DCT' in opt_net['input_type'] else 1),
             latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
             pooling_no_FC=opt_net['pooling_no_fc'],norm_input=opt_net_G['normalize_input'] if opt_net['normalize_input'] is None else opt_net['normalize_input'],
-            coordinates_input=opt['scale'] if opt_net_G['coordinates_input'] else None)
+            coordinates_input=opt['scale'] if opt_net_G['coordinates_input'] else None,low_coeffs_debug=opt['train']['low_DCT_coeffs'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

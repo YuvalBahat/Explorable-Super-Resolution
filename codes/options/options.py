@@ -28,6 +28,8 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             cur_opt,cur_saved_opt = opt,saved_opt
             for sub_key in key[:-1]:
                 cur_opt,cur_saved_opt = cur_opt[sub_key],cur_saved_opt[sub_key]
+            if key[-1] not in cur_opt: #For keys in OVERRIDING_KEYS that do not appear in the options.json file (added for the val_running_avg_steps key case)
+                continue
             cur_saved_opt[key[-1]] = cur_opt[key[-1]]
         saved_opt['train']['resume'] = opt['train']['resume']
         opt_diff = DeepDiff(opt,saved_opt)
@@ -131,6 +133,9 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         if 'batch_size_4_grads_G' not in opt['datasets']['train'].keys():
             opt['datasets']['train']['batch_size_4_grads_G'] = 1*opt['datasets']['train']['batch_size']
             opt['datasets']['train']['batch_size_4_grads_D'] = 1*opt['datasets']['train']['batch_size']
+        else:
+            assert opt['datasets']['train']['batch_size_4_grads_G']==opt['datasets']['train']['batch_size_4_grads_D']==opt['datasets']['train']['batch_size'] or\
+                   opt['train']['FID_weight'] is None,'Currently not sure how to support multi-batch FID loss calculation'
         while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
                 np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
             opt['datasets']['train']['batch_size'] -= 1

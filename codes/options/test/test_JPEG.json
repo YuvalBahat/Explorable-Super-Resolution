@@ -35,12 +35,12 @@
 //      , "dataroot_HR": "DIV2K_valid/DIV2K_valid_HRx4"
 //      , "dataroot_LR": "DIV2K_valid/DIV2K_valid_bicLRx4"
 //    },
-//     "test_2": { // the 1st test dataset
-//      "name": "set14"
-//      , "mode": "LRHR"
-//      , "dataroot_HR": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
-//      , "dataroot_LR": "Set14/Set14_bicLRx4"
-//    }
+     "test_3": { // the 1st test dataset
+      "name": "set14"
+      , "mode": "JPEG"
+      , "jpeg_quality_factor": [5,10] //[1,5,10,15,20,25,30,35,40,45,49] //,54,59,64,69,74,79,84,89] //[5,10] //[[5,50]]
+      , "dataroot_Uncomp": "Set14/Set14_HRx4" //"/home/ybahat/Datasets/Set14/Set14_HRx4"
+    }
   }
 
   , "path": {
@@ -56,7 +56,7 @@
     , "latent_input": "first_layer" // "all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
     , "latent_channels": 1 //1 //64
-    , "DCT_G": 1 //1 //0
+    , "DCT_G":1 //1 //0
     , "normalize_input": 0
     , "coordinates_input": 0 //0 //1
     , "norm_type": "batch"

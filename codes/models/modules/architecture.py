@@ -108,7 +108,7 @@ class Flatten(nn.Module):
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
-                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None,residual=None):
+                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None,residual=None,low_coeffs_debug=None):
 
         BALANCED_NUM_PARAMETERS = True # If True, increasing the number of channels for layers with a 1x1 kernel, to maintain a similar number of parameters.
         self.HIGH_FREQS_ONLY = False
@@ -222,12 +222,19 @@ class DnCNN(nn.Module):
                 # layers.append(nn.Linear(in_features=64, out_features=1))
         elif self.DCT_generator and self.residual:
             layers.append(nn.Sigmoid())
+        self.DCT_coeffs_mask = None
+        if low_coeffs_debug:
+            self.DCT_coeffs_mask = (torch.sum(torch.stack(torch.meshgrid([torch.arange(8),torch.arange(8)]),-1)**2,-1)<=low_coeffs_debug**2).type(next(layers[0].parameters()).dtype).view(1,64,1,1).cuda()
         self.dncnn = nn.ModuleList(layers)
 
     def forward(self, x):
         if not self.discriminator_net and self.margins and not self.training:
             x = F.pad(x,4*[self.margins],mode='replicate')
         latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
+        if self.discriminator_net and self.DCT_coeffs_mask is not None:
+            quantized_coeffs = quantized_coeffs.view(quantized_coeffs.shape[0],-1,64,quantized_coeffs.shape[2],quantized_coeffs.shape[3])
+            quantized_coeffs *= self.DCT_coeffs_mask.unsqueeze(1)
+            quantized_coeffs = quantized_coeffs.view(quantized_coeffs.shape[0], -1, quantized_coeffs.shape[3],quantized_coeffs.shape[4])
         x = 1*quantized_coeffs
         if self.norm_input:
             x = x/255-0.5
@@ -259,6 +266,8 @@ class DnCNN(nn.Module):
                     else:
                         if self.HIGH_FREQS_ONLY:
                             quantization_err_estimation.view(x.shape[0],8,8,x.shape[2],x.shape[3])[:,:7,:7,...] = 0
+                        if self.DCT_coeffs_mask is not None:
+                            quantization_err_estimation *= self.DCT_coeffs_mask
                         return quantized_coeffs+quantization_err_estimation
                 else:
                     assert not self.chroma_generator, 'Should verify chroma is adapted to non-residal generator'
