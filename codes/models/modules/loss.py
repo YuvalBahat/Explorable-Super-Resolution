@@ -25,6 +25,7 @@ def Latent_channels_desc_2_num_channels(latent_channels_desc):
             return 3
 
 class FIDLoss(nn.Module):
+    # Following procedure described in "Image Generation Via Minimizing Fréchet Distance in Discriminator Feature Space" (Doan et al., arXiv 2020)
     def __init__(self,calc_iters,real_images_buffer_size=None):
         super(FIDLoss,self).__init__()
         assert real_images_buffer_size is None,'Not yet supporting accumulation of features corresponding to real images'
@@ -67,7 +68,8 @@ class FIDLoss(nn.Module):
     #         return  sA.squeeze(0)
 
     def sqrtm_Newton_Schultz(self, M):
-        normM = torch.matmul(M,M).sum().sqrt()
+        # normM = torch.clamp_min(torch.matmul(M,M).sum().sqrt(),1)
+        normM = torch.clamp_min(torch.norm(M,p=2),1) # Changed from computing the norm of M using torch.matmul(M,M).sum().sqrt() since this ocasinally yielded nans, due to sqrt(negative number).
         Y,Z,U = [M/normM],[torch.eye(M.shape[0]).to(M.device)],[]
         for iter in range(self.calc_iterations):
             U.append(0.5*(3*torch.eye(M.shape[0]).to(M.device)-torch.matmul(Z[-1],Y[-1])))
@@ -81,7 +83,8 @@ class FIDLoss(nn.Module):
         mean_diff_norm = torch.norm(fake_mean-real_mean)
         fake_cov = self.covariance(fake_features,fake_mean)
         real_cov = self.covariance(real_features,real_mean)
-        return mean_diff_norm+torch.trace(fake_cov)+torch.trace(real_cov)-2*torch.trace(self.sqrtm_Newton_Schultz(torch.matmul(fake_cov, real_cov)))
+        sqrt_cov_product = self.sqrtm_Newton_Schultz(torch.matmul(fake_cov, real_cov))
+        return mean_diff_norm+torch.trace(fake_cov)+torch.trace(real_cov)-2*torch.trace(sqrt_cov_product)
         # return mean_diff_norm+torch.trace(fake_cov)+torch.trace(real_cov)-2*torch.trace(self.sqrt_newton_schulz_autograd(torch.matmul(fake_cov, real_cov)))
 
 
