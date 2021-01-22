@@ -54,9 +54,10 @@ I hope to add here a full description of all our GUI exploration tools soon. In 
 ## Training the backend exploration network<a name="Training"></a>
 1. *Download training set:*  
 Download a dataset of high-resolution training images. We used the training subset of the [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) dataset.
-1. *Training-set preparation:*  
-   1. Create image crops using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
-   1. Create `lmdb` files using [`create_lmdb.py`](./scripts/create_lmdb.py).
+1. *Training-set preparation* (Requires updating the 'dataset_root_path' field in each of the scripts below):
+   1. Create image crops of your high resolution (HR) image training set using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
+   1. Create two new folders containing pairs of corresponding HR and LR image crops, using [`generate_mod_LR_bic.py`](./scripts/generate_mod_LR_bic.py).
+   1. Create two corresponding `lmdb` files using [`create_lmdb.py`](./scripts/create_lmdb.py) (change the 'HR_images' flag for the LR file).
 1. *Download initialization model:*  
 Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing) for weights initialization (This model is for a 4x super-resolution. Other factors require a different model).
 1. *Update parameters:*  
