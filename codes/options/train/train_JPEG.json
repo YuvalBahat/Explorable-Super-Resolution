@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LR1e-5_GDRatio-5_Z1_Dnf160postmultInCatDnk1_SN_AdvOnly_3lowestCoeffs" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LRG1e-5D4e-5_GDRatio1_Z1_DpostmultInCatDnk2_SN_fromMSE_AdvOnly" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -36,6 +36,7 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_CoarsestScale/models/493052_G.pth"
+    , "pretrained_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF1_50_ImageNetDS_DCT_noPad/models/478609_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF1_50_ImageNetDS_DCT_Range_noPad/models/1292750_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf128nb10_BS16PS128_nonDCT_G_inputCoords/models/45426_G.pth"
 //    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/experiments/JPEG/nf128nb10_BS32PS128_nonDCT_G/models/71103_G.pth"
@@ -83,19 +84,19 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "nf": 160 //160 //64
+//    , "nf": 160 //160 //64
 //    , "nb": 5
-    , "nk": 1 //Number of first layers with 3x3 kernels. Consecutive nb-nk layers would use 1x1 kernels. Must satisfy nk<=nb
+    , "nk": 2 //Number of first layers with 3x3 kernels. Consecutive nb-nk layers would use 1x1 kernels. Must satisfy nk<=nb
 //    , "in_nc": 1
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-5 //1e-4 //1e-5
+    , "lr_D": 4e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
@@ -105,7 +106,7 @@
     , "std_4_lr_drop": 1e6 //1.6
     , "lr_change_ratio": 4 // ratio between STD and slope of linear fit, under which lr is reduced
     , "lr_steps": [50000, 100000, 200000, 300000] //[5000, 10000, 20000, 30000] //
-    , "lr_gamma": 0.5
+    , "lr_gamma": 1 //0.5
 //    , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
 //    , "feature_domain": "HR"
@@ -118,20 +119,20 @@
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
     , "min_mean_D_correct": 0.9 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
-    , "D_update_ratio": -5 //[[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
+    , "D_update_ratio": 1 //[[10,-10],[0.7,0.9]] //1 //3 //10 //0 //1
     , "D_update_measure": "Correctly_distinguished" //"clamped_portion" //"post_train_D_diff"
     , "G_Dbatch_separation": "No" //"No": D is updated and used to compute penalty for G on the same fake batch (unfair for G),
 //      "SameD": Using the same version of D (pre-update) to penalize both G and D, on the same fake batch,
 //      "SeparateBatch":Draw a new batch for G's update, after updating D. Not implemented yet, because I need to handle the Zoptimization batches issue.
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
-    , "low_DCT_coeffs": 3 //For debugging: Only estimating DCT coefficients whose euclidean distance from the DC coefficient is smaller than low_DCT_coeffs. Only supported by few configurations.
-    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
+//    , "low_DCT_coeffs": 3 //For debugging: Only estimating DCT coefficients whose euclidean distance from the DC coefficient is smaller than low_DCT_coeffs. Only supported by few configurations.
+//    , "pixel_weight": 0 //1e-2 //1e-3 //1e-2
 //    , "feature_weight": 0 //1
     , "gan_weight": 5e-3 //1 //5e-3
 //    , "latent_weight": 0 //5e-3 //1 //Weight on loss between G's output and the desired criterion given Z. Previously: Weight on loss on difference between z and the output of E(G(LR,z))
 //    , "optimalZ_loss_weight": 5e-4 //5e-4 //0 //100
-    , "range_weight": 0 //1 //0 //5000
+//    , "range_weight": 0 //1 //0 //5000
 //    , "pixel_weight": 1e-2 //[[0,40000],[1e-2,5e-6,0]] //1e-3 //1e-2
 //    , "feature_weight": 0 //1
 //    , "gan_weight": 0 //5e-3 //1 //5e-3
