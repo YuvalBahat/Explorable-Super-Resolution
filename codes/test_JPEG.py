@@ -43,7 +43,7 @@ SAVE_QUANTIZED = True
 CHROMA = False
 OUTPUT_STD = True
 SAVE_AVG_METRICS_WHEN_LATENT = True
-SPAITIALLY_UNIFORM_Z = True
+SPAITIALLY_UNIFORM_Z = False
 # options
 parser = argparse.ArgumentParser()
 parser.add_argument('-opt', type=str, required=True, help='Path to options JSON file.')

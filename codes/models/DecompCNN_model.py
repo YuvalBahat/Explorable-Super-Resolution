@@ -273,8 +273,8 @@ class DecompCNNModel(BaseModel):
             if self.D_exists:
                 for param_group in self.optimizer_D.param_groups:
                     param_group['lr'] = self.lr_D
-                if self.verified_D_saved:# When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
-                    self.lr_G = 1*self.lr_D
+                if self.verified_D_saved:# CANCELLED: When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
+                    # self.lr_G = 1*self.lr_D
                     if 'Z_optimizer' in self.__dict__.keys(): #If MAP loss is calculated:
                         self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
             for param_group in self.optimizer_G.param_groups:
@@ -630,10 +630,10 @@ class DecompCNNModel(BaseModel):
                                     if self.generator_step:
                                         if not self.verified_D_saved:
                                             self.save(self.gradient_step_num,first_verified_D=True)  # D was approved in the current step
-                                            # When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
-                                            self.lr_G = 1 * self.lr_D
-                                            for param_group in self.optimizer_G.param_groups:
-                                                param_group['lr'] = self.lr_G
+                                            # CANCELLED: When already started utilizing the adversarial loss term, using the same lr for both D and G and using a different number of Z-iterations:
+                                            # self.lr_G = 1 * self.lr_D
+                                            # for param_group in self.optimizer_G.param_groups:
+                                            #     param_group['lr'] = self.lr_G
                                             self.verified_D_saved = True
                                             if 'Z_optimizer' in self.__dict__.keys():
                                                 self.Z_optimizer.max_iters = self.opt['train']['Num_Z_iterations'][-1]
