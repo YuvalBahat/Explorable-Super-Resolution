@@ -1,5 +1,5 @@
 {
-  "name": "ESRGAN_CEM_MSE_FID5e-4" //  please remove "debug_" during training
+  "name": "ESRGAN_CEM_FID5e-4_Inception192" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -82,12 +82,13 @@
     , "pixel_domain": "HR"
     , "pixel_criterion": "l1"
     , "feature_domain": "HR"
+    , "feature_model_arch": "Inception_192" //"SegNetAE" //"vgg19","Inception_64","Inception_192","Inception_768","Inception_2048"
     , "feature_criterion": "l1"
     , "gan_type": "vanilla"
     , "D_update_ratio": 1
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 1e-2
+    , "pixel_weight": 0
     , "feature_weight": 0 //1
     , "FID_weight": 5e-4
 //    , "gan_weight": 5e-3

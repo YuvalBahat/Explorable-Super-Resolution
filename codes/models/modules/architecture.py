@@ -792,6 +792,12 @@ class VGGFeatureExtractor(nn.Module):
             model.load_state_dict(modified_state_dict)
             model = model.module
             use_input_norm = False # SegNet model expects non-normalized images
+        elif 'Inception' in arch:
+            from FID_Inception.inception import InceptionV3
+            block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[int(arch[len('Inception_'):])]
+            self.features = InceptionV3([block_idx],resize_input=False).to(device)
+            self.use_input_norm = False #Normalization occurs (regardless of "use_input_norm" argument) inside the InceptionV3 module.
+            # model = torchvision.models.__dict__['inception_v3'](pretrained='untrained' not in arch_config)
         elif use_bn:
             model = torchvision.models.__dict__[arch+'_bn'](pretrained='untrained' not in arch_config)
         else:
@@ -800,26 +806,27 @@ class VGGFeatureExtractor(nn.Module):
         if state_dict is not None:
             state_dict = dict(zip([key.replace('module.','') for key in state_dict.keys()],[value for value in state_dict.values()]))
             model.load_state_dict(state_dict,strict=False)
-        model.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
-        arch_config = arch_config.replace('untrained_','').replace('untrained','')
-        if arch_config!='':
-            import sys
-            sys.path.append(os.path.abspath('../../RandomPooling'))
-            from model_modification import Modify_Model
-            saved_config_params = kwargs['saved_config_params'] if 'saved_config_params' in kwargs.keys() else None
-            saving_path = kwargs['saving_path'] if 'saving_path' in kwargs.keys() else None
-            model = Modify_Model(model,arch_config,classification_mode=False,saved_config_params=saved_config_params,saving_path=saving_path)
-        self.use_input_norm = use_input_norm
-        if self.use_input_norm:
-            mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
-            # [0.485-1, 0.456-1, 0.406-1] if input in range [-1,1]
-            std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
-            # [0.229*2, 0.224*2, 0.225*2] if input in range [-1,1]
-            self.register_buffer('mean', mean)
-            self.register_buffer('std', std)
-        #     Moved the next line to appear earlier, before altering the number of layers in the model
-        # self.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
-        self.features = model.features
+        if 'Inception' not in arch:
+            model.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
+            arch_config = arch_config.replace('untrained_','').replace('untrained','')
+            if arch_config!='':
+                import sys
+                sys.path.append(os.path.abspath('../../RandomPooling'))
+                from model_modification import Modify_Model
+                saved_config_params = kwargs['saved_config_params'] if 'saved_config_params' in kwargs.keys() else None
+                saving_path = kwargs['saving_path'] if 'saving_path' in kwargs.keys() else None
+                model = Modify_Model(model,arch_config,classification_mode=False,saved_config_params=saved_config_params,saving_path=saving_path)
+            self.use_input_norm = use_input_norm
+            if self.use_input_norm:
+                mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+                # [0.485-1, 0.456-1, 0.406-1] if input in range [-1,1]
+                std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+                # [0.229*2, 0.224*2, 0.225*2] if input in range [-1,1]
+                self.register_buffer('mean', mean)
+                self.register_buffer('std', std)
+            #     Moved the next line to appear earlier, before altering the number of layers in the model
+            # self.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
+            self.features = model.features
         # No need to BP to variable
         for k, v in self.features.named_parameters():
             v.requires_grad = False
