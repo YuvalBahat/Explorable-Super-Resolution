@@ -1,5 +1,5 @@
 {
-  "name": "ESRGAN_CEM_feature_only" //  please remove "debug_" during training
+  "name": "ESRGAN_CEM_Z3_fromMSE_Adv_only" //  please remove "debug_" during training
   , "use_tb_logger": false
   , "model":"srragan"
   , "scale": 4
@@ -18,7 +18,7 @@
       , "batch_size_per_GPU": 8
       , "batch_size_4_grads_G": 8 //16
       , "batch_size_4_grads_D": 8 //16
-      , "patch_size": 256
+      , "patch_size": 208 //256
       , "use_flip": true
       , "use_rot": true
     }
@@ -33,7 +33,7 @@
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrain_model_G_disabled": "../experiments/debug_002_RRDB_ESRGAN_x4_DIV2K_archived_181211-150404/models/2008_G.pth"
-    //, "pretrained_model_G": "../pretrained_models/SRResNet_bicx4_in3nf64nb16.pth" //,"pretrained_models/RRDB_PSNR_x4.pth"
+    , "pretrained_model_G": "/home/tiras/ybahat/SRGAN/pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_ESRGAN_x4.pth" //,"../pretrained_models/RRDB_PSNR_x4.pth"
 //    , "pretrained_model_D": "../pretrained_models/D_ESRGAN_VGG_x4.pth"
 }
@@ -41,9 +41,9 @@
   , "network_G": {
     "which_model_G": "RRDB_net" // RRDB_net | sr_resnet
     , "CEM_arch": 1
-    , "latent_input": "None" // "all_layers" //"all_layers","first_layer","None"
+    , "latent_input": "first_layer" // "all_layers" //"all_layers","first_layer","None"
     , "latent_input_domain": "HR_downscaled" //"HR_downscaled","HR_rearranged","LR"
-    , "latent_channels": 0 //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
+    , "latent_channels": 3 //,"STD_1dir" //2,"STD_directional","structure_tensor","SVD_structure_tensor"
     , "sigmoid_range_limit": 0
     , "norm_type": null
     , "mode": "CNA"
@@ -55,7 +55,7 @@
     , "group": 1
   }
   , "network_D": {
-    "which_model_D": "discriminator_vgg_128" //,"PatchGAN" //,"discriminator_vgg_128"
+    "which_model_D": "discriminator_vgg_128_nonModified" //,"PatchGAN" //,"discriminator_vgg_128","discriminator_vgg_128_nonModified"
     , "relativistic": 1 // Optionally use a relativistic discriminator (like in ESRGAN), which can be seen as s full-reference loss term (a disadvantage)
     , "decomposed_input": 0 // Feed D with low-frequencies and high-frequencies separately (unsupported)
     , "pre_clipping": 0 // Clip D's input to valid pixels range
@@ -68,7 +68,7 @@
   }
 
   , "train": {
-    "resume": 1
+    "resume": 0
     ,"lr_G": 1e-4
     , "weight_decay_G": 0
     , "beta1_G": 0.9
@@ -87,9 +87,9 @@
     , "D_update_ratio": 1
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
 
-    , "pixel_weight": 0 //1e-2
-    , "feature_weight": 1
-//    , "gan_weight": 5e-3
+//    , "pixel_weight": 0 //1e-2
+//    , "feature_weight": 1
+    , "gan_weight": 5e-3
 //    , "range_weight": 0 //1
     //for wgan-gp
     // , "D_update_ratio": 1

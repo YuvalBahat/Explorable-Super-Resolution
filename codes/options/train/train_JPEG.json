@@ -1,5 +1,5 @@
 {
-  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LR1e-5_GDRatio5_Z1_DpostmultInCatDnk2_SN_fromMSE_AdvOnly" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
+  "name": "nf320nb10_QF5_50_ImageNetDS_DCTnoPad_LR5e-6_GDRatio1_Z1_DpostmultInCatDnk2_SN_fromMSE_AdvOnly" //,"nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss" //"Lean_QF5_50_ImageNetDS" //,
   , "use_tb_logger": false
   , "model":"dncnn"
 //  , "scale": 4
@@ -16,7 +16,7 @@
       , "dataroot_Uncomp": "imagenet/train"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 2 //2 //4
+      , "n_workers": 1 //2 //4
       , "batch_size_per_GPU": 16
       , "batch_size_4_grads_G": 16 // 16
       , "batch_size_4_grads_D": 16 //16
@@ -91,12 +91,12 @@
   }
 
   , "train": {
-    "resume": 0
-    ,"lr_G": 1e-5 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
+    "resume": 1
+    ,"lr_G": 5e-6 //1e-5 //1e-4 #Will be changed to the value in lr_D once D adversarial loss is in use.
     , "weight_decay_G": 0
     , "beta1_G": 0.5 //0.9
     , "beta2_G": 0.9 //None
-    , "lr_D": 1e-5 //1e-4 //1e-5
+    , "lr_D": 5e-6 //1e-5 //1e-4 //1e-5
 //    , "lr_latent": 1e-5
     , "weight_decay_D": 0
     , "beta1_D": 0.5 //0.9 //0.0
