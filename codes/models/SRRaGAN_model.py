@@ -14,6 +14,7 @@ from utils.util import SVD_2_LatentZ
 from Z_optimization import Z_optimizer
 import tqdm
 from utils import util
+from skvideo.measure import niqe
 
 ADDITIONALLY_SAVED_ATTRIBUTES = ['D_verified','verified_D_saved','lr_G','lr_D']
 
@@ -60,8 +61,8 @@ class SRRaGANModel(BaseModel):
         self.netG = networks.define_G(opt,CEM=self.CEM_net,num_latent_channels=self.num_latent_channels)  # G
         self.netG.to(self.device)
         logs_2_keep = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake','D_loss_STD','l_d_real_fake','l_g_highpass','l_g_shift_invariant',
-                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp','l_g_FID',
-                       'l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
+                       'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp','l_g_FID','niqe_val',
+                       'per_pix_STD_val','l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect','post_train_D_diff','G_step_D_gain']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
         if self.is_train:
             if self.latent_input:
@@ -624,7 +625,7 @@ class SRRaGANModel(BaseModel):
 
     def perform_validation(self,data_loader,cur_Z,print_rlt,first_eval,save_images):
         SAVE_IMAGE_COLLAGE = True
-        avg_psnr = []
+        avg_psnr,avg_niqe,avg_GT_niqe,avg_LR_niqe = [],[],[],[]
         idx = 0
         image_collage = []
         if save_images:
@@ -650,12 +651,15 @@ class SRRaGANModel(BaseModel):
             sr_images.append(sr_img)
             gt_img = 255*util.tensor2img(visuals['HR'], out_type=np.float32)  # float32
             avg_psnr.append(util.calculate_psnr(sr_img, gt_img))
+            avg_niqe.append(niqe(np.expand_dims(sr_img[..., 0], 0)))
             if save_images:
                 if SAVE_IMAGE_COLLAGE:
                     margins2crop = ((np.array(sr_img.shape[:2]) - per_image_saved_patch) / 2).astype(np.int32)
                     image_collage[-1].append(np.clip(sr_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
                     if first_eval:  # Save GT HR images
                         GT_image_collage[-1].append(np.clip(gt_img[margins2crop[0]:-margins2crop[0], margins2crop[1]:-margins2crop[1], ...], 0,255).astype(np.uint8))
+                        avg_GT_niqe.append(niqe(np.expand_dims(gt_img[..., 0], 0)))
+                        # avg_LR_niqe.append(niqe(np.expand_dims(255*util.tensor2img(visuals['LR'], out_type=np.float32)[..., 0], 0)))
                 else:
                     # Save SR images for reference
                     img_dir = os.path.join(self.opt['path']['val_images'], img_name)
@@ -665,13 +669,22 @@ class SRRaGANModel(BaseModel):
         if save_images:
             self.generator_changed = False
         avg_psnr = 1 * np.mean(avg_psnr)
+        avg_niqe = 1 * np.mean(avg_niqe)
         if SAVE_IMAGE_COLLAGE and save_images:
             save_img_path = os.path.join(os.path.join(self.opt['path']['val_images']),'{:d}_{}PSNR{:.3f}.png'.format(self.gradient_step_num,
                 ('Z' + str(cur_Z)) if self.opt['network_G']['latent_input'] else '', avg_psnr))
-            util.save_img(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1), save_img_path)
+            self.im_collages.append(np.concatenate([np.concatenate(col, 0) for col in image_collage], 1))
+            util.save_img(self.im_collages[-1], save_img_path)
         if first_eval:  # Save GT HR images
+            # avg_GT_niqe = 1 * np.mean(avg_GT_niqe)
+            # avg_LR_niqe = 1 * np.mean(avg_LR_niqe)
+            # print_rlt['LR_niqe'] = 1 * np.mean(avg_LR_niqe)
+            # self.log_dict['LR_niqe_val'] = [(self.gradient_step_num, print_rlt['LR_niqe'])]
+            print_rlt['GT_niqe'] = 1 * np.mean(avg_GT_niqe)
+            self.log_dict['GT_niqe_val'] = [(self.gradient_step_num, print_rlt['GT_niqe'])]
             util.save_img(np.concatenate([np.concatenate(col, 0) for col in GT_image_collage], 1),os.path.join(os.path.join(self.opt['path']['val_images']), 'GT_HR.png'))
         print_rlt['psnr'] += avg_psnr
+        print_rlt['niqe'] += avg_niqe
         return sr_images
 
     def update_learning_rate(self,cur_step=None):
@@ -729,6 +742,8 @@ class SRRaGANModel(BaseModel):
     def save_log(self):
         dict_2_save = self.log_dict.copy()
         for attr in ADDITIONALLY_SAVED_ATTRIBUTES:
+            if attr not in self.__dict__:
+                continue
             dict_2_save[attr] = getattr(self,attr)
         np.savez(os.path.join(self.log_path,'logs.npz'), ** dict_2_save)
         if self.cri_latent is not None and 'collected_ratios' in self.cri_latent.__dir__():
@@ -757,18 +772,21 @@ class SRRaGANModel(BaseModel):
             for i,file in enumerate(collected_stats.files):
                 self.cri_latent.collected_ratios[i] = deque(collected_stats[file],maxlen=self.cri_latent.collected_ratios[i].maxlen)
 
-    def get_current_visuals(self, need_HR=True,entire_batch=False):
+    def get_current_visuals(self, need_HR=True,entire_batch=False,to_cpu=True):
         out_dict = OrderedDict()
         if entire_batch:
-            out_dict['LR'] = self.var_L.detach().float().cpu()
-            out_dict['SR'] = (self.fake_H[0]+self.fake_H[1] if isinstance(self.fake_H,list) else self.fake_H).detach().float().cpu()
+            out_dict['LR'] = self.var_L.detach().float()
+            out_dict['SR'] = (self.fake_H[0]+self.fake_H[1] if isinstance(self.fake_H,list) else self.fake_H).detach().float()
             if need_HR:
-                out_dict['HR'] = self.var_H.detach().float().cpu()
+                out_dict['HR'] = self.var_H.detach().float()
         else:
-            out_dict['LR'] = self.var_L.detach()[0].float().cpu()
-            out_dict['SR'] = (self.fake_H[0]+self.fake_H[1] if isinstance(self.fake_H,list) else self.fake_H).detach()[0].float().cpu()
+            out_dict['LR'] = self.var_L.detach()[0].float()
+            out_dict['SR'] = (self.fake_H[0]+self.fake_H[1] if isinstance(self.fake_H,list) else self.fake_H).detach()[0].float()
             if need_HR:
-                out_dict['HR'] = self.var_H.detach()[0].float().cpu()
+                out_dict['HR'] = self.var_H.detach()[0].float()
+        if to_cpu:
+            for key in out_dict.keys():
+                out_dict[key] = out_dict[key].cpu()
         return out_dict
 
     def print_network(self):

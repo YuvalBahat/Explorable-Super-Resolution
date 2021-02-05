@@ -135,7 +135,7 @@ def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
             opt['datasets']['train']['batch_size_4_grads_D'] = 1*opt['datasets']['train']['batch_size']
         else:
             assert opt['datasets']['train']['batch_size_4_grads_G']==opt['datasets']['train']['batch_size_4_grads_D']==opt['datasets']['train']['batch_size'] or\
-                   opt['train']['FID_weight'] is None,'Currently not sure how to support multi-batch FID loss calculation'
+                   'FID_weight' not in opt['train'],'Currently not sure how to support multi-batch FID loss calculation'
         while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
                 np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
             opt['datasets']['train']['batch_size'] -= 1

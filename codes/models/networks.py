@@ -112,7 +112,8 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
                           latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
                           num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,DCT_G=DCT_G,norm_input=opt_net['normalize_input'],
                           coordinates_input=opt['scale'] if opt_net['coordinates_input'] else None,avoid_padding=not bool(opt_net['padding']),
-                          residual=opt_net['residual'],low_coeffs_debug=opt['train']['low_DCT_coeffs'] if 'train' in opt else None)
+                          residual=opt_net['residual'],low_coeffs_debug=opt['train']['low_DCT_coeffs'] if 'train' in opt else None,
+                          output_layer='Sigmoid' if (DCT_G and opt_net['residual']) else None)
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -143,8 +144,8 @@ def define_D(opt,CEM=None,**kwargs):
         if 'num_2_strides' in opt_net:
             kwargs['num_2_strides'] = opt_net['num_2_strides']
         netD = arch.Discriminator_VGG_128(in_nc=in_nc, base_nf=opt_net['nf'], nb=opt_net['n_layers'],
-            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,**kwargs)
-    elif which_model == 'discriminator_vgg_128_nonModified':
+            norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'],input_patch_size=input_patch_size,spectral_norm='sn' in opt['train']['gan_type'],**kwargs)
+    elif which_model == 'discriminator_vgg_128_nonModified' and 'sn' not in opt['train']['gan_type']:
         netD = arch.Discriminator_VGG_128_nonModified(in_nc=in_nc, nf=opt_net['nf'])
     elif which_model == 'dis_acd':  # sft-gan, Auxiliary Classifier Discriminator
         netD = sft_arch.ACD_VGG_BN_96()
@@ -159,8 +160,8 @@ def define_D(opt,CEM=None,**kwargs):
     elif which_model == 'discriminator_vgg_192':
         netD = arch.Discriminator_VGG_192(in_nc=in_nc, base_nf=opt_net['nf'], \
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
-    elif which_model == 'discriminator_vgg_128_SN':
-        netD = arch.Discriminator_VGG_128_SN()
+    elif which_model == 'discriminator_vgg_128_SN' or which_model == 'discriminator_vgg_128_nonModified' and 'sn' in opt['train']['gan_type']:
+        netD = arch.Discriminator_VGG_128_SN(in_nc=in_nc,nf=opt_net['nf'])
     elif 'DnCNN_D' in which_model:
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
