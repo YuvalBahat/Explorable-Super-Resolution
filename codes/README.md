@@ -38,7 +38,7 @@ Code architecture is based on an older version of [BasicSR](https://github.com/j
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
 1. *Train or download a pre-trained explorable SR model:*  
-Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. 
+Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. The corresponding [pre-trained discriminator is available here](https://drive.google.com/file/d/1VsDX6dhQyszW1Lq3wUp5I19mBhuKg9O2/view?usp=sharing), in case you want to fine-tune the model.
 1. *(Optional) Download a pre-trained ESRGAN model:*  
 Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
 1. *Update paths:*  
