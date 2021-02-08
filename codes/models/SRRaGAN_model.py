@@ -285,7 +285,11 @@ class SRRaGANModel(BaseModel):
             if 'Z' in data.keys():
                 cur_Z = data['Z']
             else:
-                cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
+                spatially_uniform_sampled_z = self.cri_latent is not None
+                if spatially_uniform_sampled_z:
+                    cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels, 1, 1])
+                else:
+                    cur_Z = torch.rand([self.var_L.size(dim=0), self.num_latent_channels]+[self.Z_size_factor*val for val in list(self.var_L.size()[2:])]).type(self.var_L.type())
                 if self.opt['network_G']['latent_channels'] in ['SVD_structure_tensor','SVDinNormedOut_structure_tensor']:
                     cur_Z[:,-1,...] = 2*np.pi*cur_Z[:,-1,...]
                     self.SVD = {'theta':cur_Z[:,-1,...],'lambda0_ratio':1*cur_Z[:,0,...],'lambda1_ratio':1*cur_Z[:,1,...]}
