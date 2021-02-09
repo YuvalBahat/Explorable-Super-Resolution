@@ -61,7 +61,7 @@
     , "norm_type": "batch"
     , "act_type": "leakyrelu"
     , "mode": "CNA"
-    , "n_layers": 6
+    , "n_layers": 10
     , "nf": 64
     , "in_nc": 3
   }

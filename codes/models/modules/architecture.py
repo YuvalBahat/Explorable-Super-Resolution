@@ -511,7 +511,7 @@ class Discriminator_VGG_128(nn.Module):
         self.features = B.sequential(*([conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,conv9][:nb]))
 
         self.last_FC_layers = self.num_2_strides==5 #Replacing the FC layers with convolutions, which means using a patch discriminator:
-        self.last_FC_layers = False
+        # self.last_FC_layers = False
         # classifier
         # FC_end_patch_size = input_patch_size//(2**self.num_2_strides)
         if self.last_FC_layers:
