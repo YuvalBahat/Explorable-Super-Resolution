@@ -8,7 +8,6 @@ from scipy.ndimage.morphology import binary_opening
 from sklearn.feature_extraction.image import extract_patches_2d
 from utils.util import IndexingHelper, Return_Translated_SubImage, Return_Interpolated_SubImage
 from cv2 import dilate
-import models.modules.architecture as arch
 
 class Optimizable_Temperature(torch.nn.Module):
     def __init__(self,initial_temperature=None):
@@ -540,8 +539,6 @@ class Z_optimizer():
             elif 'limited' in objective:
                 self.initial_image = 1*model.output_image.detach()
                 self.rmse_weight = data['rmse_weight']
-            # elif 'recurrence' in objective:
-            #     self.netD = arch.
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
         else:
             self.optimizer = existing_optimizer
