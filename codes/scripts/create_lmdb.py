@@ -10,16 +10,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
 # configurations
-dataset_root_path = '/home/ybahat/Datasets' if gethostname() == 'ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets'
-img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_HR/*')  # glob matching pattern
-lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_HR.lmdb')  # must end with .lmdb
-# img_folder = os.path.join(dataset_root_path,'imagenet/train')  # glob matching pattern
-# lmdb_save_path = os.path.join(dataset_root_path,'imagenet/train/imagenet_train_HR.lmdb')  # must end with .lmdb
+dataset_root_path = '' #Path to datasets folder (where DIV2K_train folder is located)
+HR_images = True
+Scale = 4
+suffix = ('HR' if HR_images else 'bicLR',Scale)
+img_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_%sx%d/*'%suffix)  # glob matching pattern
+lmdb_save_path = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_%sx%d.lmdb'%suffix)  # must end with .lmdb
 
 img_list = sorted(glob.glob(img_folder))
-# img_list = []
-# for dir in os.listdir(img_folder):
-#     img_list += [os.path.join(img_folder,dir,file) for file in os.listdir(os.path.join(img_folder,dir)) if any([suffix in file for suffix in ['.png','.jpg','.JPEG','.bmp']])]
 dataset = []
 data_size = 0
 
@@ -40,7 +38,6 @@ with env.begin(write=True) as txn:  # txn is a Transaction object
         pbar.update('Write {}'.format(v))
         base_name = os.path.splitext(os.path.basename(v))[0]
         key = base_name.encode('ascii')
-        # data = dataset[i]
         data = cv2.imread(v, cv2.IMREAD_UNCHANGED)
         if data.ndim == 2:
             H, W = data.shape

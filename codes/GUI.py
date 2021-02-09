@@ -31,7 +31,7 @@ from data.util import rgb2ycbcr
 from JPEG_module.JPEG import JPEG
 from skimage.color import rgb2hsv,hsv2rgb
 from PIL import Image as PIL_Image
-from jpeg2dct.numpy import load as jpeg_load
+# from jpeg2dct.numpy import load as jpeg_load
 
 # General parameters:
 Z_HISTORY_LENGTH = 10

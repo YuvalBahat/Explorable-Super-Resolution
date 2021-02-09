@@ -11,7 +11,7 @@ from utils.progress_bar import ProgressBar
 
 def main():
     """A multi-thread tool to crop sub imags."""
-    dataset_root_path = '/home/ybahat/Datasets' if gethostname()=='ybahat-System-Product-Name' else '/home/tiras/datasets' if 'tiras' in os.getcwd() else '/media/ybahat/data/Datasets'
+    dataset_root_path = '' #Path to datasets folder (where DIV2K_train folder is located)
     input_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_HR')
     save_folder = os.path.join(dataset_root_path,'DIV2K_train/DIV2K_train_sub_HR')
     n_thread = 20

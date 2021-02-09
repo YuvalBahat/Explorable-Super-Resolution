@@ -7,7 +7,7 @@
   , "range": [0,1]
 
   , "datasets": {
-    "path": "path_to_datasets_root_dir",
+    // "path": "path_to_datasets_root_dir",
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
