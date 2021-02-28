@@ -7,7 +7,6 @@
   , "range": [0,1]
 
   , "datasets": {
-    // "path": "path_to_datasets_root_dir",
     "train": {
       "name": "DIV2K"
       , "mode": "LRHR"
@@ -32,6 +31,7 @@
   }
 
   , "path": {
+    "datasets": "path_to_datasets_root_dir",
     "root": "/media/ybahat/data/projects/SRGAN"
     , "pretrained_model_G": "../pretrained_models/RRDB_ESRGAN_x4.pth" // Path to weights initialization model of the same architecture (but the Z input). For example, ESRGAN
 }
