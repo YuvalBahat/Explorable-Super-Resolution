@@ -143,7 +143,7 @@ class BaseModel():
         network.load_state_dict(loaded_state_dict, strict=strict)
 
     def Set_Require_Grad_Status(self,network,status):
-        return
+        # return
         for p in network.parameters():
             p.requires_grad = status
 

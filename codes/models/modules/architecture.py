@@ -108,7 +108,8 @@ class Flatten(nn.Module):
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64,num_kerneled_layers=None, norm_type='batch', act_type='leakyrelu',
                  latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,
-                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None,residual=None,low_coeffs_debug=None):
+                 pooling_no_FC=False,DCT_G=None,norm_input=None,coordinates_input=None,avoid_padding=None,residual=None,low_coeffs_debug=None,
+                 output_layer=None):
 
         BALANCED_NUM_PARAMETERS = True # If True, increasing the number of channels for layers with a 1x1 kernel, to maintain a similar number of parameters.
         self.HIGH_FREQS_ONLY = False
@@ -119,6 +120,7 @@ class DnCNN(nn.Module):
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
+        assert output_layer in ['Sigmoid','ReLU',None]
         if num_kerneled_layers is None:
             num_kerneled_layers = 1*depth
         else:
@@ -146,7 +148,7 @@ class DnCNN(nn.Module):
             layer_num = 0
             self.pooling_no_FC = pooling_no_FC
         else:
-            assert DCT_G or residual, "Non-residual generator unsupported for operating in pixel domain yet"
+            assert DCT_G or residual or output_layer=='ReLU', "Non-residual generator unsupported for operating in pixel domain yet"
             spectral_norm = False
         self.chroma_generator = chroma_generator
         if chroma_generator and DCT_G:
@@ -220,15 +222,19 @@ class DnCNN(nn.Module):
                 if spectral_norm:
                     layers[-1] = SN.spectral_norm(layers[-1])
                 # layers.append(nn.Linear(in_features=64, out_features=1))
-        elif self.DCT_generator and self.residual:
+        # elif self.DCT_generator and self.residual:
+        if output_layer=='Sigmoid':
             layers.append(nn.Sigmoid())
+        elif output_layer=='ReLU':
+            layers.append(nn.ReLU())
         self.DCT_coeffs_mask = None
         if low_coeffs_debug:
             self.DCT_coeffs_mask = (torch.sum(torch.stack(torch.meshgrid([torch.arange(8),torch.arange(8)]),-1)**2,-1)<=low_coeffs_debug**2).type(next(layers[0].parameters()).dtype).view(1,64,1,1).cuda()
         self.dncnn = nn.ModuleList(layers)
 
     def forward(self, x):
-        if not self.discriminator_net and self.margins and not self.training:
+        # if not self.discriminator_net and self.margins and not self.training:
+        if self.margins and not self.training:
             x = F.pad(x,4*[self.margins],mode='replicate')
         latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
         if self.discriminator_net and self.DCT_coeffs_mask is not None:
@@ -564,9 +570,10 @@ class Discriminator_VGG_128_nonModified(nn.Module):
 
 # VGG style Discriminator with input size 128*128
 class Discriminator_VGG_128(nn.Module):
-    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=10):
+    def __init__(self, in_nc, base_nf, norm_type='batch', act_type='leakyrelu', mode='CNA',input_patch_size=128,num_2_strides=5,nb=10,spectral_norm=False):
         super(Discriminator_VGG_128, self).__init__()
         assert num_2_strides<=5,'Can be modified by adding more stridable layers, if needed.'
+        assert not spectral_norm,'Eventually not supported'
         self.num_2_strides = 1*num_2_strides
         # features
         # hxw, c
@@ -605,7 +612,16 @@ class Discriminator_VGG_128(nn.Module):
         FC_end_patch_size = np.ceil((FC_end_patch_size-1)/(2 if num_2_strides>0 else 1))
         num_2_strides -= 1
         # 4, 512
-        self.features = B.sequential(*([conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,conv9][:nb]))
+        blocks_list = [conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,conv9][:nb]
+        if spectral_norm:
+            for idx,block in enumerate(blocks_list):
+                new_block = []
+                for l in block.children():
+                    if isinstance(l,nn.Conv2d):
+                        l = SN.spectral_norm(l)
+                    new_block.append(l)
+                blocks_list[idx] = nn.Sequential(*(1*new_block))
+        self.features = B.sequential(*blocks_list)
 
         self.last_FC_layers = self.num_2_strides==5 #Replacing the FC layers with convolutions, which means using a patch discriminator:
         self.last_FC_layers = False
@@ -613,12 +629,28 @@ class Discriminator_VGG_128(nn.Module):
         # FC_end_patch_size = input_patch_size//(2**self.num_2_strides)
         if self.last_FC_layers:
             self.classifier = nn.Sequential(nn.Linear(base_nf*8 * int(FC_end_patch_size)**2, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
+            if spectral_norm:
+                # for idx,block in enumerate(self.classifier.children()):
+                new_classifier = []
+                for l in self.classifier.children():
+                    if isinstance(l, nn.Linear):
+                        l = SN.spectral_norm(l)
+                    new_classifier.append(l)
+                self.classifier = nn.Sequential(*(1 * new_classifier))
         else:
             # num_feature_channels = base_nf*8
             num_feature_channels = [l for l in self.features.children()][-2].num_features
             pseudo_FC_conv0 = B.conv_block(num_feature_channels,min(100,num_feature_channels),kernel_size=8,stride=1,norm_type=norm_type,act_type=act_type, mode=mode,pad_type=None)
             pseudo_FC_conv1 = B.conv_block(min(100,num_feature_channels),1,kernel_size=1,stride=1,norm_type=norm_type,act_type=act_type, mode=mode)
             self.classifier = nn.Sequential(pseudo_FC_conv0, nn.LeakyReLU(0.2, False),pseudo_FC_conv1) # Changed the LeakyRelu inplace arg to False here, because it caused a bug for some reason.
+        # if spectral_norm:
+        #     # for idx,block in enumerate(self.classifier.children()):
+        #     new_classifier = []
+        #     for l in self.classifier.children():
+        #         if isinstance(l,nn.Conv2d):
+        #             l = SN.spectral_norm(l)
+        #         new_classifier.append(l)
+        #     self.classifier = nn.Sequential(*(1*new_classifier))
 
     def forward(self, x):
         x = self.features(x)
@@ -630,31 +662,31 @@ class Discriminator_VGG_128(nn.Module):
 
 # VGG style Discriminator with input size 128*128, Spectral Normalization
 class Discriminator_VGG_128_SN(nn.Module):
-    def __init__(self):
+    def __init__(self,in_nc,nf):
         super(Discriminator_VGG_128_SN, self).__init__()
         # features
         # hxw, c
         # 128, 64
         self.lrelu = nn.LeakyReLU(0.2, True)
 
-        self.conv0 = SN.spectral_norm(nn.Conv2d(3, 64, 3, 1, 1))
-        self.conv1 = SN.spectral_norm(nn.Conv2d(64, 64, 4, 2, 1))
+        self.conv0 = SN.spectral_norm(nn.Conv2d(in_nc, nf, 3, 1, 1))
+        self.conv1 = SN.spectral_norm(nn.Conv2d(nf, nf, 4, 2, 1))
         # 64, 64
-        self.conv2 = SN.spectral_norm(nn.Conv2d(64, 128, 3, 1, 1))
-        self.conv3 = SN.spectral_norm(nn.Conv2d(128, 128, 4, 2, 1))
+        self.conv2 = SN.spectral_norm(nn.Conv2d(nf, 2*nf, 3, 1, 1))
+        self.conv3 = SN.spectral_norm(nn.Conv2d(2*nf, 2*nf, 4, 2, 1))
         # 32, 128
-        self.conv4 = SN.spectral_norm(nn.Conv2d(128, 256, 3, 1, 1))
-        self.conv5 = SN.spectral_norm(nn.Conv2d(256, 256, 4, 2, 1))
+        self.conv4 = SN.spectral_norm(nn.Conv2d(2*nf, 4*nf, 3, 1, 1))
+        self.conv5 = SN.spectral_norm(nn.Conv2d(4*nf, 4*nf, 4, 2, 1))
         # 16, 256
-        self.conv6 = SN.spectral_norm(nn.Conv2d(256, 512, 3, 1, 1))
-        self.conv7 = SN.spectral_norm(nn.Conv2d(512, 512, 4, 2, 1))
+        self.conv6 = SN.spectral_norm(nn.Conv2d(4*nf, 8*nf, 3, 1, 1))
+        self.conv7 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 4, 2, 1))
         # 8, 512
-        self.conv8 = SN.spectral_norm(nn.Conv2d(512, 512, 3, 1, 1))
-        self.conv9 = SN.spectral_norm(nn.Conv2d(512, 512, 4, 2, 1))
+        self.conv8 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 3, 1, 1))
+        self.conv9 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 4, 2, 1))
         # 4, 512
 
         # classifier
-        self.linear0 = SN.spectral_norm(nn.Linear(512 * 4 * 4, 100))
+        self.linear0 = SN.spectral_norm(nn.Linear(8*nf * 4 * 4, 100))
         self.linear1 = SN.spectral_norm(nn.Linear(100, 1))
 
     def forward(self, x):

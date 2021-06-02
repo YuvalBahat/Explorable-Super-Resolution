@@ -155,8 +155,9 @@ def main():
                                  range(len(cur_train_results['SR']))],0), np.concatenate([util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
                                  range(len(cur_train_results['SR']))],0)), 1), 0, 255).astype(np.uint8), save_img_path)
                     Z_latent = [0]+([-1,1] if (opt['network_G']['latent_input'] and model.num_latent_channels>0) else [])
-                    print_rlt['psnr'] = 0
+                    print_rlt['psnr'],print_rlt['niqe'] = 0,0
                     # model.toggle_running_avg_weight(True)
+                    model.im_collages = []
                     for cur_Z in Z_latent:
                         sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_HR,save_images=True)
                         if logger.use_tb_logger:
@@ -166,7 +167,13 @@ def main():
                     util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
                                          saving_freq=opt['train']['val_save_freq'],name_pattern='^(\d)+'+('_Z' if len(Z_latent)>1 else '')+'.*PSNR.*.png$')
                     # model.toggle_running_avg_weight(False)
-                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']/len(Z_latent)))
+                    print_rlt['psnr'] /= len(Z_latent)
+                    print_rlt['niqe'] /= len(Z_latent)
+                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
+                    model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
+                    if len(Z_latent)>1:
+                        print_rlt['per_pix_STD'] = np.mean(np.std(np.stack(model.im_collages, 0), 0))
+                        model.log_dict['per_pix_STD_val'].append((model.gradient_step_num,print_rlt['per_pix_STD']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
