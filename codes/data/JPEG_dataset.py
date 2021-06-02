@@ -84,14 +84,22 @@ class JpegDataset(data.Dataset):
 
         # get Uncomp image
         Uncomp_path = self.paths_Uncomp[index]
-        img_Uncomp = util.read_img(self.Uncomp_env, Uncomp_path)
+        try:
+            img_Uncomp = util.read_img(self.Uncomp_env, Uncomp_path)
+        except:
+            print('Failed attempting to read image %s'%(Uncomp_path))
         # modcrop in the validation / test phase
         if self.opt['phase'] != 'train':
             img_Uncomp = util.modcrop(img_Uncomp, self.block_size)
         if img_Uncomp.shape[2]==1: #Grayscale image:
             img_Uncomp = np.repeat(img_Uncomp,3,axis=2)
         # change color space if necessary
-        img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if self.chroma_mode else 'y', [img_Uncomp])[0]
+        try:
+            img_Uncomp = 255*util.channel_convert(img_Uncomp.shape[2], 'ycbcr' if self.chroma_mode else 'y', [img_Uncomp])[0]
+        except Exception as Err:
+            print('The following error occurred when channel converting image %s:'%(Uncomp_path))
+            print(Err)
+            raise
         if self.chroma_mode and img_Uncomp.shape[2]==1: #For the case of loading a grayscale image in JPEG format during chroma training:
             img_Uncomp = np.tile(img_Uncomp,[1,1,3])
         #     img_Uncomp = util.channel_convert(img_Uncomp.shape[2], 'ycbcr', [img_Uncomp])[0]
