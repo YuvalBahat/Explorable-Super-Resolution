@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 FACTORIZE_CHROMA_HIGH_FREQS = True # When True, Padding chroma Q-table with edge values to multiply the reconstructed high frequencies, allowing for more energy in these frequencies,
 # due to the Sigmoid that limits the generator's output range.
+HIGH_FREQS_ONLY = False #for debug
 
 LUMINANCE_QUANTIZATION_TABLE = np.array((
     (16, 11, 10, 16, 24, 40, 51, 61),
@@ -30,24 +31,26 @@ CHROMINANCE_QUANTIZATION_TABLE = np.array((
 
 
 class JPEG(nn.Module):
-    def __init__(self,compress,downsample_and_quantize=None,chroma_mode=False,block_size=8,downsample_only=False):
+    def __init__(self,compress,downsample_or_quantize=None,chroma_mode=False,block_size=8):
         # Performing JPEG-like DCT transformation when compress, or inverse DCT transform when not compress.
         #
         # For compress: Expecting input torch tensor of size [batch_size,num_channels,H,W], where currently only supporting num_channels==1. Returning a tensor of size [batch_size,64,H/8,W/8],
         # where dimension 1 corresponds to the DCT coefficients.
         # For not compress (extract): Expected input torch tensor size corresponds to size of output tensor of compress, and vice versa.
         # H and W should currently both be integer multiplications of 8.
-        # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_and_quantize=True
+        # downsample_only - For my experiment validating our chroma downsampling approximation. Should be used for chroma only, and by passing downsample_or_quantize=True
 
         super(JPEG, self).__init__()
-        assert (compress ^ (downsample_and_quantize is None)),'Quantize argument should be passed iff in compress mode'
+        if HIGH_FREQS_ONLY:
+            print('WARNING: JPEG QUANTIZATION APPLIES TO HIGH FREQUENCIES ONLY (FOR DEEBUGGING)')
         assert FACTORIZE_CHROMA_HIGH_FREQS,'No longer supproting the other option, after dividing the Y channel high freq. coeffs. as well, as I think it would ease the generator''s mapping.'
-        if downsample_only:
-            assert chroma_mode and downsample_and_quantize
-            downsample_and_quantize = True
+        assert (compress ^ (downsample_or_quantize is None)),'Quantize argument should be passed iff in compress mode'
+        if downsample_or_quantize is not None:
+            assert downsample_or_quantize in ['downsample_only',True,False]
+        if downsample_or_quantize=='downsample_only':
+            assert chroma_mode# and downsample_or_quantize
         self.compress = compress # Compression or extraction module
-        self.downsample_and_quantize = downsample_and_quantize
-        self.downsample_only = downsample_only
+        self.downsample_or_quantize = downsample_or_quantize
         self.device = 'cuda'
         self.block_size = block_size
         self.chroma_mode = chroma_mode
@@ -59,10 +62,8 @@ class JPEG(nn.Module):
                 self.synthetic_padded_Q_table = torch.cat([self.process_Q_table(np.pad(LUMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
                     self.process_Q_table(np.pad(CHROMINANCE_QUANTIZATION_TABLE,((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
 
-    #     For DCT:
         self.DCT_freq_grid = (np.pi * torch.arange(block_size).type(torch.FloatTensor) /2/block_size).view(1, 1, 1, 1, 1,block_size).to(self.device)
         self.iDCT_freq_grid = (np.pi * (torch.arange(block_size).type(torch.FloatTensor)+0.5) / block_size).view(1, 1, 1, 1, 1, block_size).to(self.device)
-        # self.grid_factors = 2*torch.cat([1/np.sqrt(4*8)*torch.ones([1]),1/np.sqrt(2*8)*torch.ones([7])]).type(torch.FloatTensor).view(1,1,1,1,8).to(self.device)
         self.grid_factors = 2*torch.cat([1/np.sqrt(4*block_size)*torch.ones([1]),1/np.sqrt(2*block_size)*torch.ones([block_size-1])]).type(torch.FloatTensor).view(1,1,1,1,block_size).to(self.device)
         self.DCT_arange = torch.arange(block_size).type(torch.FloatTensor).to(self.device)
         self.iDCT_arange = torch.arange(1,block_size).type(torch.FloatTensor).to(self.device)
@@ -76,9 +77,9 @@ class JPEG(nn.Module):
             condition = (QF_or_table < 50).to(self.device).type(self.QF.type())
             self.factor = (condition*(5000 / QF_or_table) + (1-condition)*(200 - 2 * QF_or_table))
             self.factor = self.factor.view([-1,1,1,1,1]+([1] if self.chroma_mode else [])).type(self.synthetic_Q_table.dtype).to(self.device)
-            self.Q_table = torch.clamp((self.factor * self.synthetic_Q_table).round(),0,255)
+            self.Q_table = torch.clamp((self.factor * self.synthetic_Q_table).round(),1,255)
             if self.chroma_mode and FACTORIZE_CHROMA_HIGH_FREQS:
-                self.padded_Q_table = torch.clamp((self.factor * self.synthetic_padded_Q_table).round(),0,255)
+                self.padded_Q_table = torch.clamp((self.factor * self.synthetic_padded_Q_table).round(),1,255)
         else:
             tables_ratio = np.mean(LUMINANCE_QUANTIZATION_TABLE/QF_or_table[0])
             self.QF = 50*tables_ratio if tables_ratio<1 else 50*np.mean((2*LUMINANCE_QUANTIZATION_TABLE-QF_or_table[0])/LUMINANCE_QUANTIZATION_TABLE)
@@ -89,6 +90,9 @@ class JPEG(nn.Module):
                     self.padded_Q_table = torch.cat([self.process_Q_table(np.pad(QF_or_table[0],((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1),
                         self.process_Q_table(np.pad(QF_or_table[1],((0,self.block_size-8),(0,self.block_size-8)),'edge')).unsqueeze(1).repeat([1,2,1,1,1,1])],1)
 
+    def Multiply_By_Q_table(self,input):
+        input_shape = input.shape
+        return (input.view(input_shape[0],8,8,input_shape[2],input_shape[3])*self.Q_table).view(input_shape)
 
     def Image_2_Blocks(self,image):
         image_shape = list(image.size())
@@ -136,11 +140,11 @@ class JPEG(nn.Module):
                 output = output.view([input.size(0),3,self.block_size,self.block_size,output.size(3),output.size(4)])
                 output = output/self.padded_Q_table
                 output = output.view([input.size(0),3,self.block_size//8,8,self.block_size//8,8,output.size(4),output.size(5)])
-                if self.downsample_and_quantize:
+                if self.downsample_or_quantize:
                     # Downsampling is done by wiping out DCT coefficients corresponding to higher frequencies (8 and up) in the chroma channels.
                     # Not quantizing y channel coefficients in this case. I'm going to discard these chroma high-frequency coefficients later anyway,
                     # so no need to wipe them out here.
-                    if not self.downsample_only:
+                    if self.downsample_or_quantize!='downsample_only':
                         output[:, 1:, 0, :, 0, :, :, :] = torch.round(output[:, 1:, 0, :, 0, :, :, :])
                     output = torch.cat([output[:,0,...].contiguous().view(output.size(0),self.block_size**2,output.size(6),output.size(7)),
                                           output[:,1,0,:,0,...].contiguous().view(output.size(0),8**2,output.size(6),output.size(7)),
@@ -150,8 +154,12 @@ class JPEG(nn.Module):
                     output = torch.cat([output[:,0,...],output[:,1,...],output[:,2,...]],1)
             else:
                 output = output/self.Q_table
-                if self.downsample_and_quantize:
-                    output = torch.round(output)
+                if self.downsample_or_quantize:
+                    if HIGH_FREQS_ONLY:
+                        output[:,:,-1,...] = torch.round(output[:,:,-1,...])
+                        output[:, -1, ...] = torch.round(output[:, -1, ...])
+                    else:
+                        output = torch.round(output)
                 output = output.contiguous().view([input.size(0),self.block_size**2,input.size(2)//self.block_size,input.size(3)//self.block_size])
         else:# Extraction: Input is DCT blocks
             if self.chroma_mode:
@@ -161,6 +169,10 @@ class JPEG(nn.Module):
                         output = input.view([input.size(0),2,self.block_size,self.block_size, input.size(2), input.size(3)])
                     else:
                         output = input.view([input.size(0),2, self.block_size//8,8,self.block_size//8,8, input.size(2), input.size(3)])
+                elif input.size(1)==2*8**2: #Input is the 2 full chroma channels, hen not reconstructing the chroma's high frequencies:
+                    num_channels = 2
+                    if FACTORIZE_CHROMA_HIGH_FREQS:
+                        output = F.pad(input.view([input.size(0),2,8,8, input.size(2), input.size(3)]),[0,0,0,0,0,8,0,8])
                 elif input.size(1)==(self.block_size**2+2*8**2): #Input is the full Y channel and low frequencies of the chroma channels (the input to the generator):
                     num_channels = 3
                     chroma_padding_arg = [0,0,0,0,0,0,0,self.block_size//8-1,0,0,0,self.block_size//8-1]

@@ -238,9 +238,9 @@ class GANLoss(nn.Module):
         else:
             return torch.empty_like(input).fill_(self.fake_label_val)
 
-    def forward(self, input, target_is_real,hinge=False):
-        if hinge:
-            input = torch.clamp_max(input,1) if target_is_real else torch.clamp_min(input,-1)
+    def forward(self, input, target_is_real,hinge_threshold=None):
+        if hinge_threshold is not None:
+            input = torch.clamp_max(input,hinge_threshold) if target_is_real else torch.clamp_min(input,-1*hinge_threshold)
         target_label = self.get_target_label(input, target_is_real)
         loss = self.loss(input, target_label)
         return loss
@@ -252,9 +252,9 @@ def CreateRangeLoss(legit_range,chroma_mode=False):
     def RangeLoss(x):
         # Returning the mean deviation from the legitimate range, across all channels and pixels:
         if chroma_mode:
-            x = Tensor_YCbCR2RGB(x)
-            # x = (ycbcr2rgb_mat.type(x.type())*x.unsqueeze(1)).sum(2)+ torch.tensor([-222.921, 135.576, -276.836]).type(x.type()).view(1,3,1,1)/255
-        return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
+            return torch.max(torch.max(x[:,1:,...] - legit_range[1], other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0] - x[:,1:,...], other=torch.zeros(size=[1]).type(dtype))).mean()
+        else:
+            return torch.max(torch.max(x-legit_range[1],other=torch.zeros(size=[1]).type(dtype)),other=torch.max(legit_range[0]-x,other=torch.zeros(size=[1]).type(dtype))).mean()
     return RangeLoss
 
 class GradientPenaltyLoss(nn.Module):

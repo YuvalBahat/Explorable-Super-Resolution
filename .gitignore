@@ -38,3 +38,6 @@ data_samples/samples_result
 /codes/GT.png
 /.idea/
 /codes/scripts/temp_crop_im_margins.py
+/codes/Est_quantization_errors_0iters_95Kiters.png
+/GUI_outputs/
+/results/

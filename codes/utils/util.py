@@ -10,6 +10,7 @@ from skimage.transform import resize
 from scipy.signal import convolve2d
 import torch
 import torch.nn as nn
+import re
 
 ####################
 # miscellaneous
@@ -70,6 +71,125 @@ def SVD_Symmetric_2x2(a,d,b):
     lambda1 = torch.sqrt((S_1 - S_2) / 2+EPSILON).type(torch.cuda.FloatTensor)
     return lambda0,lambda1,theta
 
+class Counter:
+    def __init__(self,max_val):
+        self.max_val = max_val
+        self.counter = 0
+
+    def advance(self):
+        self.counter = (self.counter+1)%self.max_val
+
+def prune_old_files(cur_step, folder, saving_freq, name_pattern):
+    assert name_pattern[:len('^(\d)+')]=='^(\d)+'
+    int_returning_name_pattern = '^(\d)+(?='+name_pattern[len('^(\d)+'):]+')'
+    val_images = sorted([im_file for im_file in os.listdir(folder) if re.search(name_pattern,im_file) is not None],key=lambda x:int(re.search(int_returning_name_pattern,x).group(0)))
+    corresponding_steps = [int(re.search(int_returning_name_pattern,im_file).group(0)) for im_file in val_images]
+    old_threshold = max(0,cur_step-2*saving_freq)
+    intermediate_threshold = max(0,cur_step-saving_freq)
+    filled_val,del_ind,prev_marker = None,[],0
+    phase_ind,phases,files_per_freq = 0,[old_threshold,intermediate_threshold],[1,5]
+    for i,val in enumerate(corresponding_steps):
+        if val>phases[phase_ind]:
+            if val>phases[-1]:
+                del_ind += [False for f in range(len(val_images)-len(del_ind))]
+                break
+            else:
+                phase_ind += 1
+                prev_marker = 0
+        cur_marker = val//(saving_freq//files_per_freq[phase_ind])
+        if cur_marker>prev_marker:
+            filled_val = None
+            prev_marker = 1*cur_marker
+        if filled_val is not None and val!=filled_val:
+            del_ind.append(True)
+        else:
+            del_ind.append(False)
+            filled_val = 1*val
+    files2delete = [val_images[i] for i in range(len(val_images)) if del_ind[i]]
+    for file in files2delete:
+        os.remove(os.path.join(folder,file))
+
+
+class G_D_updates_controller:
+    def __init__(self,intervals_values):
+        self.DG_steps_ratio = 0
+        self.steps_since_D = 0
+        self.steps_since_G = 0
+        self.force_D_step = False
+        self.last_G_step_interval = self.last_D_step_interval = 0
+
+        if isinstance(intervals_values,list):
+            def interval_func(value):
+                a = (intervals_values[0][1]-intervals_values[0][0])/(intervals_values[1][1]-intervals_values[1][0])
+                return np.maximum(np.min(intervals_values[0]),np.minimum(np.max(intervals_values[0]),a*(value-intervals_values[1][1])+intervals_values[0][1]))
+        else:
+            def interval_func(value):
+                return intervals_values
+
+            self.DG_steps_ratio = intervals_values
+
+        self.interval_func = interval_func
+
+    def Step_query(self,GnotD):
+        if GnotD: #G:
+            self.steps_since_G += 1
+            if self.steps_since_G>=self.DG_steps_ratio:
+                # self.steps_since_G = 0
+                return True
+        else: #D:
+            self.steps_since_D += 1
+            if self.steps_since_D>=-1*self.DG_steps_ratio or self.force_D_step:
+                return True
+        return False
+
+    def Step_performed(self,GnotD):
+        if GnotD: #G:
+            self.last_G_step_interval = 1*self.steps_since_G
+            self.steps_since_G = 0
+        else:  # D:
+            self.force_D_step = False
+            self.last_D_step_interval = 1*self.steps_since_D
+            self.steps_since_D = 0
+
+    def Update_ratio(self,value):
+        self.DG_steps_ratio = self.interval_func(value)
+
+    def Query_update_ratio(self):
+        return -1*self.last_D_step_interval if self.last_D_step_interval>self.last_G_step_interval else self.last_G_step_interval
+        # if (self.DG_steps_ratio<0 and self.steps_since_G>-1*self.DG_steps_ratio) or (self.DG_steps_ratio>0 and self.steps_since_D>self.DG_steps_ratio):
+        #     if self.steps_since_G>self.steps_since_D:
+        #         return -1*self.steps_since_G
+        #     else:
+        #         return self.steps_since_D
+        # else:
+        #     return self.DG_steps_ratio
+
+    def Force_D_step(self):
+        self.force_D_step = True
+
+def Varying_weight(step_range, weight_range, log_scale=True):
+        # step_range:   [beginning,end] of varying weight interval
+        # weight_range: [weight@interval beginning, weight@interval end, post-interval weight]
+        # log_scale:    If True, vary weight across interval according to log-scale of interval
+        def cur_weight(cur_step):
+            if cur_step<step_range[0]:
+                return weight_range[0]
+            elif cur_step>step_range[1]:
+                return weight_range[-1]
+            else:
+                if log_scale:
+                    return float(np.exp((cur_step - step_range[0]) / np.diff(step_range) * np.diff(np.log(weight_range[:2])) + np.log(weight_range[0])))
+                else:
+                    return float((cur_step - step_range[0]) / np.diff(step_range) * np.diff(weight_range[:2]) + weight_range[0])
+
+        return cur_weight
+
+def Min_Outliers_Threshold(samples,labels):
+    assert torch.all(torch.unique(labels)==torch.tensor([-1,1]).type(labels.type()))
+    order = torch.argsort(samples)
+    pos_outliers = (labels[order]==1).cumsum(0)
+    neg_outliers = (labels[order.flip(0)]==-1).cumsum(0).flip(0)
+    return samples[order][(pos_outliers-neg_outliers).abs().argmin()]
 ####################
 # image convert
 ####################
@@ -281,7 +401,12 @@ def convert_batchNorm_2_layerNorm(model,input):
         else:
             module_layers.append(l)
             input = l(input)
-    return nn.Sequential(*module_layers),input
+    if isinstance(model,nn.Sequential):
+        return nn.Sequential(*module_layers),input
+    elif isinstance(model,nn.ModuleList):
+        return nn.ModuleList(module_layers),input
+    else:
+        raise Exception('Unsupported')
 
 
 from torch.autograd import Variable

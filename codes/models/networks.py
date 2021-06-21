@@ -100,11 +100,14 @@ def define_G(opt,CEM=None,num_latent_channels=None,**kwargs):
             latent_input=(opt_net['latent_input']+'_'+opt_net['latent_input_domain']) if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels)
     elif which_model == 'DnCNN':
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
-        assert opt_net['in_nc']==64 and opt_net['out_nc']==64
         in_nc = opt['scale']**2+2*64 if chroma_mode else 64
-        out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        if 'no_high_freq_chroma_reconstruction' not in kwargs:
+            kwargs['no_high_freq_chroma_reconstruction'] = True
+        out_nc = (2*64 if kwargs['no_high_freq_chroma_reconstruction'] else 2*256) if chroma_mode else 64
         netG = arch.DnCNN(n_channels=opt_net['nf'],depth=opt_net['nb'],in_nc=in_nc,out_nc=out_nc,norm_type=opt_net['norm_type'],
-                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,num_latent_channels=num_latent_channels,chroma_generator=chroma_mode)
+                          latent_input=opt_net['latent_input'] if opt_net['latent_input'] is not None else None,
+                          num_latent_channels=num_latent_channels,chroma_generator=chroma_mode,avoid_padding=not bool(opt_net['padding']),
+                          output_layer='Sigmoid')
     elif which_model == 'MSRResNet':  # SRResNet
         netG = arch.MSRResNet(in_nc=opt_net['in_nc'], out_nc=opt_net['out_nc'], nf=opt_net['nf'], \
                              nb=opt_net['nb'], upscale=opt_net['scale'])
@@ -154,20 +157,22 @@ def define_D(opt,CEM=None,**kwargs):
     elif 'DnCNN_D' in which_model:
         chroma_mode = kwargs['chroma_mode'] if 'chroma_mode' in kwargs.keys() else False
         opt_net_G = opt['network_G']
-        assert opt_net['DCT_D']==1
-        G_in_nc = opt['scale']**2+2*64 if chroma_mode else 64
-        G_out_nc = 2*(opt['scale']**2) if chroma_mode else 64
+        G_in_nc = (opt['scale'] ** 2 + 2 * 64 if chroma_mode else 64)
+        if 'no_high_freq_chroma_reconstruction' not in kwargs:
+            kwargs['no_high_freq_chroma_reconstruction'] = True
+        G_out_nc = 2*(64 if kwargs['no_high_freq_chroma_reconstruction'] else 256) if chroma_mode else 64
+        norm_type = opt_net_G['norm_type'] if opt_net['norm_type'] is None else opt_net['norm_type']
         # Even when not in concat_inpiut mode, I'm supplying D with channel Y, so it does not need to determine realness based only on the chroma channels
         D_input_channels = G_in_nc+G_out_nc if opt_net['concat_input'] else (opt['scale']**2+G_out_nc if chroma_mode else G_out_nc)
         num_latent_channels = None
         if opt_net['inject_Z']:
             num_latent_channels = opt_net_G['latent_channels']
-            # D_input_channels += num_latent_channels
-        netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],depth=opt_net_G['nb'],in_nc=D_input_channels,
-            norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and opt_net_G['norm_type']=='batch') else opt_net_G['norm_type'],
+        netD = arch.DnCNN(n_channels=opt_net_G['nf'] if opt_net['nf'] is None else opt_net['nf'],
+            depth=opt_net_G['nb'] if opt_net['nb'] is None else opt_net['nb'],in_nc=D_input_channels,
+            norm_type='layer' if (opt['train']['gan_type']=='wgan-gp' and norm_type=='batch') else norm_type,
             discriminator=True,expected_input_size=opt['datasets']['train']['patch_size']//opt['scale'],
-            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,spectral_norm='sn' in opt['train']['gan_type'],
-                          pooling_no_FC=opt_net['pooling_no_fc'])
+            latent_input=opt_net_G['latent_input'],num_latent_channels=num_latent_channels,chroma_generator=False,
+            spectral_norm='sn' in opt['train']['gan_type'],pooling_no_FC=opt_net['pooling_no_fc'])
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 

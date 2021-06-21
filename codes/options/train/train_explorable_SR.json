@@ -15,11 +15,11 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 8
-      , "batch_size": 6
-      , "batch_size_4_grads_G": 48
-      , "batch_size_4_grads_D": 48
-      , "patch_size": 256
+      , "n_workers": 2 //2
+      , "batch_size_per_GPU": 8
+      , "batch_size_4_grads_G": 16
+      , "batch_size_4_grads_D": 16
+      , "patch_size": 208
       , "use_flip": true
       , "use_rot": true
     }
@@ -72,7 +72,6 @@
     , "weight_decay_G": 0
     , "beta1_G": 0.9
     , "lr_D": 1e-5 //1e-4
-    , "lr_E": 1e-4
     , "weight_decay_D": 0
     , "beta1_D": 0.9
     , "lr_scheme": "MultiStepLR"
@@ -95,11 +94,11 @@
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 1 //Means I use loss mask and padding while training and testing, no matter if actually using the CEM or not.
 
-    , "pixel_weight": 0 //1e-2
-    , "feature_weight": 0 //1
+//    , "pixel_weight": 0 //1e-2
+//    , "feature_weight": 0 //1
     , "gan_weight": 1 // Weight for adversarial loss term L_adv
     , "latent_weight": 1 //Weight on L_struct loss term, between G's output and the desired criterion given Z.
-    , "optimalZ_loss_weight": 0 // L_map loss term weight
+    , "optimalZ_loss_weight": 100 // L_map loss term weight
     , "range_weight": 5000 // L_range loss term weight
 
      , "D_init_iters": 0

@@ -89,22 +89,22 @@ def main():
     recently_saved_models = deque(maxlen=4)
     for epoch in range(int(math.floor(model.step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
-            gradient_step_num = model.step // max_accumulation_steps
+            model.gradient_step_num = model.step // max_accumulation_steps
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
-            saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
+            saving_step = (model.gradient_step_num==0 or (time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
 
             # save models
             if lr_too_low or saving_step:
-                recently_saved_models.append(model.save(gradient_step_num))
+                recently_saved_models.append(model.save(model.gradient_step_num))
                 model.save_log()
                 if len(recently_saved_models)>3:
                     model_2_delete = recently_saved_models.popleft()
                     os.remove(model_2_delete)
                     if model.D_exists:
                         os.remove(model_2_delete.replace('_G.','_D.'))
-                print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),gradient_step_num))
+                print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),model.gradient_step_num))
                 if lr_too_low:
                     break
 
@@ -121,12 +121,12 @@ def main():
             if not_within_batch:    start_time = time.time()
 
             # log
-            if gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
+            if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
                 logs = model.get_current_log()
                 print_rlt = OrderedDict()
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
-                print_rlt['iters'] = gradient_step_num
+                print_rlt['iters'] = model.gradient_step_num
                 print_rlt['time'] = time_elapsed
                 for k, v in logs.items():
                     print_rlt[k] = v
@@ -135,7 +135,7 @@ def main():
                 model.display_log_figure()
 
             # validation
-            if not_within_batch and (gradient_step_num) % opt['train']['val_freq'] == 0: # and gradient_step_num>=opt['train']['D_init_iters']:
+            if not_within_batch and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
                 print_rlt = OrderedDict()
                 if model.generator_changed:
                     print('---------- validation -------------')
@@ -149,28 +149,36 @@ def main():
                             im_num in range(len(cur_train_results['SR']))]
                         #Save latest training batch output:
                         save_img_path = os.path.join(os.path.join(opt['path']['val_images']),
-                                                     '{:d}_Tr_PSNR{:.3f}.png'.format(gradient_step_num, np.mean(train_psnrs)))
+                                                     '{:d}_Tr_PSNR{:.3f}.png'.format(model.gradient_step_num, np.mean(train_psnrs)))
                         util.save_img(np.clip(np.concatenate((np.concatenate([util.tensor2img(cur_train_results['HR'][im_num], out_type=np.float32) * 255 for im_num in
                                  range(len(cur_train_results['SR']))],0), np.concatenate([util.tensor2img(cur_train_results['SR'][im_num], out_type=np.float32) * 255 for im_num in
                                  range(len(cur_train_results['SR']))],0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                    Z_latent = [0]+([-1,1] if opt['network_G']['latent_input'] else [])
-                    print_rlt['psnr'] = 0
+                    Z_latent = [0]+([-1,1] if (opt['network_G']['latent_input'] and model.num_latent_channels>0) else [])
+                    print_rlt['psnr'],print_rlt['niqe'] = 0,0
+                    model.im_collages = []
                     for cur_Z in Z_latent:
-                        sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,save_GT_HR=save_GT_HR,
-                                                 save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_HR)
+                        sr_images = model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_HR,save_images=True)
                         if logger.use_tb_logger:
                             logger.tb_logger.log_images('validation_Z%.2f'%(cur_Z), [im[:,:,[2,1,0]] for im in sr_images], model.gradient_step_num)
 
                         if save_GT_HR:  # Save GT Uncomp images
                             save_GT_HR = False
-                    model.log_dict['psnr_val'].append((gradient_step_num,print_rlt['psnr']/len(Z_latent)))
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
+                                         saving_freq=opt['train']['val_save_freq'],name_pattern='^(\d)+'+('_Z' if len(Z_latent)>1 else '')+'.*PSNR.*.png$')
+                    print_rlt['psnr'] /= len(Z_latent)
+                    print_rlt['niqe'] /= len(Z_latent)
+                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
+                    model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
+                    if len(Z_latent)>1:
+                        print_rlt['per_pix_STD'] = np.mean(np.std(np.stack(model.im_collages, 0), 0))
+                        model.log_dict['per_pix_STD_val'].append((model.gradient_step_num,print_rlt['per_pix_STD']))
                 else:
                     print('Skipping validation because generator is unchanged')
                 time_elapsed = time.time() - start_time
                 # Save to log
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
-                print_rlt['iters'] = gradient_step_num
+                print_rlt['iters'] = model.gradient_step_num
                 print_rlt['time'] = time_elapsed
                 model.display_log_figure()
                 logger.print_format_results('val', print_rlt,keys_ignore_list=IGNORED_KEYS_LIST)
@@ -178,13 +186,13 @@ def main():
 
             # update learning rate
             if not_within_batch:
-                lr_too_low = model.update_learning_rate(gradient_step_num)
+                lr_too_low = model.update_learning_rate(model.gradient_step_num)
         if lr_too_low:
             print('Stopping training because LR is too low')
             break
 
     print('Saving the final model.')
-    model.save(gradient_step_num)
+    model.save(model.gradient_step_num)
     print('End of training.')
 
 
