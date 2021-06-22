@@ -24,29 +24,40 @@
       "name": "val_set14_part"
       , "mode": "JPEG"
       , "jpeg_quality_factor": [[5,50]]
-      , "dataroot_Uncomp": "Set14/Set14_HRx4" //"DIV2K_valid/DIV2K_valid_HRx4"//"Set14"
+      , "dataroot_Uncomp": "Set14/Set14_HRx4"
     }
   }
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN" //,"path_2_root_project_folder"
-//        ,"pretrained_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth" //,"path_2_initialized_model" //Leave blank in initialization phase
-        ,"Y_channel_model_G": "../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth" //"path_2_pre-trained_Y_channel_model" //Uncomment when training chroma-channels model
+        ,"pretrained_model_G": {"PhaseInit": "None",
+          "PhaseGAN": {
+            "ModelY": "path_2_initialized_Y_model",
+            "ModelChroma": "/home/tiras/ybahat/SRGAN/experiments/JPEG/chroma_temp/models/45225_G.pth"
+          }
+        }
+        ,"Y_channel_model_G": {"ModelY": "None",
+            "ModelChroma": {
+              "PhaseGAN":"/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss_NeuroIPS_unfinished/models/743643_G.pth",
+              "PhaseInit":"path_2_pre_trained_Y_channel_initialized_model" }}
         }
 
   , "network_G": {
     "which_model_G": "DnCNN"
-    , "latent_input": "all_layers" //"None" for initialization phase
-    , "latent_channels": 0 //"SVDinNormedOut_structure_tensor_64" // 0 for initialization phase
+    , "latent_input": {"PhaseInit": "None","PhaseGAN": "all_layers"}
+    , "latent_channels": {"PhaseInit": 0,"PhaseGAN": "SVDinNormedOut_structure_tensor_64"}
     , "norm_type": "batch"
     , "mode": "CNA"
     , "padding": 1
-    , "nf": 160 //320 //160 for Chroma channles model
+    , "nf": {"ModelY": 320,"ModelChroma": 160}
     , "nb": 10
   }
-  , "network_G_Y": { //Parameters for the Y channel model. Only used when training the Chroma channels model.
-     "nf": 320
-    , "nb": 10
+  , "network_G_Y": {"ModelY": "None",
+      "ModelChroma": {
+        //Parameters for the Y channel model.
+        "nf": 320,
+        "nb": 10
+      }
   }
   , "network_D": {
     "which_model_D": "DnCNN_D"
@@ -74,28 +85,28 @@
     , "pixel_criterion": "l1"
     , "feature_criterion": "l1"
     , "gan_type": "wgan-gp"
-//    , "hinge_threshold": 1  //Comment if not using hinge loss
+//    , "hinge_threshold": 1  //Comment if not using spectral normalization and hinge loss
     , "optimalZ_loss_type": "l1"
-    , "Num_Z_iterations": [10] //[2,10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
+    , "Num_Z_iterations": [10] //When a list of len=2 is passed, first value corresponds to pre-D-verification Z iterations
     , "D_verification": "initial_gradual" //'current', 'convergence', 'past','initial','initial_gradual'
     , "steps_4_D_convergence": 2000
     , "min_D_prob_ratio_4_G": 1.1 //0.01 //1.05
-    , "min_mean_D_correct": 0.1 //0.9 //0.85 //0.9 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
+    , "min_mean_D_correct": 0.1 //At least this portion of images should be correctly classified by D in all preceeding D_valid_Steps_4_G_update steps.
     , "D_update_ratio": 10
     , "D_valid_Steps_4_G_update": 10 //Perform G steps using l_gan only when D was successfull in previous D_update_ratio steps
     , "CEM_exp": 0 //Means I use loss mask and padding while training and testing, no matter if DTE_arch or not.
-    , "pixel_weight": 1e-2 //0 //1e-2 for initialization phase
+    , "pixel_weight": {"PhaseInit": 1e-2,"PhaseGAN": "None"}
 //    , "feature_weight": 0
-//    , "gan_weight": 5e-3 //0 for initialization phase
-//    , "latent_weight": 5e-3 //0 for initialization phase
-//    , "optimalZ_loss_weight": 5e-4 //0 for initialization phase
-//    , "range_weight": 1 //0 for initialization phase
-    , "gp_weight": 10
+    , "gan_weight": {"PhaseInit": "None","PhaseGAN": 5e-3}
+    , "latent_weight": {"PhaseInit": "None","PhaseGAN": 5e-3}
+    , "optimalZ_loss_weight": {"PhaseInit": "None","PhaseGAN": 5e-4}
+    , "range_weight": {"PhaseInit":"None","PhaseGAN": 1}
+    , "gp_weight": {"PhaseInit":"None","PhaseGAN": 10}
 
-    , "D_init_iters": 0 //1000 //10000 //10000 //0
+    , "D_init_iters": 0
 
     , "manual_seed": 0
-    , "niter": 2e6 //23532 //500100 //5e5
+    , "niter": 2e6
     , "val_freq": 5e2
     , "val_save_freq": 1e4
 }

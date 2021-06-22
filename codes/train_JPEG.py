@@ -23,15 +23,17 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     parser.add_argument('-chroma', action='store_true',help='Training the chroma-channels generator')
+    parser.add_argument('-initialization', action='store_true',help='Initializing a model from scratch, using only reconstruction loss')
     if parser.parse_args().single_GPU:
         available_GPUs = util.Assign_GPU(maxMemory=0.66)
     else:
         # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
     name_ext = ''
-    if parser.parse_args().chroma:
-        name_ext = '_chroma'
-    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG'+name_ext)
+    # if parser.parse_args().chroma:
+    #     name_ext = '_chroma'
+    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),JPEG=True,
+                       initialization=parser.parse_args().initialization,chroma=parser.parse_args().chroma)
 
     if not opt['train']['resume']:
         util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists

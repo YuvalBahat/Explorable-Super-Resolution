@@ -18,11 +18,11 @@ def print_config_change(dict,key):
     print('\tFrom: %s' % (dict[key]['old_value']))
     print('\tTo: %s' % (dict[key]['new_value']))
 
-def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
+def parse(opt_path, is_train=True,batch_size_multiplier=None,**kwargs):
     OVERRIDING_KEYS = [['train','resume'],['datasets','train','n_workers'],['train','val_running_avg_steps']]
-    opt = parse_conf(opt_path=opt_path,is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
+    opt = parse_conf(opt_path=opt_path,is_train=is_train,batch_size_multiplier=batch_size_multiplier,**kwargs)
     if is_train and opt['train']['resume']:
-        saved_opt = parse_conf(opt_path=os.path.join(opt['path']['experiments_root'],'options.json'),is_train=is_train,batch_size_multiplier=batch_size_multiplier,name=name)
+        saved_opt = parse_conf(opt_path=os.path.join(opt['path']['experiments_root'],'options.json'),is_train=is_train,batch_size_multiplier=batch_size_multiplier,**kwargs)
         for key in OVERRIDING_KEYS:
             cur_opt,cur_saved_opt = opt,saved_opt
             for sub_key in key[:-1]:
@@ -43,28 +43,39 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         return saved_opt
     return opt
 
-def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,name=None):
-    # remove comments starting with '//'
+def dictionary_values_choice(dictionary,chosen_option):
+    while isinstance(dictionary,dict) and chosen_option in dictionary.keys():
+        dictionary = dictionary[chosen_option]
+        if dictionary=="None":
+            return None
+    if isinstance(dictionary,dict):
+        for key,value in dictionary.items():
+            dictionary[key] = dictionary_values_choice(value,chosen_option)
+    return dictionary
+
+def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,**kwargs):
+    name = kwargs['name'] if 'name' in kwargs else None
+    JPEG_run = kwargs['JPEG'] if 'JPEG' in kwargs else False
+    if JPEG_run:
+        JPEG_chroma = kwargs['chroma'] if 'chroma' in kwargs else False
     json_str = ''
     with open(opt_path, 'r') as f:
         for line in f:
             line = line.split('//')[0] + '\n'
             json_str += line
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-    JPEG_run = name is not None and 'JPEG' in name
+    opt = dictionary_values_choice(opt,'PhaseInit' if 'initialization' in kwargs and kwargs['initialization'] else 'PhaseGAN')
     if JPEG_run:
+        opt = dictionary_values_choice(opt, 'ModelChroma' if JPEG_chroma else 'ModelY')
         opt['input_downsampling'] = 1
-        if name != 'JPEG':
-            suffix = name[len('JPEG_'):]
-            if suffix=='chroma':
-                opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
-                for dataset in opt['datasets'].keys():
-                    if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
-                        opt['datasets'][dataset]['mode'] += '_chroma'
-                    opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
-            bare_name = opt['name'].split('/')[-1]
-            if  bare_name[:len(suffix)+1] != suffix+'_':
-                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),suffix+'_'+bare_name)
+        if JPEG_chroma:
+            opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
+            for dataset in opt['datasets'].keys():
+                if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
+                    opt['datasets'][dataset]['mode'] += '_chroma'
+                opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
+            if opt['name'].split('/')[-1][:len('chroma_')]!='chroma_':
+                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),'chroma_'+opt['name'].split('/')[-1])
         if opt['name'][:len('JPEG/')]!='JPEG/': #Accomodating the case where the name was already modified, in which case I shouldn't add another 'JPEG/' prefix:
             opt['name'] = os.path.join('JPEG', opt['name'])
         opt['scale'] = 8*opt['input_downsampling']

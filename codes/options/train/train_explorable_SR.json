@@ -14,7 +14,7 @@
       , "dataroot_LR": "DIV2K_train/DIV2K_train_sub_bicLRx4.lmdb"
       , "subset_file": null
       , "use_shuffle": true
-      , "n_workers": 2 //2
+      , "n_workers": 2 // 0 for debugging
       , "batch_size_per_GPU": 8
       , "batch_size_4_grads_G": 16
       , "batch_size_4_grads_D": 16

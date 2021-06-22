@@ -1313,14 +1313,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
         parser.add_argument('-JPEG', action='store_true', help='JPEG decompresion exploration')
         self.JPEG_GUI =  parser.parse_args().JPEG
-        opt_name = None
         if self.JPEG_GUI:
-            opt_name = 'JPEG_chroma'
             self.real_JPEG_image = False
 
         util.Assign_GPU()
         self.num_random_Zs = NUM_RANDOM_ZS
-        self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
+        self.opt = option.parse(parser.parse_args().opt, is_train=False,JPEG=self.JPEG_GUI,chroma=self.JPEG_GUI)
         self.opt = option.dict_to_nonedict(self.opt)
         self.display_ESRGAN = not self.JPEG_GUI and DISPLAY_ESRGAN_RESULTS and 'pretrained_ESRGAN' in self.opt['path'].keys()
         self.SVHN_classifier = self.JPEG_GUI and SVHN_CLASSIFIER_4_JPEG
