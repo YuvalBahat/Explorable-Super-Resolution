@@ -33,13 +33,15 @@
         ,"pretrained_model_G": {"PhaseInit": "None",
           "PhaseGAN": {
             "ModelY": "path_2_initialized_Y_model",
-            "ModelChroma": "/home/tiras/ybahat/SRGAN/experiments/JPEG/chroma_temp/models/45225_G.pth"
+            "ModelChroma": "/home/tiras/ybahat/SRGAN/experiments/JPEG/chroma_temp/models/2000001_G.pth"
           }
         }
         ,"Y_channel_model_G": {"ModelY": "None",
             "ModelChroma": {
               "PhaseGAN":"/home/tiras/ybahat/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss_NeuroIPS_unfinished/models/743643_G.pth",
-              "PhaseInit":"path_2_pre_trained_Y_channel_initialized_model" }}
+              "PhaseInit":"../pretrained_models/DCTnf320nb10QF5_50_ImageNet_G.pth" //"path_2_pre_trained_Y_channel_initialized_model"
+            }
+          }
         }
 
   , "network_G": {
@@ -74,7 +76,7 @@
   }
 
   , "train": {
-    "resume": 0
+    "resume": 1
     ,"lr_G": 1e-5
     , "weight_decay_G": 0
     , "beta1_G": 0.9
