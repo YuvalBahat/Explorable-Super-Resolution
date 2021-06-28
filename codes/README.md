@@ -1,21 +1,15 @@
-### This repository is currently being modiefied to include 
-
 Official PyTorch implementations of "Explorable Super Resolution" and "What's in the Image? Explorable Decoding of Compressed Images", by Yuval Bahat and Tomer Michaeli (presented in CVPR 2020 and 2021, respectively). The methods described in these papers tackle very different problems using machinery specifically tailored for each problem. However, since both methods sharew a similar goal, they have several components in common, like the user exploration interface. For this reason, the code for both methods is brought here in a shared repository.
 
 ## Table of Contents
-1. [Overview](#overview)
-1. [Dependencies](#dependencies)
-1. [Acknowledgement](#acknowledgement)
-1. [Running the GUI](#GUI_run)
-1. [Exploring with the GUI](#GUI_usage)
-1. [Training an explorable super-resolution network](#Training)
-1. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
-
-## Overview 
-The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
-<p align="center">
-   <img src="fig_framework_scheme_4_github.png">
-</p>
+1. [Included in this repository](#repository_includes)
+2. [Dependencies](#dependencies)
+3. [Explorable Super Resolution](#SR)
+   1. [Overview](#overview)
+   5. [Running the GUI](#GUI_run)
+   6. [Exploring with the GUI](#GUI_usage)
+   7. [Training an explorable super-resolution network](#Training)
+   8. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
+9. [Explorable Image Decoding](#JPEG)
 
 ### This repository includes:<a name="repository_includes"></a>
 1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models for the 4x case are available for download, though our method supports any integer super-resolution factor.
@@ -35,8 +29,15 @@ Our CEM assumes the default bicubic downsampling kernel, but in needs access to 
 - NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
 <!--- Other Python packages: `pip install numpy opencv-python lmdb`-->
 
+# Explorable Super Resolution<a name="SR"></a>
 ## Acknowledgement
 Code for the SR work is built upon an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+
+## Overview 
+The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
+<p align="center">
+   <img src="fig_framework_scheme_4_github.png">
+</p>
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
 1. *Train or download a pre-trained explorable SR model:*  
@@ -68,3 +69,7 @@ Update the necessary (and optionally other) fields in the [`train_explorable_SR.
    ```
    python train.py -opt ./options/train/train_explorable_SR.json  
    ```
+
+# Explorable Image Decoding<a name="JPEG"></a>
+## Acknowledgement
+For our automatic decoding exploration tool, we borrow a pre-trained SVHN classifier from [this](https://github.com/potterhsu/SVHNClassifier-PyTorch) repository.
