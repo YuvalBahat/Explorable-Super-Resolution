@@ -1,4 +1,6 @@
-An official PyTorch implementation of "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
+### This repository is currently being modiefied to include 
+
+Official PyTorch implementations of "Explorable Super Resolution" and "What's in the Image? Explorable Decoding of Compressed Images", by Yuval Bahat and Tomer Michaeli (presented in CVPR 2020 and 2021, respectively). The methods described in these papers tackle very different problems using machinery specifically tailored for each problem. However, since both methods sharew a similar goal, they have several components in common, like the user exploration interface. For this reason, the code for both methods is brought here in a shared repository.
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -34,7 +36,7 @@ Our CEM assumes the default bicubic downsampling kernel, but in needs access to 
 <!--- Other Python packages: `pip install numpy opencv-python lmdb`-->
 
 ## Acknowledgement
-Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+Code for the SR work is built upon an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
 1. *Train or download a pre-trained explorable SR model:*  
