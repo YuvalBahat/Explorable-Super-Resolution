@@ -73,3 +73,27 @@ Update the necessary (and optionally other) fields in the [`train_explorable_SR.
 # Explorable Image Decoding<a name="JPEG"></a>
 ## Acknowledgement
 For our automatic decoding exploration tool, we borrow a pre-trained SVHN classifier from [this](https://github.com/potterhsu/SVHNClassifier-PyTorch) repository.
+
+## Overview 
+Our explorable JPEG decoding framework is capable of decoding color images, by operating in the YCbCr color space, using seperate models for the Y (luminance) channel and Cb-Cr (chroma) channels. This is an overall sketch of our decoding network:
+<p align="center">
+   <img src="/resources/fig_color_framework_arch.png">
+</p>
+While the Y and chroma channel models have different input sizes and use a different number of channels, they share the same consistency preserving architecture, shown here:
+<p align="center">
+   <img src="/resources/fig_framework_arch.png">
+</p>
+
+Similar to our explorable SR framework, our explorable decoding framework consists of the consistent decoding network shown above, and a graphical user interface (GUI). 
+
+## Running the explorable JPEG decoding GUI<a name="GUI_run"></a>
+1. *Train or download a pre-trained explorable SR model:*  
+Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. The corresponding [pre-trained discriminator is available here](https://drive.google.com/file/d/1VsDX6dhQyszW1Lq3wUp5I19mBhuKg9O2/view?usp=sharing), in case you want to fine-tune the model.
+1. *(Optional) Download a pre-trained ESRGAN model:*  
+Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
+1. *Update paths:*  
+Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) file.
+1. *Run the GUI:*  
+   ```
+   python GUI.py -opt ./options/test/GUI_SR.json  
+   ```
