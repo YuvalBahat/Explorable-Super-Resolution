@@ -1,3 +1,5 @@
+import collections
+
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -42,8 +44,8 @@ DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
 DISPLAY_INDUCED_LR = False
 HORIZ_MAINWINDOW_OFFSET = 67+15 #67+5#When initializing the GUI, the OS horizontally shifts the main window by this amount compared to the desired set position. This value can be modified in case it varies from one OS to another, affecting the intial image canvas location.
-ERR_MESSAGE_DURATION = 1e4
-INFO_MESSAGE_DURATION = 5e3
+ERR_MESSAGE_DURATION = 10000
+INFO_MESSAGE_DURATION = 5000
 
 # Optimization over Z signals space:
 Z_OPTIMIZER_INITIAL_LR = 1e-1
@@ -60,7 +62,7 @@ TRACK_ADDED_SCRIBLES = True # When True, using the recent modification that allo
 Z_OPTIMIZATION_TIME_LIMIT = 30  # seconds
 NON_LOCAL_Z_OPTIMIZATION = True #When True, optimizing over the entire region passed to the optimizer (depends on MARGINS_AROUND_REGION_OF_INTEREST), while penalizing for changes in the masked regions.
 AUTO_MASK_GRAPHICAL_INPUT = True and NON_LOCAL_Z_OPTIMIZATION#When NON_LOCAL_Z_OPTIMIZATION is on, would automatically surround scribble mask by dilation to automatically create mask.
-SVHN_CLASSIFIER_4_JPEG = True
+SVHN_CLASSIFIER_4_JPEG = 'auto' #'auto','manual',None
 
 # For the "desired dictionary of patches" tool, allowing multi-scale dictionary:
 DOWNSCALED_HIST_VERSIONS = False#0.9
@@ -88,6 +90,10 @@ DISPLAY_ESRGAN_RESULTS = True
 
 # JPEG-only tools:
 MAXIMAL_JPEG_QF = 49
+
+# Auto digits exploration tool:
+MULTIVIEW_CLASSIFICATION = [2, 8]  # [zoom transformations,translation transformations] How many zoom and translation
+# augmentations to apply before feeding to the pre-trained classifier. Set to None to use only 1 image.
 
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
@@ -611,6 +617,8 @@ class Canvas(QLabel):
         self.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR
         self.Z_optimizer = None
         self.Z_optimizer_logger = None
+        if self.JPEG_GUI:
+            self.digit_box.setVisible(False)
 
     def ReturnMaskedMapAverage(self,map):
         return np.sum(map*self.Z_mask)/np.sum(self.Z_mask)
@@ -1310,9 +1318,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
         parser = argparse.ArgumentParser()
+        parser.add_argument('task', choices=['JPEG','SR'],help='Choose between JPEG decoding and image Super Resolution')
         parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
-        parser.add_argument('-JPEG', action='store_true', help='JPEG decompresion exploration')
-        self.JPEG_GUI =  parser.parse_args().JPEG
+        self.JPEG_GUI =  parser.parse_args().task=='JPEG'
         if self.JPEG_GUI:
             self.real_JPEG_image = False
 
@@ -1321,10 +1329,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.opt = option.parse(parser.parse_args().opt, is_train=False,JPEG=self.JPEG_GUI,chroma=self.JPEG_GUI)
         self.opt = option.dict_to_nonedict(self.opt)
         self.display_ESRGAN = not self.JPEG_GUI and DISPLAY_ESRGAN_RESULTS and 'pretrained_ESRGAN' in self.opt['path'].keys()
-        self.SVHN_classifier = self.JPEG_GUI and SVHN_CLASSIFIER_4_JPEG
+        self.SVHN_classifier = SVHN_CLASSIFIER_4_JPEG if self.JPEG_GUI else None
 
         self.canvas = Canvas()
         self.setupUi()
+        self.canvas.JPEG_GUI = self.JPEG_GUI
         self.canvas.manual_Z_control = (not self.JPEG_GUI) or self.opt['network_G']['latent_channels']>=3
         # Replace canvas placeholder from QtDesigner.
         self.horizontalLayout.removeWidget(self.canvas)
@@ -1358,21 +1367,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.in_picking_desired_hist_mode = False
         self.canvas.current_display_index = 1*self.cur_Z_im_index
 
-        # More initializations:
-        self.canvas.Z_optimizer_Reset()
-        self.canvas.opt = self.opt
-        self.canvas.initialize()
-        self.canvas.HR_Z = False if self.JPEG_GUI else ('HR' in self.canvas.opt['network_G']['latent_input_domain'])
-        self.canvas.H_L_domains_ratio = 8 if self.JPEG_GUI else self.opt['scale']
-        self.Initialize_SR_model(reprocess=False)
-        if self.SVHN_classifier:
-            from utils.SVHN_classifier_model import Model as SVHN_model
-            self.canvas.model.net_SVHN = SVHN_model(eval_with_grads=True)
-            self.canvas.model.net_SVHN.restore(PATH_2_SVHN_CLASSIFIER_MODEL)
-            self.canvas.model.net_SVHN.cuda()
-
-        self.canvas.latest_scribble_color_reset = time.time()
-
         # Assigning handles of some buttons and functions to canvas:
         button_handles_required_by_canvas = ['undo_scribble','redo_scribble','special_behavior','FoolAdversary','selectrect',
             'selectpoly','IncreasePeriodicity_1D','IncreasePeriodicity_2D','indicatePeriodicity','periodicity_mag_1','periodicity_mag_2',
@@ -1385,10 +1379,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.JPEG_GUI:
             self.estimatedKenrel_button.setEnabled(False)
             self.open_image_button.setEnabled(False) #Loading existing jpg files is not yet enabled
-        self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.model.CEM_net.Enforce_DT_on_Image_Pair
-        self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.model.CEM_net.Project_2_ortho_2_NS
+            self.canvas.digit_box = self.digit_box
         self.canvas.statusBar = self.statusBar
-        self.canvas.JPEG_GUI = self.JPEG_GUI
+
+        # More initializations:
+        self.canvas.Z_optimizer_Reset()
+        self.canvas.opt = self.opt
+        self.canvas.initialize()
+        self.canvas.HR_Z = False if self.JPEG_GUI else ('HR' in self.canvas.opt['network_G']['latent_input_domain'])
+        self.canvas.H_L_domains_ratio = 8 if self.JPEG_GUI else self.opt['scale']
+        self.Initialize_SR_model(reprocess=False)
+        self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.model.CEM_net.Project_2_ortho_2_NS
+        if self.SVHN_classifier:
+            from utils.SVHN_classifier_model import Model as SVHN_model
+            self.canvas.model.net_SVHN = SVHN_model(eval_with_grads=True)
+            self.canvas.model.net_SVHN.restore(PATH_2_SVHN_CLASSIFIER_MODEL)
+            self.canvas.model.net_SVHN.cuda()
+            self.MULTIVIEW_CLASSIFICATION = MULTIVIEW_CLASSIFICATION
+
+        # Assigning handle of Enforce_pair_Consistency to canvas
+        self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.model.CEM_net.Enforce_DT_on_Image_Pair
+
+        self.canvas.latest_scribble_color_reset = time.time()
 
         #### Connecting buttons to functions:
         # Load & Save:
@@ -1450,12 +1462,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if hasattr(self,'FoolAdversary_button'):
             self.FoolAdversary_button.clicked.connect(lambda x:self.Optimize_Z('Adversarial', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         if self.SVHN_classifier:
-            self.SVHN_classifier_button.clicked.connect(lambda x: self.Optimize_Z('digit', loop=False and LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
-            def Assign_digit_2_resemble(digit):
-                self.digit_2_resemble = int(digit)
-                self.canvas.Z_optimizer_Reset()
-            self.digit_box.valueChanged.connect(lambda s: Assign_digit_2_resemble(s))
-            Assign_digit_2_resemble(self.digit_box.value())
+            assert self.SVHN_classifier in ['auto','manual'],'Unsupported mode'
+            self.SVHN_classifier_button.clicked.connect(lambda x: self.Auto_Explore_Digits())
+            if self.SVHN_classifier=='manual':
+                def Assign_digit_2_resemble(digit):
+                    self.digit_2_resemble = int(digit)
+                    self.canvas.Z_optimizer_Reset()
+                self.digit_box.valueChanged.connect(lambda s: Assign_digit_2_resemble(s))
+                Assign_digit_2_resemble(self.digit_box.value())
+            else:
+                self.digit_box.highlighted.connect(lambda s: self.display_decoding_as_digit(self.digit_box.itemText(s)))
         self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         self.ProcessRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=False))
         self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
@@ -1497,6 +1513,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
         self.show()
+
+    def Auto_Explore_Digits(self):
+        if self.SVHN_classifier=='manual':
+            self.Optimize_Z('digit', loop=False and LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS)
+        else:#'auto'
+            self.per_digit_Zs,self.prob_of_most_likely_digit,most_likely_digit = collections.defaultdict(dict),0,None
+            for digit in range(10):
+                self.digit_2_resemble = digit
+                self.Optimize_Z('digit', loop=False and LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS)
+                if self.canvas.Z_optimizer.final_num_digits==1:
+                    if self.canvas.Z_optimizer.final_digit_score>self.prob_of_most_likely_digit:
+                        most_likely_digit = digit
+                        self.prob_of_most_likely_digit = self.canvas.Z_optimizer.final_digit_score
+                    self.per_digit_Zs[digit]['Z'] = 1*self.cur_Z
+                    self.per_digit_Zs[digit]['prob'] = 1*self.canvas.Z_optimizer.final_digit_score
+                if digit<9:#Avoiding double Z-undo, since Z will be undone when the chosen digit is diplayed (in display_decoding_as_digit)
+                    self.Z_history.pop()
+                self.canvas.Z_optimizer_Reset()
+            self.digit_box.clear()
+            for digit in self.per_digit_Zs.keys():
+                self.digit_box.addItem(str(digit))
+            self.digit_box.setVisible(True)
+            self.digit_box.setCurrentText(str(most_likely_digit))
+            self.display_decoding_as_digit(str(most_likely_digit))
+
+    def display_decoding_as_digit(self,digit):
+        digit = int(digit)
+        self.Z_history.pop()
+        self.cur_Z = 1*self.per_digit_Zs[digit]['Z']
+        self.ReProcess(chosen_display_index=self.cur_Z_im_index)
+        self.statusBar.showMessage('Displaying result for %d, with score: %.3f%s' % (digit, self.per_digit_Zs[digit]['prob'],
+            ' (highest)' if self.per_digit_Zs[digit]['prob']==self.prob_of_most_likely_digit else ''), INFO_MESSAGE_DURATION)
 
     def toggle_special_behaviour_icon(self):
         self.special_behavior_button.setIcon(self.special_behavior_on_icon if self.special_behavior_button.isChecked() else self.special_behavior_off_icon)
@@ -1949,6 +1997,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.JPEG_GUI:
                     data['scribble_mask'] = util.SmearMask2JpegBlocks(data['scribble_mask'])
                 data['brightness_factor'] = self.STD_increment.value()#For the brightness increase/decrease functionality
+            elif objective=='digit':
+                data['digit_2_resemble'] = self.digit_2_resemble
+                data['multiview_classification'] = 1*self.MULTIVIEW_CLASSIFICATION
+                self.iters_per_round *= 3
             if any([phrase in objective for phrase in ['STD','Mag']]):
                 data['STD_increment'] = self.STD_increment.value()
             initial_Z = 1 * self.cur_Z
@@ -2297,6 +2349,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.var_L = self.canvas.model.JPEG['compressor_Y'](self.loaded_image[:,:1,...])
         self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.model.Return_Compressed(self.loaded_image)/ 255) , 0, 1)
         self.ReProcess(dont_update_undo_list=True)
+        self.canvas.Z_optimizer_Reset()
 
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         if self.JPEG_GUI:
@@ -2603,7 +2656,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     Z_image = util.Z_64channels2image(Z_image)
                 imageio.imsave(path%('_Z'),Z_image)
             input_im_4_saving = self.input_image.squeeze(0).data.cpu().numpy().transpose((1, 2, 0))
-            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),input_im_4_saving)
+            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),(255*input_im_4_saving).astype(np.uint8))
             SAVE_JPEG = self.JPEG_GUI and False
             if SAVE_JPEG:
                 input_im_4_saving = PIL_Image.fromarray((255*input_im_4_saving).astype(np.uint8))

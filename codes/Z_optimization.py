@@ -549,36 +549,55 @@ class Z_optimizer():
             elif 'random' in objective:
                 self.STD_PRESERVING_WEIGHT = 1e3
             elif objective=='digit':
+                MULTIVIEW_CLASSIFICATION = data['multiview_classification']
+                if MULTIVIEW_CLASSIFICATION[1]%2==0: # Assert an odd number of translations to make sure the case of a symmetric padding (image in the center) is included.
+                    MULTIVIEW_CLASSIFICATION[1]+=1
                 self.SVHN_classifier = self.model.net_SVHN
                 mask_bounds = torch.cat([self.image_mask.nonzero().min(0)[0],self.image_mask.nonzero().max(0)[0]])
                 self.constraining_loss_weight = 100
-                EXPECTED_ASPECT_RATIO = 1
+                EXPECTED_ASPECT_RATIO,CLASSIFIER_EXPECTED_SIZE = 1,54
                 CONVERT_2_Y = False
+                cropped_im_shape = (mask_bounds[2:]-mask_bounds[:2]+1).cpu().numpy()
+                assert cropped_im_shape[1] <= cropped_im_shape[0], 'Currently expecting marked digit to have aspect ratio<=1'
+                expected_width = EXPECTED_ASPECT_RATIO * CLASSIFIER_EXPECTED_SIZE
+                if CONVERT_2_Y:
+                    rgb2y_mat = torch.from_numpy(np.array([65.481, 128.553, 24.966]) / 219).type(self.model.Output_Batch(within_0_1=True).type())
+                used_views = set()
+                for additional_zoom in range(MULTIVIEW_CLASSIFICATION[0]+1):
+                    cur_resize_factor = (CLASSIFIER_EXPECTED_SIZE-additional_zoom)/cropped_im_shape[0]
+                    cur_resized_width = int(np.round((cur_resize_factor * cropped_im_shape[1])))
+                    required_padding = expected_width-cur_resized_width
+                    for left_padding in np.linspace(0,required_padding,MULTIVIEW_CLASSIFICATION[1]+2)[1:-1]:
+                        padding = np.round([left_padding,np.ceil(additional_zoom/2)]).astype(int)
+                        padding = tuple([padding[0],required_padding-padding[0],padding[1],additional_zoom-padding[1]])
+                        if (padding,cur_resize_factor) in used_views:
+                            continue
+                        else:
+                            used_views.add((padding,cur_resize_factor))
+
                 def transform(image):
                     cropped_im = image[..., mask_bounds[0]:mask_bounds[2] + 1, mask_bounds[1]:mask_bounds[3] + 1]
-                    assert cropped_im.shape[3]<=cropped_im.shape[2],'Currently expecting marked digit to have aspect ratio<=1'
-                    resize_factor = 54/cropped_im.shape[2]
-                    cropped_im = F.interpolate(cropped_im,size=(54,int(np.round((resize_factor*cropped_im.shape[3])))),mode='bilinear')
-                    expected_width = (EXPECTED_ASPECT_RATIO*cropped_im.shape[2])
-                    if expected_width>cropped_im.shape[3]:
-                        padding = (expected_width-cropped_im.shape[3])//2
-                        padding = [padding,expected_width-cropped_im.shape[3]-padding,0,0]
-                        cropped_im = F.pad(cropped_im,padding,mode='replicate')
-                    if CONVERT_2_Y:
-                        rgb2y_mat = torch.from_numpy(np.array([65.481, 128.553, 24.966]) / 219).type(cropped_im.type())
-                        cropped_im = (rgb2y_mat.type(cropped_im.type()).view(1,-1, 1, 1) * cropped_im).sum(1).repeat([1,3,1,1])
-                    return (cropped_im-0.5)/0.5
+                    classifier_input = []
+                    for padding,resize_factor in used_views:
+                        cur_resized = tuple(np.round((resize_factor * np.array(cropped_im.shape[2:]))).astype(np.int))
+                        classifier_input.append(F.interpolate(cropped_im, size=cur_resized,mode='bilinear',align_corners=False))
+                        classifier_input[-1] = F.pad(classifier_input[-1], padding, mode='replicate')
+                        if CONVERT_2_Y:
+                            classifier_input[-1] = (rgb2y_mat.type(classifier_input[-1].type()).view(1, -1, 1, 1) * classifier_input[-1]).sum(1).repeat([1, 3, 1, 1])
+
+                    return (torch.cat(classifier_input,0)-0.5)/0.5
+
                 def classify_image(image):
                     return self.SVHN_classifier(transform(image))
                 def classifier_loss(image):
                     classifier_output = classify_image(image)
-                    return torch.stack([F.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device).repeat([classifier_output[1].shape[0]]),reduce=False),
-                            F.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda().repeat([classifier_output[0].shape[0]]),reduce=False)],-1)
+                    return torch.stack([F.cross_entropy(classifier_output[1],torch.tensor(self.data['digit_2_resemble']).view(1).to(self.device).repeat([classifier_output[1].shape[0]]),reduction='none'),
+                            F.cross_entropy(classifier_output[0],torch.ones([1]).type(torch.LongTensor).cuda().repeat([classifier_output[0].shape[0]]),reduction='none')],-1).mean(0)
                 initial_classification = classify_image(self.model.Output_Batch(within_0_1=True))
-                self.initial_digit_score = F.softmax(initial_classification[1])[0,self.data['digit_2_resemble']].item()
+                self.initial_digit_score = F.softmax(initial_classification[1],dim=-1)[:,self.data['digit_2_resemble']].mean().item()
                 print('Initial score for %d: %.3f, estimated # of digits: %d, classified as %d (%.3f)'%(self.data['digit_2_resemble'],
-                    self.initial_digit_score,initial_classification[0].argmax(),initial_classification[1].argmax(1),
-                    F.softmax(initial_classification[1])[0,initial_classification[1].argmax(1)].item()))
+                    self.initial_digit_score,initial_classification[0].mean(0).argmax(),initial_classification[1].mean(0).argmax(),
+                    F.softmax(initial_classification[1],dim=-1)[:,initial_classification[1].mean(0).argmax()].mean(0).item()))
                 self.loss = classifier_loss
                 self.classify_image = classify_image
             self.optimizer = torch.optim.Adam(self.Z_model.parameters(), lr=initial_LR)
@@ -760,9 +779,9 @@ class Z_optimizer():
                 # if self.jpeg_mode:  # Should see what to feed in the first argument here:
                 #     self.model.fake_H = self.model.Enforce_Consistency(self.model.var_Comp, self.model.fake_H)
             final_classification = self.classify_image(self.model.Output_Batch(within_0_1=True))
-            self.final_digit_score,self.final_num_digits,self.final_single_digit_score =\
-                F.softmax(final_classification[1])[:, self.data['digit_2_resemble']].mean().item(),final_classification[0].argmax(1).float().mean().item(),\
-                F.softmax(final_classification[0])[:,1].mean().item()
+            self.final_digit_score = F.softmax(final_classification[1],dim=-1)[:, self.data['digit_2_resemble']].mean().item()
+            self.final_num_digits = final_classification[0].mean(0).argmax().float().item()
+            self.final_single_digit_score = F.softmax(final_classification[0],dim=-1)[:,1].mean().item()
             print('Final score for %d: %.3f, estimated # of digits: %d' % (self.data['digit_2_resemble'],
                 self.final_digit_score,self.final_num_digits))
         if not self.model_training:
