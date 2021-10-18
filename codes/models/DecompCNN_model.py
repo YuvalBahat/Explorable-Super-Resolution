@@ -1006,7 +1006,11 @@ class DecompCNNModel(BaseModel):
 
     def load(self,max_step=None,resume_train=None):
         resume_training = resume_train if resume_train is not None else (self.opt['is_train'] and self.opt['train']['resume'])
-        if max_step is not None or (resume_training is not None and resume_training) or (not self.opt['is_train'] and not self.opt['Y_model']):
+        load_self_trained_model = max_step is not None or (resume_training is not None and resume_training)
+        self_trained_models = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name] if os.path.isdir(self.opt['path']['models']) else []
+        load_self_trained_model = load_self_trained_model or (not self.opt['is_train'] and len(self_trained_models)>0)
+        if load_self_trained_model:
+        # if max_step is not None or (resume_training is not None and resume_training) or (not self.opt['is_train'] and not self.opt['Y_model']):
             model_name = [name for name in os.listdir(self.opt['path']['models']) if '_G.pth' in name]
             model_name = sorted(model_name,key=lambda x: int(re.search('(\d)+(?=_G.pth)',x).group(0)))
             if max_step is not None:
