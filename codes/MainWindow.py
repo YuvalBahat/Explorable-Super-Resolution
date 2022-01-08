@@ -146,7 +146,7 @@ class Ui_MainWindow(object):
         self.Define_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',action_not_push=True,disabled=True)
         self.Define_Button(button_name='imprinting',tooltip='Set imprinting rectangle (Using transparent color)',action_not_push=False,checkable=False,disabled=True)
         self.Define_Button(button_name='imprinting_auto_location',tooltip='Set boundaries for automatic imprinting location (Using transparent color)',action_not_push=False,checkable=False,disabled=True)
-        self.Define_Button(button_name='open_image',tooltip='Load LR image',action_not_push=True)
+        self.Define_Button(button_name='open_image',tooltip='Load %s image'%('compressed' if self.JPEG_GUI else 'LR'),action_not_push=True)
         self.Define_Button(button_name='Z_load',tooltip='Load Z map',action_not_push=True)
         self.Define_Button('estimatedKenrel',tooltip='Use estimated SR kernel',action_not_push=False,checkable=True)
         self.Define_Button('ProcessRandZ',tooltip='Produce random images',action_not_push=True)
@@ -163,7 +163,8 @@ class Ui_MainWindow(object):
         self.Define_Button('ImitateHist',tooltip='Encourage desired histogram',action_not_push=True,disabled=True)
         self.Define_Button('ImitatePatchHist',tooltip='Encourage desired mean-less (normalized) patches',action_not_push=True,disabled=True)
         self.Define_Button('FoolAdversary',tooltip='Fool discriminator',action_not_push=True)
-        self.Define_Button('SVHN_classifier',tooltip='Maximize digit appearance',action_not_push=True)
+        if self.SVHN_classifier:
+            self.Define_Button('SVHN_classifier',tooltip='Maximize digit appearance' if self.SVHN_classifier=='manual' else 'Auto-explore digits',action_not_push=True)
         self.Define_Button('IncreasePeriodicity_2D',tooltip='Increase 2D periodicity',action_not_push=True,disabled=True)
         self.Define_Button('IncreasePeriodicity_1D',tooltip='Increase 1D periodicity',action_not_push=True,disabled=True)
         self.Define_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity',action_not_push=False, checkable=True)
@@ -171,7 +172,7 @@ class Ui_MainWindow(object):
         self.Define_Button('DecreaseDisplayZoom',tooltip='Decrease zoom',action_not_push=False)
         self.Define_Button('IncreaseDisplayZoom',tooltip='Increase zoom',action_not_push=False)
         # self.Define_Button('SaveImage',tooltip='Save image',action_not_push=True)
-        self.Define_Button('open_HR_image',tooltip='Synthetically downscale an HR image',action_not_push=True)
+        self.Define_Button('open_HR_image',tooltip='Load and compress an uncompressed image' if self.JPEG_GUI else 'Load and downscale a HR image',action_not_push=True)
         self.Define_Button('selectrect', tooltip='Rectangle selection',action_not_push=True, checkable=True)
         self.Define_Button('selectpoly', tooltip='Polygon selection',action_not_push=True, checkable=True)
         self.Define_Button('unselect', tooltip='De-select',action_not_push=True, disabled=False, checkable=False)
@@ -266,15 +267,23 @@ class Ui_MainWindow(object):
             self.QF_box.setDecimals(0)
             self.QF_box.setToolTip('JPEG Quality Factor')
             if self.SVHN_classifier:
-                self.digit_box = QtWidgets.QDoubleSpinBox()
+                if self.SVHN_classifier=='manual':
+                    self.digit_box = QtWidgets.QDoubleSpinBox()
+                else:
+                    self.digit_box = QtWidgets.QComboBox()
                 self.digit_box.setObjectName("digit_box")
-                self.digit_box.setValue(5)
-                self.digit_box.setMaximum(9)
-                self.digit_box.setMinimum(0)
-                self.digit_box.setSingleStep(1)
-                self.Set_Button_Size(self.digit_box, [1, 1])
-                self.digit_box.setDecimals(0)
-                self.digit_box.setToolTip('Digit to resemble')
+                if self.SVHN_classifier=='manual':
+                    self.digit_box.setToolTip('Digit to resemble')
+                    self.Set_Button_Size(self.digit_box, [1, 1])
+                    self.digit_box.setSingleStep(1)
+                    self.digit_box.setDecimals(0)
+                    self.digit_box.setValue(5)
+                    self.digit_box.setMaximum(9)
+                    self.digit_box.setMinimum(0)
+                else:#'auto'
+                    self.digit_box.setToolTip('Digit classified as...')
+                    self.Set_Button_Size(self.digit_box, [2, 1])
+                    self.digit_box.setVisible(False)
 
 
         # Weight limiting random Z generated images, if enabled:

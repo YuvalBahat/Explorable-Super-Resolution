@@ -45,7 +45,7 @@ Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0O
 Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) file.
 1. *Run the GUI:*  
    ```
-   python GUI.py -opt ./options/test/GUI_SR.json  
+   python GUI.py SR -opt ./options/test/GUI_SR.json  
    ```
 
 ## Exploring using our GUI<a name="GUI_usage"></a>
