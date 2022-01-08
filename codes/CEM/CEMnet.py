@@ -42,7 +42,7 @@ class CEMnet:
         output_im /= output_im[int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)]
         output_im[output_im<=0] = max_allowed_perturbation/2 # Negative output_im are hella invalid... (and would not be identified as such without this line since I'm taking their log).
         invalidity_mask = np.exp(-np.abs(np.log(output_im)))<max_allowed_perturbation
-        # Finding invalid shoulder size, by searching for the index of the deepest invalid pixel, to accomodate cases of non-conitinous invalidity:
+        # Finding invalid shoulder size, by searching for the index of the deepest invalid pixel, to accomodate cases of non-continuous invalidity:
         margin_sizes = [np.argwhere(invalidity_mask[:int(TEST_IM_SIZE/2),int(TEST_IM_SIZE/2)])[-1][0]+1,
                         np.argwhere(invalidity_mask[int(TEST_IM_SIZE / 2),:int(TEST_IM_SIZE / 2)])[-1][0]+1]
         margin_sizes = np.max(margin_sizes)*np.ones([2]).astype(margin_sizes[0].dtype)
@@ -63,7 +63,7 @@ class CEMnet:
         HR_image = imresize(np.stack([conv2(LR_image[:,:,channel_num],self.inv_hTh,mode='same') for channel_num in range(LR_image.shape[-1])],-1),scale_factor=[self.ds_factor])
         return Unpad_Image(HR_image,self.ds_factor*margin_size)
 
-    def WrapArchitecture_PyTorch(self,generated_image=None,training_patch_size=None,only_padders=False):
+    def WrapArchitecture_PyTorch(self,generated_image=None,training_patch_size=None,only_padders=False,grayscale=False):
         assert pytorch_loaded,'Failed to load PyTorch - Necessary for this function of CEM'
         invalidity_margins_4_test_LR = self.invalidity_margins_LR
         invalidity_margins_4_test_HR = self.ds_factor*invalidity_margins_4_test_LR
@@ -82,7 +82,7 @@ class CEMnet:
         if only_padders:
             return
         else:
-            returnable =  CEM_PyTorch(self,generated_image)
+            returnable =  CEM_PyTorch(self,generated_image,grayscale=grayscale)
             self.OP_names = [m[0] for m in returnable.named_modules() if 'Filter_OP' in m[0]]
             return returnable
 
@@ -147,6 +147,8 @@ class CEMnet:
         same_scale_dimensions = [LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         LR_scale_dimensions = [self.ds_factor*LR_source.shape[i]==HR_input.shape[i] for i in range(LR_source.ndim)]
         assert np.all(np.logical_or(same_scale_dimensions,LR_scale_dimensions))
+        if len(same_scale_dimensions)==2: #No color channels:
+            LR_source,HR_input = np.expand_dims(LR_source,-1),np.expand_dims(HR_input,-1)
         LR_source = self.DT_Satisfying_Upscale(LR_source) if np.any(LR_scale_dimensions) else self.Project_2_ortho_2_NS(LR_source)
         HR_projected_2_h_subspace = self.Project_2_ortho_2_NS(HR_input)
         return  HR_input-HR_projected_2_h_subspace+LR_source
@@ -239,10 +241,10 @@ class CEMnet:
                         initializer=tf.random_normal_initializer(stddev=np.sqrt(self.conf.init_variance / np.prod(downscale_antialiasing.get_shape().as_list()[0:3])))),strides=[1,1,1,1],padding='SAME'))
 
 class Filter_Layer(nn.Module):
-    def __init__(self,filter,pre_filter_func,post_filter_func=None):
+    def __init__(self,filter,pre_filter_func,post_filter_func=None,num_channels=3):
         super(Filter_Layer, self).__init__()
-        self.Filter_OP = nn.Conv2d(in_channels=3,out_channels=3,kernel_size=filter.shape,bias=False,groups=3)
-        self.Filter_OP.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[3, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
+        self.Filter_OP = nn.Conv2d(in_channels=num_channels,out_channels=num_channels,kernel_size=filter.shape,bias=False,groups=num_channels)
+        self.Filter_OP.weight = nn.Parameter(data=torch.from_numpy(np.tile(np.expand_dims(np.expand_dims(filter, 0), 0), reps=[num_channels, 1, 1, 1])).type(torch.cuda.FloatTensor), requires_grad=False)
         self.Filter_OP.filter_layer = True
         self.pre_filter_func = pre_filter_func
         self.post_filter_func = (lambda x:x) if post_filter_func is None else post_filter_func
@@ -250,14 +252,16 @@ class Filter_Layer(nn.Module):
         return self.post_filter_func(self.Filter_OP(self.pre_filter_func(x)))
 
 class CEM_PyTorch(nn.Module):
-    def __init__(self, CEMnet, generated_image):
+    def __init__(self, CEMnet, generated_image,grayscale=False):
         super(CEM_PyTorch, self).__init__()
+        num_channels = 1 if grayscale else 3
         self.ds_factor = CEMnet.ds_factor
         self.conf = CEMnet.conf
-        self.generated_image_model = generated_image
+        self.using_SR_model = generated_image is not None
+        if self.using_SR_model: self.generated_image_model = generated_image
         inv_hTh_padding = np.floor(np.array(CEMnet.inv_hTh.shape)/2).astype(np.int32)
         Replication_Padder = nn.ReplicationPad2d((inv_hTh_padding[1],inv_hTh_padding[1],inv_hTh_padding[0],inv_hTh_padding[0]))
-        self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(CEMnet.inv_hTh,pre_filter_func=Replication_Padder)
+        self.Conv_LR_with_Inv_hTh_OP = Filter_Layer(CEMnet.inv_hTh,pre_filter_func=Replication_Padder,num_channels=num_channels)
         downscale_antialiasing = np.rot90(CEMnet.ds_kernel,2)
         upscale_antialiasing = CEMnet.ds_kernel*CEMnet.ds_factor**2
         pre_stride, post_stride = calc_strides(None, CEMnet.ds_factor)
@@ -265,10 +269,10 @@ class CEM_PyTorch(nn.Module):
         Aliased_Upscale_OP = lambda x:Upscale_Padder(x.unsqueeze(4).unsqueeze(3)).view([x.size()[0],x.size()[1],CEMnet.ds_factor*x.size()[2],CEMnet.ds_factor*x.size()[3]])
         antialiasing_padding = np.floor(np.array(CEMnet.ds_kernel.shape)/2).astype(np.int32)
         antialiasing_Padder = nn.ReplicationPad2d((antialiasing_padding[1],antialiasing_padding[1],antialiasing_padding[0],antialiasing_padding[0]))
-        self.Upscale_OP = Filter_Layer(upscale_antialiasing,pre_filter_func=lambda x:antialiasing_Padder(Aliased_Upscale_OP(x)))
+        self.Upscale_OP = Filter_Layer(upscale_antialiasing,pre_filter_func=lambda x:antialiasing_Padder(Aliased_Upscale_OP(x)),num_channels=num_channels)
         Reshaped_input = lambda x:x.view([x.size()[0],x.size()[1],int(x.size()[2]/self.ds_factor),self.ds_factor,int(x.size()[3]/self.ds_factor),self.ds_factor])
         Aliased_Downscale_OP = lambda x:Reshaped_input(x)[:,:,:,pre_stride[0],:,pre_stride[1]]
-        self.DownscaleOP = Filter_Layer(downscale_antialiasing,pre_filter_func=antialiasing_Padder,post_filter_func=lambda x:Aliased_Downscale_OP(x))
+        self.DownscaleOP = Filter_Layer(downscale_antialiasing,pre_filter_func=antialiasing_Padder,post_filter_func=lambda x:Aliased_Downscale_OP(x),num_channels=num_channels)
         self.LR_padder = CEMnet.LR_padder
         self.HR_padder = CEMnet.HR_padder
         self.HR_unpadder = CEMnet.HR_unpadder
@@ -278,17 +282,24 @@ class CEM_PyTorch(nn.Module):
 
     def forward(self, x):
         return_2_components = self.return_2_components and not self.pre_pad
-        if self.pre_pad:
-            LR_Z = x.size(1) - 3 == self.generated_image_model.num_latent_channels
-            if x.size(1)!=3 and not LR_Z:
-                latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
-                latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.generated_image_model.upscale*val for val in list(latent_input_HR.size()[2:])])
-                x = self.LR_padder(x)
-                latent_input_HR = self.HR_padder(latent_input_HR).view([latent_input_HR.size(0)]+[latent_input_HR.size(1)*self.generated_image_model.upscale**2]+list(x.size()[2:]))
-                x = torch.cat([latent_input_HR,x],1)
-            else:
-                x = self.LR_padder(x)
-        generated_image = self.generated_image_model(x)
+        if self.using_SR_model:
+            if self.pre_pad:
+                LR_Z = x.size(1) - 3 == self.generated_image_model.num_latent_channels
+                if x.size(1)!=3 and not LR_Z:
+                    latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
+                    latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.generated_image_model.upscale*val for val in list(latent_input_HR.size()[2:])])
+                    x = self.LR_padder(x)
+                    latent_input_HR = self.HR_padder(latent_input_HR).view([latent_input_HR.size(0)]+[latent_input_HR.size(1)*self.generated_image_model.upscale**2]+list(x.size()[2:]))
+                    x = torch.cat([latent_input_HR,x],1)
+                else:
+                    x = self.LR_padder(x)
+            generated_image = self.generated_image_model(x)
+        else:
+            generated_image = x[1]
+            x = x[0]
+            if self.pre_pad:
+                x,generated_image = self.LR_padder(x),self.HR_padder(generated_image)
+
         x = x[:,-3:,:,:]# Handling the case of adding noise channel(s) - Using only last 3 image channels
         assert np.all(np.mod(generated_image.size()[2:],self.ds_factor)==0)
         ortho_2_NS_HR_component = self.Upscale_OP(self.Conv_LR_with_Inv_hTh_OP(x))
@@ -355,7 +366,12 @@ def Return_kernel(ds_factor,upscale_kernel=None):
 
 def Pad_Image(image,margin_size):
     try:
-        return np.pad(image,pad_width=((margin_size,margin_size),(margin_size,margin_size),(0,0)),mode='edge')
+        padding = ((margin_size,margin_size),(margin_size,margin_size))
+        if image.ndim==2:
+            padding = ((margin_size, margin_size), (margin_size, margin_size))
+        else:# 3 channels
+            padding = ((margin_size,margin_size),(margin_size,margin_size),(0,0))
+        return np.pad(image,pad_width=padding,mode='edge')
     except:
         print('Reproduced the BUG I''m looking for')
 
@@ -394,3 +410,19 @@ def Adjust_State_Dict_Keys(loaded_state_dict,current_state_dict):
         return modified_names_dict
     else:
         return loaded_state_dict
+
+class CEM_downsampler(nn.Module):
+    # A module taking advantage of the CEM for downsampling images. It uses the same downsampling kernelused by the CEM, and replicate-pads the high-resolution input prior to downsampling, to prevent border artifacts.
+    # Initialized given the desired downsampling factor (e.g. 4). Supports single channel images as well.
+    # Module input: A [NxCxHxW] torch.cuda.FloatTensor batch of images.
+    def __init__(self,ds_factor,grayscale=False,differentiable=False):
+        super(CEM_downsampler,self).__init__()
+        self.CEM = CEMnet(Get_CEM_Conf(ds_factor))
+        self.CEM.invalidity_margins_LR = 1*self.CEM.ds_kernel_invalidity_half_size_LR
+        self.CEM = self.CEM.WrapArchitecture_PyTorch(grayscale=grayscale)
+        if not differentiable:  self.CEM.eval()
+
+    def forward(self,input):
+        padded_HR = self.CEM.HR_padder(input)
+        downsampled = self.CEM.DownscaleOP(padded_HR)
+        return self.CEM.LR_unpadder(downsampled)
