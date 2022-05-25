@@ -63,6 +63,7 @@ class SRRaGANModel(BaseModel):
                        'D_real', 'D_fake','D_logits_diff','psnr_val','D_update_ratio','LR_decrease','Correctly_distinguished','l_d_gp', # 'niqe_val',
                        'per_pix_STD_val','l_e','l_g_optimalZ','D_G_prob_ratio','mean_D_correct','Z_effect']+['l_g_latent_%d'%(i) for i in range(self.num_latent_channels)]
         self.log_dict = OrderedDict(zip(logs_2_keep, [[] for i in logs_2_keep]))
+
         if self.is_train:
             if self.latent_input:
                 if train_opt['optimalZ_loss_type'] is not None and train_opt['optimalZ_loss_weight'] is not None:
