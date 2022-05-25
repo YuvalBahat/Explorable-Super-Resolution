@@ -38,14 +38,14 @@ Code architecture is based on an older version of [BasicSR](https://github.com/j
 
 ## Running the explorable SR GUI<a name="GUI_run"></a>
 1. *Train or download a pre-trained explorable SR model:*  
-Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. 
+Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. The corresponding [pre-trained discriminator is available here](https://drive.google.com/file/d/1VsDX6dhQyszW1Lq3wUp5I19mBhuKg9O2/view?usp=sharing), in case you want to fine-tune the model.
 1. *(Optional) Download a pre-trained ESRGAN model:*  
 Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing), to display the (single) super-resolved output by the state-of-the-art [ESRGAN](https://arxiv.org/abs/1809.00219) method.
 1. *Update paths:*  
 Update the necessary fields in the [`GUI_SR.json`](./options/test/GUI_SR.json) file.
 1. *Run the GUI:*  
    ```
-   python GUI.py -opt ./options/test/GUI_SR.json  
+   python GUI.py SR -opt ./options/test/GUI_SR.json  
    ```
 
 ## Exploring using our GUI<a name="GUI_usage"></a>
@@ -54,9 +54,10 @@ I hope to add here a full description of all our GUI exploration tools soon. In 
 ## Training the backend exploration network<a name="Training"></a>
 1. *Download training set:*  
 Download a dataset of high-resolution training images. We used the training subset of the [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) dataset.
-1. *Training-set preparation:*  
-   1. Create image crops using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
-   1. Create `lmdb` files using [`create_lmdb.py`](./scripts/create_lmdb.py).
+1. *Training-set preparation* (Requires updating the 'dataset_root_path' field in each of the scripts below):
+   1. Create image crops of your high resolution (HR) image training set using [`extract_subimgs_single.py`](./scripts/extract_subimgs_single.py).
+   1. Create two new folders containing pairs of corresponding HR and LR image crops, using [`generate_mod_LR_bic.py`](./scripts/generate_mod_LR_bic.py).
+   1. Create two corresponding `lmdb` files by running the [`create_lmdb.py`](./scripts/create_lmdb.py) script twice (changing the binary value of the 'HR_images' flag between runs).
 1. *Download initialization model:*  
 Download a [pre-trained ESRGAN model](https://drive.google.com/file/d/1bWeH3zo0OIoCYUjei2pkCBm-ATlkwhpK/view?usp=sharing) for weights initialization (This model is for a 4x super-resolution. Other factors require a different model).
 1. *Update parameters:*  

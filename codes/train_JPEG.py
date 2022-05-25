@@ -15,12 +15,7 @@ from utils import util
 from data import create_dataloader, create_dataset
 from models import create_model
 from utils.logger import Logger, PrintLogger
-import tqdm
 from datetime import datetime
-import cv2
-import copy
-
-# USE_Y_GENERATOR_4_CHROMA = True
 
 def main():
     # options
@@ -28,12 +23,17 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     parser.add_argument('-single_GPU', action='store_true',help='Utilize only one GPU')
     parser.add_argument('-chroma', action='store_true',help='Training the chroma-channels generator')
+    parser.add_argument('-initialization', action='store_true',help='Initializing a model from scratch, using only reconstruction loss')
     if parser.parse_args().single_GPU:
         available_GPUs = util.Assign_GPU(maxMemory=0.66)
     else:
         # available_GPUs = util.Assign_GPU(max_GPUs=None,maxMemory=0.8,maxLoad=0.8)
         available_GPUs = util.Assign_GPU(max_GPUs=None)
-    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),name='JPEG'+('_chroma' if parser.parse_args().chroma else ''))
+    name_ext = ''
+    # if parser.parse_args().chroma:
+    #     name_ext = '_chroma'
+    opt = option.parse(parser.parse_args().opt, is_train=True,batch_size_multiplier=len(available_GPUs),JPEG=True,
+                       initialization=parser.parse_args().initialization,chroma=parser.parse_args().chroma)
 
     if not opt['train']['resume']:
         util.mkdir_and_rename(opt['path']['experiments_root'])  # Modify experiment name if exists
@@ -65,7 +65,6 @@ def main():
             print('Total epoches needed: {:d} for iters {:,d}'.format(total_epoches, total_iters))
             train_loader = create_dataloader(train_set, dataset_opt)
         elif phase == 'val':
-            val_dataset_opt = dataset_opt
             val_set = create_dataset(dataset_opt)
             val_loader = create_dataloader(val_set, dataset_opt)
             print('Number of val images in [{:s}]: {:d}'.format(dataset_opt['name'], len(val_set)))
@@ -93,21 +92,27 @@ def main():
     recently_saved_models = deque(maxlen=4)
     for epoch in range(int(math.floor(model.step / train_size)),total_epoches):
         for i, train_data in enumerate(train_loader):
-            model.gradient_step_num = model.step // max_accumulation_steps
+            model.gradient_step_num = model.step // (max_accumulation_steps*(2 if model.D_exists and model.opt['train']['G_Dbatch_separation']=='SeparateBatch' else 1))
             not_within_batch = model.step % max_accumulation_steps == (max_accumulation_steps - 1)
-            saving_step = ((time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
+            saving_step = (model.gradient_step_num==0 or (time.time()-last_saving_time)>60*opt['logger']['save_checkpoint_freq']) and not_within_batch
             if saving_step:
                 last_saving_time = time.time()
 
             # save models
             if lr_too_low or saving_step:
                 model.save_log()
-                recently_saved_models.append(model.save(model.gradient_step_num))
-                if len(recently_saved_models)>3:
-                    model_2_delete = recently_saved_models.popleft()
-                    os.remove(model_2_delete)
-                    if model.D_exists:
-                        os.remove(model_2_delete.replace('_G.','_D.'))
+                model.save(model.gradient_step_num)
+                if opt['logger']['keep_old_models']:
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.save_dir,
+                                         saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_(G|D).pth$')
+                else:
+                    recently_saved_models.append(model.save(model.gradient_step_num))
+                    if len(recently_saved_models)>3:
+                        model_2_delete = recently_saved_models.popleft()
+                        if os.path.isfile(model_2_delete):
+                            os.remove(model_2_delete)
+                        if model.D_exists:
+                            os.remove(model_2_delete.replace('_G.','_D.'))
                 print('{}: Saving the model before iter {:d}.'.format(datetime.now().strftime('%H:%M:%S'),model.gradient_step_num))
                 if lr_too_low:
                     break
@@ -115,8 +120,46 @@ def main():
             if model.step > total_iters:
                 break
 
-            # time_elapsed = time.time() - start_time
-            # if not_within_batch:    start_time = time.time()
+            # validation
+            pre_val_time = time.time()
+            if not_within_batch and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
+                print_rlt = OrderedDict()
+                if model.generator_changed:
+                    print('---------- validation -------------')
+                    save_images = True# Changed to always saving, and pruning saved images as training advances
+                    Z_latent = [0]+([-0.5,0.5] if (opt['network_G']['latent_input'] and opt['network_G']['latent_channels']!=0) else [])
+                    print_rlt['psnr'] = 0
+                    if not model.chroma_mode:
+                        print_rlt['niqe'] = 0
+                    model.im_collages = []
+                    for z_num,cur_Z in enumerate(Z_latent):
+                        model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,first_eval=save_GT_Uncomp,
+                                                 save_images=save_images,collect_avg_err_est=z_num==0)
+                    util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
+                                         saving_freq=opt['train']['val_save_freq'], name_pattern='^(\d)+_Z.*PSNR.*.png$')
+                    if save_GT_Uncomp:  # Save GT Uncomp images
+                        save_GT_Uncomp = False
+                    print_rlt['psnr'] /= len(Z_latent)
+                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
+                    if not model.chroma_mode:
+                        print_rlt['niqe'] /= len(Z_latent)
+                        model.log_dict['niqe_val'].append((model.gradient_step_num, print_rlt['niqe']))
+                    if len(Z_latent)>1:
+                        print_rlt['per_pix_STD'] = np.mean(np.std(np.stack(model.im_collages, 0), 0))
+                        model.log_dict['per_pix_STD_val'].append((model.gradient_step_num,print_rlt['per_pix_STD']))
+                else:
+                    print('Skipping validation because generator is unchanged')
+                # Save to log
+                print_rlt['model'] = opt['model']
+                print_rlt['epoch'] = epoch
+                print_rlt['iters'] = model.gradient_step_num
+                # print_rlt['time'] = time_elapsed
+                print_rlt['time'] = (time.time() - pre_val_time)/len(Z_latent)/len(val_loader.dataset)
+                # model.display_log_figure()
+                # model.generator_changed = False
+                logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
+                print('-----------------------------------')
+
             # log
             if model.gradient_step_num % opt['logger']['print_freq'] == 0 and not_within_batch:
                 logs = model.get_current_log()
@@ -124,55 +167,13 @@ def main():
                 print_rlt['model'] = opt['model']
                 print_rlt['epoch'] = epoch
                 print_rlt['iters'] = model.gradient_step_num
-                # time_elapsed = time.time() - start_time
-                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
+                print_rlt['time'] = (pre_val_time - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
                 start_time, start_time_gradient_step = time.time(), model.gradient_step_num
                 for k, v in logs.items():
                     print_rlt[k] = v
                 print_rlt['lr'] = model.get_current_learning_rate()
                 logger.print_format_results('train', print_rlt,keys_ignore_list=['avg_est_err'])
                 model.display_log_figure()
-
-            # validation
-            if (not_within_batch or i==0) and (model.gradient_step_num) % opt['train']['val_freq'] == 0: # and model.gradient_step_num>=opt['train']['D_init_iters']:
-                print_rlt = OrderedDict()
-                if model.generator_changed:
-                    print('---------- validation -------------')
-                    start_time = time.time()
-                    if False and SAVE_IMAGE_COLLAGE and model.gradient_step_num%opt['train']['val_save_freq'] == 0: #Saving training images:
-                        # GT_image_collage,quantized_image_collage = [],[]
-                        cur_train_results = model.get_current_visuals(entire_batch=True)
-                        train_psnrs = [util.calculate_psnr(util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]),
-                            util.tensor2img(cur_train_results['Uncomp'][im_num], out_type=np.uint8,min_max=[0,255])) for im_num in range(len(cur_train_results['Decomp']))]
-                        #Save latest training batch output:
-                        save_img_path = os.path.join(os.path.join(opt['path']['val_images']),
-                                                     '{:d}_Tr_PSNR{:.3f}.png'.format(model.gradient_step_num, np.mean(train_psnrs)))
-                        util.save_img(np.clip(np.concatenate((np.concatenate([util.tensor2img(cur_train_results['Uncomp'][im_num], out_type=np.uint8,min_max=[0,255]) for im_num in
-                                 range(len(cur_train_results['Decomp']))],0), np.concatenate(
-                                [util.tensor2img(cur_train_results['Decomp'][im_num], out_type=np.uint8,min_max=[0,255]) for im_num in range(len(cur_train_results['Decomp']))],
-                                0)), 1), 0, 255).astype(np.uint8), save_img_path)
-                    Z_latent = [0]+([-0.5,0.5] if opt['network_G']['latent_input'] else [])
-                    print_rlt['psnr'] = 0
-                    for cur_Z in Z_latent:
-                        model.perform_validation(data_loader=val_loader,cur_Z=cur_Z,print_rlt=print_rlt,GT_and_quantized=save_GT_Uncomp,
-                                                 save_images=((model.gradient_step_num) % opt['train']['val_save_freq'] == 0) or save_GT_Uncomp)
-                    if save_GT_Uncomp:  # Save GT Uncomp images
-                        save_GT_Uncomp = False
-                    print_rlt['psnr'] /= len(Z_latent)
-                    model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
-                else:
-                    print('Skipping validation because generator is unchanged')
-                # time_elapsed = time.time() - start_time
-                # Save to log
-                print_rlt['model'] = opt['model']
-                print_rlt['epoch'] = epoch
-                print_rlt['iters'] = model.gradient_step_num
-                # print_rlt['time'] = time_elapsed
-                print_rlt['time'] = (time.time() - start_time)/np.maximum(1,model.gradient_step_num-start_time_gradient_step)
-                # model.display_log_figure()
-                # model.generator_changed = False
-                logger.print_format_results('val', print_rlt,keys_ignore_list=['avg_est_err'])
-                print('-----------------------------------')
 
             model.feed_data(train_data,mixed_Y=True)
             model.optimize_parameters()

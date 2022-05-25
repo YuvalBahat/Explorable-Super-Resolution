@@ -139,6 +139,10 @@ class BaseModel():
         loaded_state_dict = self.process_loaded_state_dict(loaded_state_dict=loaded_state_dict,current_state_dict=network.state_dict())
         network.load_state_dict(loaded_state_dict, strict=strict)
 
+    def Set_Require_Grad_Status(self, network, status):
+        for p in network.parameters():
+            p.requires_grad = status
+
     def process_loaded_state_dict(self,loaded_state_dict,current_state_dict):
         SPECTRAL_NORMALIZATIONFIX_PATCH = False
         modified_state_dict = collections.OrderedDict()
@@ -157,9 +161,9 @@ class BaseModel():
             if key!=current_key:
                 assert loaded_size[:1]+loaded_size[2:]==current_size[:1]+current_size[2:],'Unmatching parameter sizes after changing parameter key name'
                 modified_key_names_counter += 1
-            if 'latent_input' in self.__dict__ and self.latent_input is not None and \
+            if 'latent_input' in self.__dict__ and self.latent_input is not None and self.num_latent_channels>0 and \
                 'weight' in key and loaded_state_dict[key].dim()>1 and \
-                current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1]+self.num_latent_channels*np.array([1,self.opt['scale']**2])):
+                current_state_dict[current_key].size()[1] in list(loaded_state_dict[key].size()[1] + np.arange(self.num_latent_channels)+1):
                 # In case we initialize a newly trained model that has latent input, with pre-trained model that doesn't have, add weights corresponding to
                 # the added input layers (added as first layers), whose STD is LATENT_WEIGHTS_RELATIVE_STD*(STD of existing weights in this kernel):
                 additional_channels = current_state_dict[current_key].size()[1]-loaded_state_dict[key].size()[1]
@@ -169,6 +173,12 @@ class BaseModel():
                                                               loaded_state_dict[key].cuda()],1)
                 # self.channels_idx_4_grad_amplification[i] = [c for c in range(additional_channels)]
                 zero_extended_weights_counter += 1
+            elif 'DecompCNN_model' in str(type(self)) and self.chroma_mode and i==(len(loaded_state_dict.keys())-1) and loaded_size[0]==2*256 and current_size[0]==2*64:
+                #     patchy fix to use chroma models trained to output 256 coefficients per chroma channel to initialize models with 64 outputs per chroma channel:
+                def extract_upper_left_block(weight_tensor):
+                    return weight_tensor.view(16,16,weight_tensor.shape[1],weight_tensor.shape[2],weight_tensor.shape[3])[:8,:8,...]\
+                        .contiguous().view(64,weight_tensor.shape[1],weight_tensor.shape[2],weight_tensor.shape[3])
+                modified_state_dict[current_key] = torch.cat([extract_upper_left_block(loaded_state_dict[key][:256,...]),extract_upper_left_block(loaded_state_dict[key][256:,...])],0)
             elif 'CEM_net' in self.__dict__ and self.CEM_arch and any([CEM_op in key for CEM_op in self.CEM_net.OP_names]):
                 continue # Not loading CEM module weights
             else:
@@ -179,12 +189,15 @@ class BaseModel():
             print('Warning: %d model weights were augmented with zeros to accommodate for larger inputs' % (zero_extended_weights_counter))
         return modified_state_dict
 
-    def plot_curves(self,steps,loss,extra_smoothed=False):
-        SMOOTH_CURVES = True
-        if SMOOTH_CURVES:
+    def plot_curves(self, steps, loss, smoothing='yes'):
+        assert smoothing in ['yes','no','extra']
+        # SMOOTH_CURVES = True
+        # if smoothing=='yes':
+        #     smoothing = 'no'
+        if smoothing!='no':
             steps_induced_upper_bound = np.ceil(1000/np.percentile(np.diff(steps),99)) if len(steps)>1 else 1
             smoothing_win = np.minimum(np.maximum(len(loss)/20,np.sqrt(len(loss))),steps_induced_upper_bound).astype(np.int32)
-            if extra_smoothed:
+            if smoothing=='extra':
                 smoothing_win = np.minimum(len(loss)//3,smoothing_win*100)
             loss = np.convolve(loss,np.ones([smoothing_win])/smoothing_win,'valid')
             if steps is not None:
@@ -199,7 +212,8 @@ class BaseModel():
         # keys_2_display = ['l_g_pix', 'l_g_fea', 'l_g_range', 'l_g_gan', 'l_d_real', 'l_d_fake', 'D_real', 'D_fake','D_logits_diff','psnr_val']
         keys_2_display = ['l_g_gan','D_logits_diff', 'psnr_val','l_g_pix_log_rel','l_g_fea','l_g_range','l_d_real','D_loss_STD','l_g_latent','l_e',
                           'l_g_latent_0','l_g_latent_1','l_g_latent_2','l_g_optimalZ','l_g_pix','l_g_highpass','l_g_shift_invariant','D_update_ratio',
-                          'D_G_prob_ratio','Correctly_distinguished','Z_effect','post_train_D_diff','G_step_D_gain']
+                          'D_G_prob_ratio','Correctly_distinguished','Z_effect','post_train_D_diff','G_step_D_gain','niqe_val','per_pix_STD_val']
+        NON_SMOOTHED_LOGS = ['post_train_D_diff','D_update_ratio','D_logits_diff']
         PER_KEY_FIGURE = True
         legend_strings = []
         plt.figure(2)
@@ -212,7 +226,7 @@ class BaseModel():
                     plt.clf()
                 if isinstance(self.log_dict[key][0],tuple) or len(self.log_dict[key][0])==2:
                     cur_curve = [np.array([val[0] for val in self.log_dict[key]]),np.array([val[1] for val in self.log_dict[key]])]
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1],smoothing='no' if key in NON_SMOOTHED_LOGS else 'yes')
                     if 'LR_decrease' in self.log_dict.keys():
                         for decrease in self.log_dict['LR_decrease']:
                             plt.plot([decrease[0],decrease[0]],[min_val,max_val],'k')
@@ -230,13 +244,15 @@ class BaseModel():
                         series_avg = np.mean(self.log_dict[key])
                 cur_legend_string = [key + ' (%.2e)' % (series_avg)]
                 if len(cur_curve[0])>100:
-                    self.plot_curves(cur_curve[0],cur_curve[1],extra_smoothed=True)
+                    self.plot_curves(cur_curve[0], cur_curve[1], smoothing='extra')
                     cur_legend_string.append(key+'_smoothed')
                 if PER_KEY_FIGURE:
                     plt.xlabel('Steps')
-                    if (key+'_baseline') in self.log_dict.keys() and len(self.log_dict[key+'_baseline'])>0:
-                        plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[key+'_baseline'][0][1]])
-                        cur_legend_string.append('baseline' + ' (%.2e)' % (self.log_dict[key+'_baseline'][0][1]))
+                    baseline_logs = ['quantized_'+key,'GT_'+key]
+                    for bl_log in baseline_logs:
+                        if bl_log in self.log_dict.keys() and len(self.log_dict[bl_log])>0:
+                            plt.plot([cur_curve[0][0],cur_curve[0][-1]],2*[self.log_dict[bl_log][0][1]])
+                            cur_legend_string.append('%s (%.2e)' % (bl_log,self.log_dict[bl_log][0][1]))
                     plt.legend(cur_legend_string, loc='best')
                     plt.savefig(os.path.join(self.log_path, 'logs_%s.pdf' % (key)))
                     plt.figure(2)
@@ -247,7 +263,7 @@ class BaseModel():
                         cur_curve[1] = (cur_curve[1]-np.mean(cur_curve[1]))/np.std(cur_curve[1])
                     else:
                         cur_curve[1] = (cur_curve[1] - np.mean(cur_curve[1]))
-                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1])
+                    min_val,max_val = self.plot_curves(cur_curve[0],cur_curve[1],smoothing='no' if key in NON_SMOOTHED_LOGS else 'yes')
                     min_global_val,max_global_val = np.minimum(min_global_val,min_val),np.maximum(max_global_val,max_val)
                 legend_strings.append(cur_legend_string[0])
         plt.legend(legend_strings,loc='best')

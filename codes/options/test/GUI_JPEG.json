@@ -1,11 +1,5 @@
 {
-  "name": "DCTnf160nb10QF5_50_ImageNet_MapLossDunverified",
-//  "name": "nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss",
-//  "name": "nf160nb10_QF10_DinputConcat_Verif0_85correct_noRefLoss_DCT",
-//  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_ZwithoutLoss",
-//  "name": "nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss",
-//  "name": "nf160nb10_QF5_50_LR1e-4",
-//  "name": "nf160nb10_QF5_50_multiScaleDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss",
+  "name": "Explorable_Decoding",
   "suffix": ""
   , "model": "dncnn"
   , "scale": 4
@@ -22,54 +16,25 @@
 
   , "path": {
     "root": "/media/ybahat/data/projects/SRGAN"
-    , "pretrained_model_G": "../pretrained_models/chroma_DCTnf160nb10QF5_50_ImageNet_MapLossDunverified.pth"
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitGrad1_1DinputConcat_SN_Z64structAndMap1e-3Loss/models/466154_G.pth"
-//   Model trained on the original scale of DIV2k, with QF in [5,49]:
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_multiScaleDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap1e-3Loss/models/95087_G.pth"
-//   Model trained on DIV2k downscaled x4, with QF in [5,49]:
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_CoarsestScaleDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64/models/836289_G.pth"
-////   Model with 320 channels trained on DIV2k downscaled x4, with QF in [5,49]:
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_CoarsestScaleDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64/models/1159884_G.pth"
-//   Model trained on ImageNet, with QF in [5,49]:
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInit_noRefLoss_DCT_Z64/models/887274_G.pth"
-//   Model with 320 trained on ImageNet, with QF in [5,49] and Z losses:
-    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf320nb10_QF5_50_ImageNetDS_InputConcatD_SN_VerifInitGrad_noRefLoss_DCT_Z64_structAndMap5e-4Loss/models/876435_G.pth" //793107,876435,912976
-//    , "Y_channel_model_G": "/media/ybahat/data/projects/SRGAN/experiments/JPEG/nf160nb10_QF10_VerifInitD_multiScaleDS_inputConcat_SN_Z64structAndMap1e-3Loss/models/169741_G.pth"
+    , "pretrained_model_G": "/home/ybahat/PycharmProjects/SRGAN/pretrained_models/JPEG_chroma.pth"
+    , "Y_channel_model_G": "/home/ybahat/PycharmProjects/SRGAN/pretrained_models/JPEG_Y_channel.pth"
   }
 
   , "network_G": {
     "which_model_G": "DnCNN" // RRDB_net | sr_resnet
     , "latent_input": "all_layers" // "all_layers","first_layer","None"
+    , "DCT_G": 1
     , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
-    , "latent_channels": 64 //3 //64
+    , "latent_channels": 64
     , "norm_type": "batch"
     , "mode": "CNA"
-    , "nf": 160 //320 //160
+    , "nf": 160
     , "nb": 10
-    , "in_nc": 64
-    , "out_nc": 64
     , "gc": 32
     , "group": 1
   }
   , "network_G_Y": {
-    "which_model_G": "DnCNN" // RRDB_net | sr_resnet
-    , "latent_input": "all_layers" // "all_layers","first_layer","None"
-    , "latent_input_domain": "HR_downscaled" //,"HR_downscaled" //"HR","LR"
-    , "latent_channels": 64 //3 //64
-    , "norm_type": "batch"
-    , "mode": "CNA"
-    , "nf": 320 //320 //160
+     "nf": 320
     , "nb": 10
-    , "in_nc": 64
-    , "out_nc": 64
-    , "gc": 32
-    , "group": 1
   }
-//  , "datasets": {
-//    "train": {
-//       "patch_size": 256}
-//  }
-//  ,"test": {
-//    "kernel": "estimated" //"estimated","cubic","blurry_cubic_1"
-//  }
 }

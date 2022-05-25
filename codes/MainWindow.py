@@ -128,7 +128,7 @@ class Ui_MainWindow(object):
         self.centralWidget = QtWidgets.QWidget()
         self.centralWidget.setSizePolicy(ReturnSizePolicy(QtWidgets.QSizePolicy.Maximum,self.centralWidget.sizePolicy().hasHeightForWidth()))
         self.centralWidget.setObjectName("centralWidget")
-        MainWindow.setWindowTitle("Explorable Super Resolution")
+        MainWindow.setWindowTitle("Explorable Image Decompression" if self.JPEG_GUI else "Explorable Super Resolution")
         MainWindow.setCentralWidget(self.centralWidget)
         self.horizontalLayout = QtWidgets.QHBoxLayout(self.centralWidget)
         self.horizontalLayout.setSpacing(6)
@@ -146,7 +146,7 @@ class Ui_MainWindow(object):
         self.Define_Button(button_name='loop_apply_scribble',tooltip='Perform multiple scribble/imprinting application steps',action_not_push=True,disabled=True)
         self.Define_Button(button_name='imprinting',tooltip='Set imprinting rectangle (Using transparent color)',action_not_push=False,checkable=False,disabled=True)
         self.Define_Button(button_name='imprinting_auto_location',tooltip='Set boundaries for automatic imprinting location (Using transparent color)',action_not_push=False,checkable=False,disabled=True)
-        self.Define_Button(button_name='open_image',tooltip='Load LR image',action_not_push=True)
+        self.Define_Button(button_name='open_image',tooltip='Load %s image'%('compressed' if self.JPEG_GUI else 'LR'),action_not_push=True)
         self.Define_Button(button_name='Z_load',tooltip='Load Z map',action_not_push=True)
         self.Define_Button('estimatedKenrel',tooltip='Use estimated SR kernel',action_not_push=False,checkable=True)
         self.Define_Button('ProcessRandZ',tooltip='Produce random images',action_not_push=True)
@@ -163,6 +163,8 @@ class Ui_MainWindow(object):
         self.Define_Button('ImitateHist',tooltip='Encourage desired histogram',action_not_push=True,disabled=True)
         self.Define_Button('ImitatePatchHist',tooltip='Encourage desired mean-less (normalized) patches',action_not_push=True,disabled=True)
         self.Define_Button('FoolAdversary',tooltip='Fool discriminator',action_not_push=True)
+        if self.SVHN_classifier:
+            self.Define_Button('SVHN_classifier',tooltip='Maximize digit appearance' if self.SVHN_classifier=='manual' else 'Auto-explore digits',action_not_push=True)
         self.Define_Button('IncreasePeriodicity_2D',tooltip='Increase 2D periodicity',action_not_push=True,disabled=True)
         self.Define_Button('IncreasePeriodicity_1D',tooltip='Increase 1D periodicity',action_not_push=True,disabled=True)
         self.Define_Button(button_name='indicatePeriodicity', tooltip='Set desired periodicity',action_not_push=False, checkable=True)
@@ -170,7 +172,7 @@ class Ui_MainWindow(object):
         self.Define_Button('DecreaseDisplayZoom',tooltip='Decrease zoom',action_not_push=False)
         self.Define_Button('IncreaseDisplayZoom',tooltip='Increase zoom',action_not_push=False)
         # self.Define_Button('SaveImage',tooltip='Save image',action_not_push=True)
-        self.Define_Button('open_HR_image',tooltip='Synthetically downscale an HR image',action_not_push=True)
+        self.Define_Button('open_HR_image',tooltip='Load and compress an uncompressed image' if self.JPEG_GUI else 'Load and downscale a HR image',action_not_push=True)
         self.Define_Button('selectrect', tooltip='Rectangle selection',action_not_push=True, checkable=True)
         self.Define_Button('selectpoly', tooltip='Polygon selection',action_not_push=True, checkable=True)
         self.Define_Button('unselect', tooltip='De-select',action_not_push=True, disabled=False, checkable=False)
@@ -264,6 +266,25 @@ class Ui_MainWindow(object):
             self.Set_Button_Size(self.QF_box, [2, 1])
             self.QF_box.setDecimals(0)
             self.QF_box.setToolTip('JPEG Quality Factor')
+            if self.SVHN_classifier:
+                if self.SVHN_classifier=='manual':
+                    self.digit_box = QtWidgets.QDoubleSpinBox()
+                else:
+                    self.digit_box = QtWidgets.QComboBox()
+                self.digit_box.setObjectName("digit_box")
+                if self.SVHN_classifier=='manual':
+                    self.digit_box.setToolTip('Digit to resemble')
+                    self.Set_Button_Size(self.digit_box, [1, 1])
+                    self.digit_box.setSingleStep(1)
+                    self.digit_box.setDecimals(0)
+                    self.digit_box.setValue(5)
+                    self.digit_box.setMaximum(9)
+                    self.digit_box.setMinimum(0)
+                else:#'auto'
+                    self.digit_box.setToolTip('Digit classified as...')
+                    self.Set_Button_Size(self.digit_box, [2, 1])
+                    self.digit_box.setVisible(False)
+
 
         # Weight limiting random Z generated images, if enabled:
         self.randomLimitingWeightBox_Enabled = False
@@ -325,7 +346,8 @@ class Ui_MainWindow(object):
         optimize_Z_TB = self.Define_Grid_layout('Optimize Z',buttons_list=[self.IncreaseSTD_button,self.DecreaseSTD_button,self.DecreaseTV_button,
             self.ImitateHist_button,self.ImitatePatchHist_button]+([self.FoolAdversary_button] if ENABLE_ADVERSARY_BUTTON_IN_SR else [])+
             [self.STD_increment,self.ProcessRandZ_button,self.ProcessLimitedRandZ_button]+
-            ([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else []),layout_cols=4)
+            ([self.randomLimitingWeightBox] if self.randomLimitingWeightBox_Enabled else [])+
+            ([self.SVHN_classifier_button,self.digit_box] if self.SVHN_classifier else []),layout_cols=4)
         scribbling_tool_buttons = [getattr(self,m+'_button') for m in ['pencil','line', 'polygon','ellipse', 'rect']]
         sizeicon = QLabel(size=QSize(self.button_size,self.button_size))
         sizeicon.setPixmap(QPixmap(os.path.join('icons', 'border-weight.png')))

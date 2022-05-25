@@ -1,3 +1,5 @@
+import collections
+
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -42,8 +44,8 @@ DISPLAY_ZOOM_FACTOR = 1
 DISPLAY_ZOOM_FACTORS_RANGE = [1,4]
 DISPLAY_INDUCED_LR = False
 HORIZ_MAINWINDOW_OFFSET = 67+15 #67+5#When initializing the GUI, the OS horizontally shifts the main window by this amount compared to the desired set position. This value can be modified in case it varies from one OS to another, affecting the intial image canvas location.
-ERR_MESSAGE_DURATION = 1e4
-INFO_MESSAGE_DURATION = 5e3
+ERR_MESSAGE_DURATION = 10000
+INFO_MESSAGE_DURATION = 5000
 
 # Optimization over Z signals space:
 Z_OPTIMIZER_INITIAL_LR = 1e-1
@@ -53,12 +55,14 @@ ITERS_PER_OPT_ROUND = 5
 HIGH_OPT_ITERS_LIMIT = True
 MARGINS_AROUND_REGION_OF_INTEREST = 30
 RANDOM_OPT_INITS = False
+LIMITED_RANDOM_WITH_STD_NOT_L1 = False
 MULTIPLE_OPT_INITS = False # When True, using random initializations in Z space in addition to the initialization with the current Z, when performing optimization in Z space (when using the variance, imprinting and all other Z optimization tools).
 LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS = True
 TRACK_ADDED_SCRIBLES = True # When True, using the recent modification that allows modifying drawing locations like imprints can be moved, rotated or resized.
 Z_OPTIMIZATION_TIME_LIMIT = 30  # seconds
 NON_LOCAL_Z_OPTIMIZATION = True #When True, optimizing over the entire region passed to the optimizer (depends on MARGINS_AROUND_REGION_OF_INTEREST), while penalizing for changes in the masked regions.
 AUTO_MASK_GRAPHICAL_INPUT = True and NON_LOCAL_Z_OPTIMIZATION#When NON_LOCAL_Z_OPTIMIZATION is on, would automatically surround scribble mask by dilation to automatically create mask.
+SVHN_CLASSIFIER_4_JPEG = 'auto' #'auto','manual',None
 
 # For the "desired dictionary of patches" tool, allowing multi-scale dictionary:
 DOWNSCALED_HIST_VERSIONS = False#0.9
@@ -87,9 +91,14 @@ DISPLAY_ESRGAN_RESULTS = True
 # JPEG-only tools:
 MAXIMAL_JPEG_QF = 49
 
+# Auto digits exploration tool:
+MULTIVIEW_CLASSIFICATION = [2, 8]  # [zoom transformations,translation transformations] How many zoom and translation
+# augmentations to apply before feeding to the pre-trained classifier. Set to None to use only 1 image.
+
 assert not (DICTIONARY_REPLACES_HISTOGRAM and L1_REPLACES_HISTOGRAM)
 
 # Technical defenitions:
+PATH_2_SVHN_CLASSIFIER_MODEL = '/home/ybahat/PycharmProjects/SRGAN/pretrained_models/model-54000.pth'
 SCRIBBLE_MODES = ['pencil','line', 'polygon','ellipse', 'rect','imprinting','imprinting_auto_location']
 MODES = ['selectpoly', 'selectrect','indicatePeriodicity','dropper',]+SCRIBBLE_MODES
 LOCAL_TV_MASK_IDENTIFIERS_RANGE = [3,50]
@@ -599,6 +608,8 @@ class Canvas(QLabel):
         self.selectrect_button.setChecked(False)#This does not work, probably because of some genral property set for all "mode" buttons.
         self.timer_cleanup(display_selection=True)
         self.Avoid_Scribble_Display(False)
+        selected_size = np.array(self.HR_mask_vertices[1])-np.array(self.HR_mask_vertices[0])
+        self.statusBar.showMessage('Selected a %dx%d pixels rectangle.'%(selected_size[1],selected_size[0]), INFO_MESSAGE_DURATION)
         if not self.in_picking_desired_hist_mode:
             self.safe_scribble_apply_buttons_enabling()
 
@@ -606,11 +617,15 @@ class Canvas(QLabel):
         self.Z_optimizer_initial_LR = Z_OPTIMIZER_INITIAL_LR
         self.Z_optimizer = None
         self.Z_optimizer_logger = None
+        if self.JPEG_GUI:
+            self.digit_box.setVisible(False)
 
     def ReturnMaskedMapAverage(self,map):
         return np.sum(map*self.Z_mask)/np.sum(self.Z_mask)
 
     def Update_Z_Sliders(self):
+        if not self.manual_Z_control:
+            return
         z0_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[0].data.cpu().numpy())
         Z1_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[1].data.cpu().numpy())
         third_channel_slider_new_val = self.ReturnMaskedMapAverage(self.control_values[2].data.cpu().numpy())
@@ -874,7 +889,7 @@ class Canvas(QLabel):
         NUM_BEST_2_KEEP = 4
         NUM_SAMPLES_IN_RANGE = 10*NUM_BEST_2_KEEP
         def crop_LR_im(cropping_location):
-            return self.SR_model.model_input.data[0].cpu().numpy().transpose(1,2,0)[cropping_location[0]:cropping_location[2],cropping_location[1]:cropping_location[3]:,-3:]
+            return self.model.model_input.data[0].cpu().numpy().transpose(1,2,0)[cropping_location[0]:cropping_location[2],cropping_location[1]:cropping_location[3]:,-3:]
         HR_im_projected_2_ortho_nullspace = self.Project_2_Orthog_Nullspace(self.output_image_0_1[0].data.cpu().numpy().transpose(1,2,0))
         def crop_HR_im(cropping_location):
             return HR_im_projected_2_ortho_nullspace[cropping_location[0]:cropping_location[2],cropping_location[1]:cropping_location[3]:,:]
@@ -957,7 +972,7 @@ class Canvas(QLabel):
         def crop_padding(array):
             return np.pad(array, (tuple(padding[0]), tuple(padding[1])),mode='constant') if SEARCH_IN_GRAYSCALE else np.pad(array, (tuple(padding[0]), tuple(padding[1]), (0, 0)),mode='constant')
 
-        fixed_im_coeffs = self.SR_model.jpeg_compressor_Y(torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
+        fixed_im_coeffs = self.model.JPEG['compressor_Y'](torch.from_numpy(fixed_image).unsqueeze(0).unsqueeze(0))
         original_rectangle = 1 * desired_mask_bounding_rect
         if scribble_mode:
             originally_marked_rectangle_mask = np.zeros_like(desired_im_mask)
@@ -1008,7 +1023,7 @@ class Canvas(QLabel):
                 b_size = int(np.ceil(len(optional_imprints)/calc_batches))
                 try:
                     for b_num in range(calc_batches):
-                        optional_coeffs.append(self.SR_model.jpeg_compressor_Y_non_quantized(torch.from_numpy(np.stack(optional_imprints[b_num*b_size:(b_num+1)*b_size],0)).unsqueeze(1).to(self.SR_model.jpeg_compressor_Y.device)))
+                        optional_coeffs.append(self.model.JPEG['compressor_Y_non_quantized'](torch.from_numpy(np.stack(optional_imprints[b_num*b_size:(b_num+1)*b_size],0)).unsqueeze(1).to(self.model.JPEG['compressor_Y'].device)))
                     success = True
                 except:
                     calc_batches += 1
@@ -1303,21 +1318,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
         parser = argparse.ArgumentParser()
+        parser.add_argument('task', choices=['JPEG','SR'],help='Choose between JPEG decoding and image Super Resolution')
         parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
-        parser.add_argument('-JPEG', action='store_true', help='JPEG decompresion exploration')
-        self.JPEG_GUI =  parser.parse_args().JPEG
-        opt_name = None
+        self.JPEG_GUI =  parser.parse_args().task=='JPEG'
         if self.JPEG_GUI:
-            opt_name = 'JPEG_chroma'
             self.real_JPEG_image = False
 
         util.Assign_GPU()
         self.num_random_Zs = NUM_RANDOM_ZS
-        self.opt = option.parse(parser.parse_args().opt, is_train=False,name=opt_name)
+        self.opt = option.parse(parser.parse_args().opt, is_train=False,JPEG=self.JPEG_GUI,chroma=self.JPEG_GUI)
         self.opt = option.dict_to_nonedict(self.opt)
         self.display_ESRGAN = not self.JPEG_GUI and DISPLAY_ESRGAN_RESULTS and 'pretrained_ESRGAN' in self.opt['path'].keys()
+        self.SVHN_classifier = SVHN_CLASSIFIER_4_JPEG if self.JPEG_GUI else None
+
         self.canvas = Canvas()
         self.setupUi()
+        self.canvas.JPEG_GUI = self.JPEG_GUI
+        self.canvas.manual_Z_control = (not self.JPEG_GUI) or self.opt['network_G']['latent_channels']>=3
         # Replace canvas placeholder from QtDesigner.
         self.horizontalLayout.removeWidget(self.canvas)
         # We need to enable mouse tracking to follow the mouse without the button pressed.
@@ -1350,15 +1367,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.in_picking_desired_hist_mode = False
         self.canvas.current_display_index = 1*self.cur_Z_im_index
 
-        # More initializations:
-        self.canvas.Z_optimizer_Reset()
-        self.canvas.opt = self.opt
-        self.canvas.initialize()
-        self.canvas.HR_Z = False if self.JPEG_GUI else ('HR' in self.canvas.opt['network_G']['latent_input_domain'])
-        self.canvas.H_L_domains_ratio = 8 if self.JPEG_GUI else self.opt['scale']
-        self.Initialize_SR_model(reprocess=False)
-        self.canvas.latest_scribble_color_reset = time.time()
-
         # Assigning handles of some buttons and functions to canvas:
         button_handles_required_by_canvas = ['undo_scribble','redo_scribble','special_behavior','FoolAdversary','selectrect',
             'selectpoly','IncreasePeriodicity_1D','IncreasePeriodicity_2D','indicatePeriodicity','periodicity_mag_1','periodicity_mag_2',
@@ -1371,10 +1379,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.JPEG_GUI:
             self.estimatedKenrel_button.setEnabled(False)
             self.open_image_button.setEnabled(False) #Loading existing jpg files is not yet enabled
-        self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.SR_model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Enforce_DT_on_Image_Pair
-        self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.SR_model.CEM_net.Project_2_ortho_2_NS
+            self.canvas.digit_box = self.digit_box
         self.canvas.statusBar = self.statusBar
-        self.canvas.JPEG_GUI = self.JPEG_GUI
+
+        # More initializations:
+        self.canvas.Z_optimizer_Reset()
+        self.canvas.opt = self.opt
+        self.canvas.initialize()
+        self.canvas.HR_Z = False if self.JPEG_GUI else ('HR' in self.canvas.opt['network_G']['latent_input_domain'])
+        self.canvas.H_L_domains_ratio = 8 if self.JPEG_GUI else self.opt['scale']
+        self.Initialize_SR_model(reprocess=False)
+        self.canvas.Project_2_Orthog_Nullspace = None if self.JPEG_GUI else self.canvas.model.CEM_net.Project_2_ortho_2_NS
+        if self.SVHN_classifier:
+            from utils.SVHN_classifier_model import Model as SVHN_model
+            self.canvas.model.net_SVHN = SVHN_model(eval_with_grads=True)
+            self.canvas.model.net_SVHN.restore(PATH_2_SVHN_CLASSIFIER_MODEL)
+            self.canvas.model.net_SVHN.cuda()
+            self.MULTIVIEW_CLASSIFICATION = MULTIVIEW_CLASSIFICATION
+
+        # Assigning handle of Enforce_pair_Consistency to canvas
+        self.canvas.Enforce_Consistency_on_Image_Pair = self.canvas.model.Enforce_pair_Consistency if self.JPEG_GUI else self.canvas.model.CEM_net.Enforce_DT_on_Image_Pair
+
+        self.canvas.latest_scribble_color_reset = time.time()
 
         #### Connecting buttons to functions:
         # Load & Save:
@@ -1385,6 +1411,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SaveImageAndData_button.clicked.connect(self.save_file_and_Z_map)
         if self.JPEG_GUI:
             self.QF_box.valueChanged.connect(lambda s: self.Update_QF(s))
+            self.QF_box.setValue(10)
         # Display:
         self.Zdisplay_button.clicked.connect(self.ToggleDisplay_Z_Image)
         self.DecreaseDisplayZoom_button.clicked.connect(lambda x: self.Change_Display_Zoom(increase=False))
@@ -1434,6 +1461,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ImitatePatchHist_button.clicked.connect(lambda x:self.Optimize_Z('patchhist', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
         if hasattr(self,'FoolAdversary_button'):
             self.FoolAdversary_button.clicked.connect(lambda x:self.Optimize_Z('Adversarial', loop=LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS))
+        if self.SVHN_classifier:
+            assert self.SVHN_classifier in ['auto','manual'],'Unsupported mode'
+            self.SVHN_classifier_button.clicked.connect(lambda x: self.Auto_Explore_Digits())
+            if self.SVHN_classifier=='manual':
+                def Assign_digit_2_resemble(digit):
+                    self.digit_2_resemble = int(digit)
+                    self.canvas.Z_optimizer_Reset()
+                self.digit_box.valueChanged.connect(lambda s: Assign_digit_2_resemble(s))
+                Assign_digit_2_resemble(self.digit_box.value())
+            else:
+                self.digit_box.highlighted.connect(lambda s: self.display_decoding_as_digit(self.digit_box.itemText(s)))
         self.STD_increment.valueChanged.connect(self.canvas.Z_optimizer_Reset)
         self.ProcessRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=False))
         self.ProcessLimitedRandZ_button.clicked.connect(lambda x: self.Process_Random_Z(limited=True))
@@ -1475,6 +1513,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_file(path=os.path.join(sample_image_folder,example_image),HR_image=True,canvas_pos=(self.geometry().getCoords()[2]+HORIZ_MAINWINDOW_OFFSET,self.geometry().getCoords()[1]))
 
         self.show()
+
+    def Auto_Explore_Digits(self):
+        if self.SVHN_classifier=='manual':
+            self.Optimize_Z('digit', loop=False and LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS)
+        else:#'auto'
+            self.per_digit_Zs,self.prob_of_most_likely_digit,most_likely_digit = collections.defaultdict(dict),0,None
+            for digit in range(10):
+                self.digit_2_resemble = digit
+                self.Optimize_Z('digit', loop=False and LOOP_IN_ALL_Z_OPTIMIZATION_TOOLS)
+                if self.canvas.Z_optimizer.final_num_digits==1:
+                    if self.canvas.Z_optimizer.final_digit_score>self.prob_of_most_likely_digit:
+                        most_likely_digit = digit
+                        self.prob_of_most_likely_digit = self.canvas.Z_optimizer.final_digit_score
+                    self.per_digit_Zs[digit]['Z'] = 1*self.cur_Z
+                    self.per_digit_Zs[digit]['prob'] = 1*self.canvas.Z_optimizer.final_digit_score
+                if digit<9:#Avoiding double Z-undo, since Z will be undone when the chosen digit is diplayed (in display_decoding_as_digit)
+                    self.Z_history.pop()
+                self.canvas.Z_optimizer_Reset()
+            self.digit_box.clear()
+            for digit in self.per_digit_Zs.keys():
+                self.digit_box.addItem(str(digit))
+            self.digit_box.setVisible(True)
+            self.digit_box.setCurrentText(str(most_likely_digit))
+            self.display_decoding_as_digit(str(most_likely_digit))
+
+    def display_decoding_as_digit(self,digit):
+        digit = int(digit)
+        self.Z_history.pop()
+        self.cur_Z = 1*self.per_digit_Zs[digit]['Z']
+        self.ReProcess(chosen_display_index=self.cur_Z_im_index)
+        self.statusBar.showMessage('Displaying result for %d, with score: %.3f%s' % (digit, self.per_digit_Zs[digit]['prob'],
+            ' (highest)' if self.per_digit_Zs[digit]['prob']==self.prob_of_most_likely_digit else ''), INFO_MESSAGE_DURATION)
 
     def toggle_special_behaviour_icon(self):
         self.special_behavior_button.setIcon(self.special_behavior_on_icon if self.special_behavior_button.isChecked() else self.special_behavior_off_icon)
@@ -1614,22 +1684,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cur_Z = self.cur_Z.type(self.var_L.type())
         self.Feed_n_Run_model(cur_Z)
         if DISPLAY_INDUCED_LR:
-            self.induced_LR_image = self.canvas.SR_model.netG.module.DownscaleOP(self.canvas.output_image_0_1)
+            self.induced_LR_image = self.canvas.model.netG.module.DownscaleOP(self.canvas.output_image_0_1)
 
     def Feed_n_Run_model(self,cur_Z):
         DEBUG_CHROMA = False
-        self.canvas.SR_model.Prepare_Input(self.var_L, latent_input=torch.zeros_like(cur_Z) if DEBUG_CHROMA else cur_Z,compressed_input=True)
+        self.canvas.model.Prepare_Input(self.var_L, latent_input=torch.zeros_like(cur_Z) if DEBUG_CHROMA else cur_Z,compressed_input=True)
         if DEBUG_CHROMA:
-            print('Y Z STD:%.4f'%(self.canvas.SR_model.GetLatent().std()))
+            print('Y Z STD:%.4f'%(self.canvas.model.GetLatent().std()))
         if self.JPEG_GUI:
             if DEBUG_CHROMA:
-                self.canvas.SR_model.test(chroma_input=self.chroma_input,chroma_Z=cur_Z)
-                print('chroma Z STD:%.4f' % (self.canvas.SR_model.GetLatent().std()))
+                self.canvas.model.test(uncompressed_chroma=self.uncompressed_chroma,chroma_Z=cur_Z)
+                print('chroma Z STD:%.4f' % (self.canvas.model.GetLatent().std()))
             else:
-                self.canvas.SR_model.test(chroma_input=self.chroma_input)
+                self.canvas.model.test(uncompressed_chroma=self.uncompressed_chroma)
         else:
-            self.canvas.SR_model.test()
-        self.canvas.output_image_0_1 = self.canvas.SR_model.Output_Batch(within_0_1=True)
+            self.canvas.model.test()
+        self.canvas.output_image_0_1 = self.canvas.model.Output_Batch(within_0_1=True)
 
     def DrawRandChannel(self,min_val,max_val,uniform=False):
         return (max_val-min_val)*torch.rand([1,1]+([1,1] if uniform else self.canvas.Z_size))+min_val
@@ -1717,23 +1787,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.Update_Image_Display()
         self.CopyFromAlternative_button.setEnabled(self.canvas.current_display_index in self.random_display_indexes)
         if self.canvas.current_display_index in [self.cur_Z_im_index,self.canvas.scribble_display_index]:
-            # self.canvas.SR_model.fake_H = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
             self.canvas.output_image_0_1 = 1 * self.canvas.random_Z_images[0].unsqueeze(0)
             self.Z_2_display = self.cur_Z
         elif self.canvas.current_display_index in self.random_display_indexes:
-            # self.canvas.SR_model.fake_H = 1*self.canvas.random_Z_images[self.canvas.current_display_index-self.random_display_indexes[0]+1].unsqueeze(0)
             self.canvas.output_image_0_1 = 1*self.canvas.random_Z_images[self.canvas.current_display_index-self.random_display_indexes[0]+1].unsqueeze(0)
             self.Z_2_display = self.canvas.random_Zs[self.canvas.current_display_index-self.random_display_indexes[0],...].unsqueeze(0)
         else:
             self.Z_2_display = self.no_Z_image
             if self.canvas.current_display_index==self.GT_HR_index:
-                # self.canvas.SR_model.fake_H = 1*self.GT_HR
                 self.canvas.output_image_0_1 = 1*self.GT_HR
             elif self.canvas.current_display_index==self.ESRGAN_index:
-                # self.canvas.SR_model.fake_H = 1*self.ESRGAN_SR
                 self.canvas.output_image_0_1 = 1*self.ESRGAN_SR
             elif self.canvas.current_display_index==self.canvas.scribble_display_index:
-                pass#I think there is nothing to do here, because I don't assign the image to SR_model.fake_H
+                pass#I think there is nothing to do here, because I don't assign the image to model.fake_H
             elif self.canvas.current_display_index==self.input_display_index:
                 self.canvas.output_image_0_1 = 1*self.input_image
         if not self.canvas.current_display_index==self.canvas.scribble_display_index:
@@ -1771,8 +1837,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             UNIFORM_RANDOM = False
             Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
             self.canvas.control_values = Z_mask*torch.stack([self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),
-                self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),self.DrawRandChannel(0,np.pi,uniform=UNIFORM_RANDOM)],
-                0).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.control_values
+                self.DrawRandChannel(0,self.max_SVD_Lambda,uniform=UNIFORM_RANDOM),self.DrawRandChannel(0,np.pi,uniform=UNIFORM_RANDOM)],0).squeeze(0).squeeze(0)+(1-Z_mask)*self.canvas.control_values
             self.Recompose_cur_Z()
             self.canvas.Update_Z_Sliders()
             self.ReProcess()
@@ -1784,7 +1849,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def MasksStorage(self,store):
         canvas_keys = ['Z_mask','HR_mask_display_size','HR_selected_mask','LR_mask_vertices','HR_size','random_Zs','image_4_scribbling','current_scribble_mask',
                        'selection_display','existing_selection_timer_event','HR_mask_vertices']
-        self_keys = ['cur_Z','var_L']+(['chroma_input'] if self.JPEG_GUI else [])
+        self_keys = ['cur_Z','var_L']+(['uncompressed_chroma'] if self.JPEG_GUI else [])
         for key in canvas_keys:
             if store:
                 setattr(self,'stored_canvas_%s'%(key),getattr(self.canvas,key))
@@ -1830,10 +1895,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SetZ(0 if min_not_max else 1, 1,reset_optimizer=False)
 
     def Crop_masks_2_BoundingRect(self,bounding_rect):
-        HR_keys = ['canvas.HR_selected_mask','canvas.SR_model.fake_H','canvas.image_4_scribbling','canvas.current_scribble_mask',
-                   'canvas.output_image_0_1','canvas.SR_model.output_image']+(['canvas.Z_mask','cur_Z'] if self.canvas.HR_Z else [])
+        HR_keys = ['canvas.HR_selected_mask','canvas.model.fake_H','canvas.image_4_scribbling','canvas.current_scribble_mask',
+                   'canvas.output_image_0_1','canvas.model.output_image']+(['canvas.Z_mask','cur_Z'] if self.canvas.HR_Z else [])
         LR_keys = ['var_L']+(['canvas.Z_mask','cur_Z'] if not self.canvas.HR_Z else [])
-        keys = HR_keys+LR_keys+(['chroma_input'] if self.JPEG_GUI else [])
+        keys = HR_keys+LR_keys+(['uncompressed_chroma'] if self.JPEG_GUI else [])
         def Return_Inner_Attr(key):
             keys = key.split('.')
             fetched_attr = self
@@ -1870,7 +1935,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             objective = objective.replace('hist', 'dict')
         if AUTO_CYCLE_LENGTH_4_PERIODICITY:
             objective = objective.replace('periodicity', 'nonInt_periodicity')
-
+        if LIMITED_RANDOM_WITH_STD_NOT_L1:
+            objective = objective.replace('limited', 'local')
         if 'scribble' in objective and self.canvas.current_display_index == self.canvas.scribble_display_index:
             self.Update_Scribble_Data()
         self.random_inits = ('random' in objective and 'limited' not in objective) or RANDOM_OPT_INITS
@@ -1905,19 +1971,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.bounding_rect_4_opt = np.concatenate([np.maximum(self.canvas.mask_bounding_rect[:2]-MARGINS_AROUND_REGION_OF_INTEREST//2,0),self.canvas.mask_bounding_rect[2:]+MARGINS_AROUND_REGION_OF_INTEREST])
                 self.bounding_rect_4_opt[:2] = np.maximum([0,0],np.minimum(self.bounding_rect_4_opt[:2]+self.bounding_rect_4_opt[2:],self.canvas.LR_size[::-1])-self.bounding_rect_4_opt[2:])
                 self.bounding_rect_4_opt[2:] = np.minimum(self.bounding_rect_4_opt[:2]+self.bounding_rect_4_opt[2:],self.canvas.LR_size[::-1])-self.bounding_rect_4_opt[:2]
-                if self.JPEG_GUI and self.canvas.SR_model.chroma_mode: #In this specific case, bounmding rect values should be even, as I'm going to divide them by 2 at some point
+                if self.JPEG_GUI and self.canvas.model.chroma_mode: #In this specific case, bounmding rect values should be even, as I'm going to divide them by 2 at some point
                     self.bounding_rect_4_opt[:2] = self.bounding_rect_4_opt[:2]//2*2
                     self.bounding_rect_4_opt[2:] = 2*np.ceil(self.bounding_rect_4_opt[2:]/2).astype(self.bounding_rect_4_opt.dtype)
                 self.MasksStorage(True)
                 self.Crop_masks_2_BoundingRect(bounding_rect=self.bounding_rect_4_opt)
                 self.Z_mask_4_later_merging = torch.from_numpy(self.canvas.Z_mask).type(self.canvas.output_image_0_1.dtype).to(self.cur_Z.device)
                 data['LR'] = self.var_L
-                self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.cur_Z,compressed_input=True)#Because I'm saving initial Z when initializing optimizer
+                self.canvas.model.Prepare_Input(self.var_L,latent_input=self.cur_Z,compressed_input=True)#Because I'm saving initial Z when initializing optimizer
             else:
                 self.optimizing_region = False
             self.iters_per_round = 1*ITERS_PER_OPT_ROUND
             if any([phrase in objective for phrase in ['hist','dict','l12GT']]):
-                data['desired'] = [torch.from_numpy(np.ascontiguousarray(np.transpose(hist_im, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0) for hist_im in self.canvas.desired_image]
+                data['desired'] = [torch.from_numpy(np.ascontiguousarray(np.transpose(hist_im, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0) for hist_im in self.canvas.desired_image]
                 if 'l1' in objective and self.optimizing_region:
                     data['desired'] = [self.Crop2BoundingRect(hist_im,self.bounding_rect_4_opt,HR=True) for hist_im in data['desired']]
                 data['Desired_Im_Mask'] = self.canvas.desired_image_HR_mask
@@ -1926,11 +1992,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.canvas.periodicity_points[p_num] = self.canvas.periodicity_points[p_num]*getattr(self,'periodicity_mag_%d_button'%(p_num+1)).value()/np.linalg.norm(self.canvas.periodicity_points[p_num])
                 data['periodicity_points'] = self.canvas.periodicity_points[:2-('1D' in objective)]
             elif 'scribble' in objective:
-                data['desired'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.canvas.image_4_scribbling, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)/255
+                data['desired'] = torch.from_numpy(np.ascontiguousarray(np.transpose(self.canvas.image_4_scribbling, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)/255
                 data['scribble_mask'] = 1*self.canvas.current_scribble_mask
                 if self.JPEG_GUI:
                     data['scribble_mask'] = util.SmearMask2JpegBlocks(data['scribble_mask'])
                 data['brightness_factor'] = self.STD_increment.value()#For the brightness increase/decrease functionality
+            elif objective=='digit':
+                data['digit_2_resemble'] = self.digit_2_resemble
+                data['multiview_classification'] = 1*self.MULTIVIEW_CLASSIFICATION
+                self.iters_per_round *= 3
             if any([phrase in objective for phrase in ['STD','Mag']]):
                 data['STD_increment'] = self.STD_increment.value()
             initial_Z = 1 * self.cur_Z
@@ -1955,13 +2025,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.canvas.Z_optimizer_logger.append(Logger(self.canvas.opt,tb_logger_suffix='_%s%s'%(objective,'_%d'%(i) if self.multiple_inits else '')))
             if self.JPEG_GUI:
                 data['Comp'] = data['LR']
-                data['QF'] = self.canvas.SR_model.jpeg_extractor.QF.view(1)
-                data['chroma_input'] = self.chroma_input
-            self.canvas.Z_optimizer = Z_optimizer(objective=objective,Z_size=[val*self.canvas.SR_model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.SR_model,
+                data['QF'] = self.canvas.model.JPEG['extractor'].QF.view(1)
+                data['uncompressed_chroma'] = self.uncompressed_chroma
+            self.canvas.Z_optimizer = Z_optimizer(objective=objective,Z_size=[val*self.canvas.model.Z_size_factor for val in data['LR'].size()[2:]],model=self.canvas.model,
                 Z_range=self.max_SVD_Lambda,data=data,initial_LR=self.canvas.Z_optimizer_initial_LR,loggers=self.canvas.Z_optimizer_logger,max_iters=self.iters_per_round,
                 image_mask=self.canvas.HR_selected_mask,Z_mask=self.canvas.Z_mask,auto_set_hist_temperature=self.auto_set_hist_temperature,
                 batch_size=optimization_batch_size,random_Z_inits=self.random_inits,initial_Z=initial_Z,
-                jpeg_extractor=self.canvas.SR_model.jpeg_extractor if self.JPEG_GUI else None,non_local_Z_optimization=NON_LOCAL_Z_OPTIMIZATION)
+                jpeg_extractor=self.canvas.model.JPEG['extractor'] if self.JPEG_GUI else None,non_local_Z_optimization=NON_LOCAL_Z_OPTIMIZATION)
             if self.optimizing_region:
                 self.MasksStorage(False)
             if AUTO_MASK_GRAPHICAL_INPUT and 'scribble' in objective:
@@ -1993,10 +2063,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     print('# desired hist images: %d'%(len(self.canvas.desired_image)))
                     print('# Bins: %d, # Image patches: %d'%(self.canvas.Z_optimizer.loss.bins.size(-1),self.canvas.Z_optimizer.loss.patch_extraction_mat.size(1)))
             discard_result = optimization_failed or self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1] < 0
+            discard_result |= mini_epoch>0 and prev_loss_value<self.canvas.Z_optimizer.loss_values[-1]
             time_limit_reached = time.time()-optimization_start_time>Z_OPTIMIZATION_TIME_LIMIT
             if discard_result:
                 self.cur_Z = 1 * self.stored_Z
-                self.canvas.SR_model.Prepare_Input(self.var_L,latent_input=self.cur_Z.type(self.var_L.type()),compressed_input=True)
+                self.canvas.model.Prepare_Input(self.var_L,latent_input=self.cur_Z.type(self.var_L.type()),compressed_input=True)
                 self.SelectImage2Display()
                 reset_Z_optimizer = True
                 decrease_LR = not optimization_failed
@@ -2016,7 +2087,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                 (1-self.Z_mask_4_later_merging)*self.cur_Z[Z_num, :, cropping_rect[1]:cropping_rect[1] + cropping_rect[3],cropping_rect[0]:cropping_rect[0] + cropping_rect[2]]
                         else:
                             self.cur_Z[Z_num, :, cropping_rect[1]:cropping_rect[1] + cropping_rect[3],cropping_rect[0]:cropping_rect[0] + cropping_rect[2]] = temp_Z[Z_num,...]
-                avoid_Z_undo_list_update = mini_epoch<(num_looping_iters-1) and not time_limit_reached
                 if self.multiple_inits:
                     self.canvas.random_Zs = 1*self.cur_Z[-self.num_random_Zs:]
                     self.Process_Z_Alternatives()
@@ -2026,28 +2096,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         self.cur_Z = 1 * self.cur_Z[0].unsqueeze(0)
                         display_index = ([self.cur_Z_im_index]+self.random_display_indexes)[np.argmin(self.canvas.Z_optimizer.latest_Z_loss_values)]
                         print('Loss values (%d):'%(np.argmin(self.canvas.Z_optimizer.latest_Z_loss_values)),['%.3e'%(val) for val in self.canvas.Z_optimizer.latest_Z_loss_values])
-                        self.ReProcess(chosen_display_index=display_index,dont_update_undo_list=avoid_Z_undo_list_update)
+                        if mini_epoch>0: # Keeping only the Z signal corresponding to the last iteration when looping
+                            self.Z_history.pop()
+                        self.ReProcess(chosen_display_index=display_index)
                 else:
                     self.DeriveControlValues()
-                    self.ReProcess(chosen_display_index=self.cur_Z_im_index if 'scribble' in objective else None,dont_update_undo_list=avoid_Z_undo_list_update)
+                    if mini_epoch > 0: # Keeping only the Z signal corresponding to the last iteration when looping
+                        self.Z_history.pop()
+                    self.ReProcess(chosen_display_index=self.cur_Z_im_index if 'scribble' in objective else None)
             if loop and time_limit_reached:
                 print('Z optimization time limit (%d sec.) reached.'%(Z_OPTIMIZATION_TIME_LIMIT))
                 break
 
             if not optimization_failed:
+                prev_loss_value = 1*self.canvas.Z_optimizer.loss_values[-1]
                 print('%d: LR=%.1e, %d iterations: %s loss decreased from %.2e to %.2e by %.2e (factor of %.2e)' % (mini_epoch,self.canvas.Z_optimizer.LR,len(self.canvas.Z_optimizer.loss_values), self.canvas.Z_optimizer.objective,
                     self.canvas.Z_optimizer.loss_values[0],self.canvas.Z_optimizer.loss_values[-1],self.canvas.Z_optimizer.loss_values[0] - self.canvas.Z_optimizer.loss_values[-1],
                     self.canvas.Z_optimizer.loss_values[-1]/self.canvas.Z_optimizer.loss_values[0]))
-                if (self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))]-self.canvas.Z_optimizer.loss_values[-1])/\
-                        np.abs(self.canvas.Z_optimizer.loss_values[-int(np.abs(self.iters_per_round))])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
+                z_optim_iters_2_examine = min([int(np.abs(self.iters_per_round)),len(self.canvas.Z_optimizer.loss_values)])
+                if (self.canvas.Z_optimizer.loss_values[-z_optim_iters_2_examine]-self.canvas.Z_optimizer.loss_values[-1])/\
+                        np.abs(self.canvas.Z_optimizer.loss_values[-z_optim_iters_2_examine])<1e-2*self.canvas.Z_optimizer_initial_LR: #If the loss did not decrease, I decrease the optimizer's learning rate
                     decrease_LR = True
-                    # self.canvas.Z_optimizer_initial_LR /= 5
-                    # print('Loss decreased too little relative to beginning, decreasing learning rate to %.3e'%(self.canvas.Z_optimizer_initial_LR))
-                    # reset_Z_optimizer = True
                     if loop:
                         print('Breaking optimization loop')
-                        if mini_epoch<(num_looping_iters-1):
-                            self.Add_Z_2_history()
                         break
                 else: # This means I'm happy with this optimizer (and its learning rate), so I can cancel the auto-hist-temperature setting, in case it was set to True.
                     if self.auto_hist_temperature_mode_Enabled:
@@ -2062,9 +2133,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             print('Loss decreased too little relative to beginning, decreasing learning rate to %.3e' % (
                 self.canvas.Z_optimizer_initial_LR))
         if not optimization_failed:
-            self.statusBar.showMessage('%s optimization is done.' % (objective), INFO_MESSAGE_DURATION)
+            if objective=='digit':
+                if self.canvas.Z_optimizer.final_num_digits!=1:
+                    self.statusBar.showMessage('Warning: digits classifier idenitifed %d digits (instead of 1, which got %.3f)' %
+                        (self.canvas.Z_optimizer.final_num_digits,self.canvas.Z_optimizer.final_single_digit_score),ERR_MESSAGE_DURATION)
+                else:
+                    self.statusBar.showMessage('Classification score for "%d" increased from %.3f to %.3f' % (self.digit_2_resemble,
+                        self.canvas.Z_optimizer.initial_digit_score,self.canvas.Z_optimizer.final_digit_score), INFO_MESSAGE_DURATION)
+            else:
+                self.statusBar.showMessage('%s optimization is done.' % (objective), INFO_MESSAGE_DURATION)
 
     def DeriveControlValues(self):
+        if not self.canvas.manual_Z_control:
+            return
         normalized_Z = self.Z_2_three_channels(1*self.cur_Z.squeeze(0))
         normalized_Z = (normalized_Z+self.max_SVD_Lambda)/2/self.max_SVD_Lambda
         normalized_Z[2] /= 2
@@ -2102,10 +2183,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def ApplyUniformZ(self):
         self.canvas.Update_Z_Sliders()
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.canvas.control_values.dtype).to(self.canvas.control_values.device)
-        if False and self.canvas.SR_model.num_latent_channels!=3:
-            uniform_values_to_assign = ((self.canvas.control_values*Z_mask.unsqueeze(0)).sum(-1).sum(-1)/Z_mask.sum()).view(-1,1,1)
-        else:
-            uniform_values_to_assign = torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype).to(Z_mask.device)
+        uniform_values_to_assign = torch.from_numpy(self.canvas.previous_sliders_values).type(Z_mask.dtype).to(Z_mask.device)
         self.canvas.control_values = Z_mask * uniform_values_to_assign + (1 - Z_mask) * self.canvas.control_values
         self.canvas.Z_optimizer_Reset()
         self.Recompose_cur_Z()
@@ -2113,6 +2191,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.derived_controls_indicator = (self.canvas.Z_mask*0+(1-self.canvas.Z_mask)*self.canvas.derived_controls_indicator).astype(np.bool)
 
     def Recompose_cur_Z(self):
+        if not self.canvas.manual_Z_control:
+            return
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype).to(self.cur_Z.device)
         new_Z = self.canvas.control_values.unsqueeze(0)
         new_Z = util.SVD_2_LatentZ(new_Z,max_lambda=self.max_SVD_Lambda).to(self.cur_Z.device)
@@ -2125,6 +2205,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.ReProcess(dont_update_undo_list=dont_update_undo_list)
 
     def SetZ(self,value,index,reset_optimizer=True):
+        if not self.canvas.manual_Z_control:
+            return
         if reset_optimizer:
             self.canvas.Z_optimizer_Reset()
         Z_mask = torch.from_numpy(self.canvas.Z_mask).type(self.cur_Z.dtype)
@@ -2184,10 +2266,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.Zdisplay_button.isChecked():
             im_2_display = (255/2/self.max_SVD_Lambda*(self.max_SVD_Lambda+self.Z_2_display[0].data.cpu().numpy().transpose(1,2,0)).copy())
             if list(im_2_display.shape[:2])!=self.canvas.HR_size: # Should be satisifeid when JPEG GUI:
+                channel_num_ratio = [self.canvas.HR_size[ind]/im_2_display.shape[ind] for ind in range(2)]
                 if im_2_display.shape[2]==3:
                     im_2_display = util.ResizeScribbleImage(im_2_display,tuple(self.canvas.HR_size))
                 elif im_2_display.shape[2] == 8**2:
                     im_2_display = util.Z_64channels2image(im_2_display)
+                elif all([c==int(c) for c in channel_num_ratio]) and channel_num_ratio[0]==channel_num_ratio[1]:
+                    z_shape = im_2_display.shape
+                    complement = np.prod(self.canvas.HR_size)//np.prod(z_shape)
+                    # complement = complement
+                    im_2_display = np.reshape(np.repeat(np.expand_dims(im_2_display, 3),complement,3),[z_shape[0],z_shape[1],-1])
+                    im_2_display = np.concatenate([im_2_display,im_2_display[...,:np.prod(self.canvas.HR_size[:2])//np.prod(z_shape[:2])-im_2_display.shape[2]]],2).reshape([z_shape[0],z_shape[1],self.canvas.HR_size[0]//z_shape[0],self.canvas.HR_size[1]//z_shape[1]])
+                    im_2_display = im_2_display.transpose(0,2,1,3).reshape(self.canvas.HR_size)
+                    # im_2_display = np.reshape(np.repeat(np.repeat(np.expand_dims(np.expand_dims(im_2_display,2),1),channel_num_ratio[0],1),channel_num_ratio[1],3),self.canvas.HR_size+[1])
                 else:
                     raise Exception('Unsupported # of Z channels for display')
         else:
@@ -2245,33 +2336,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.QF_box.setEnabled(True)
             self.QF_box.setMaximum(MAXIMAL_JPEG_QF)
             QF_or_table = torch.tensor(QF_or_table)
-        self.canvas.SR_model.jpeg_compressor.Set_Q_Table(QF_or_table,QF)
-        self.canvas.SR_model.jpeg_extractor.Set_Q_Table(QF_or_table,QF)
-        self.canvas.SR_model.jpeg_compressor_Y.Set_Q_Table(QF_or_table,QF)
-        self.canvas.SR_model.jpeg_extractor_Y.Set_Q_Table(QF_or_table,QF)
-        self.canvas.SR_model.jpeg_compressor_Y_non_quantized.Set_Q_Table(QF_or_table,QF)
-        self.canvas.SR_model.jpeg_compressor_non_quantized.Set_Q_Table(QF_or_table,QF)
+        for module in self.canvas.model.JPEG.values():
+            module.Set_Q_Table(QF_or_table,QF)
         if self.real_JPEG_image:
             self.QF_box.setMaximum(1000)
-            self.QF_box.setValue(self.canvas.SR_model.jpeg_compressor_Y.QF)
+            self.QF_box.setValue(self.canvas.model.JPEG['compressor_Y'].QF)
         else:
-            self.Q_Tables = [T for T in self.canvas.SR_model.jpeg_extractor.Q_table.squeeze()[:2].data.cpu().numpy()]
+            self.Q_Tables = [T for T in self.canvas.model.JPEG['extractor'].Q_table.squeeze()[:2].data.cpu().numpy()]
 
     def Update_QF(self,QF):
         self.Assign_Q_Table(QF)
-        self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
-        self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(self.loaded_image)/ 255) , 0, 1)
-        self.ReProcess()
+        self.var_L = self.canvas.model.JPEG['compressor_Y'](self.loaded_image[:,:1,...])
+        self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.model.Return_Compressed(self.loaded_image)/ 255) , 0, 1)
+        self.ReProcess(dont_update_undo_list=True)
+        self.canvas.Z_optimizer_Reset()
 
     def Initialize_SR_model(self,kernel=None,reprocess=True):
         if self.JPEG_GUI:
-            self.canvas.SR_model = create_model(self.opt, chroma_mode=True)
-            self.canvas.SR_model.jpeg_compressor_Y_non_quantized = JPEG(compress=True,chroma_mode=False, downsample_and_quantize=False,block_size=8)\
-                .to(self.canvas.SR_model.device)
-            self.canvas.SR_model.jpeg_compressor_non_quantized = JPEG(compress=True,chroma_mode=True, downsample_and_quantize=False,block_size=self.opt['scale'])\
-                .to(self.canvas.SR_model.device)
+            self.canvas.model = create_model(self.opt, chroma_mode=True)
+            self.canvas.model.JPEG['compressor_Y_non_quantized'] = JPEG(compress=True,chroma_mode=False, downsample_or_quantize=False,block_size=8)\
+                .to(self.canvas.model.device)
+            self.canvas.model.JPEG['compressor_non_quantized'] = JPEG(compress=True,chroma_mode=True, downsample_or_quantize=False,block_size=self.opt['scale'])\
+                .to(self.canvas.model.device)
         else:
-            self.canvas.SR_model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
+            self.canvas.model = create_model(self.opt, init_Dnet=False, init_Fnet=VGG_RANDOM_DOMAIN,kernel=kernel)
         self.canvas.Z_optimizer_Reset()
         if reprocess:
             self.ReProcess()
@@ -2324,13 +2412,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def Z_2_three_channels(self,multi_channel_Z):
         if self.JPEG_GUI:
-            return self.canvas.SR_model.Z_2_three_channels(multi_channel_Z)
+            return self.canvas.model.Z_2_three_channels(multi_channel_Z)
         else:
             return multi_channel_Z
 
     def Repeat_Z_3_channels(self,Z):
         if self.JPEG_GUI:
-            return self.canvas.SR_model.Repeat_Z_3_channels(Z)
+            return self.canvas.model.Repeat_Z_3_channels(Z)
         else:
             return Z
 
@@ -2351,7 +2439,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],1,8,1,8)
                 output_tensor = np.pad(output_tensor,((0,0),(0,0),(0,1),(0,0),(0,1),(0,0)),mode='constant')
                 output_tensor = output_tensor.reshape(input_shape[0],input_shape[1],256)
-                return torch.from_numpy(output_tensor.transpose((2,0,1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+                return torch.from_numpy(output_tensor.transpose((2,0,1))).float().to(self.canvas.model.device).unsqueeze(0)
             dct_y, dct_cb, dct_cr = jpeg_load(path,normalized=LOAD_NORMALIZED)
             assert np.abs(np.array(dct_y.shape[:2])/2-np.array(dct_cb.shape[:2])).max()<=1/2,'Assuming chroma is downsampled in half in both axes'
             for axis_num in range(2):
@@ -2369,9 +2457,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             assert np.all(dct_y_input2model.round()==dct_y_input2model),'Expected the DCT coefficients divided by the saved Q-table to be integers'
             self.real_JPEG_image = True
             self.Assign_Q_Table()
-            self.var_L = torch.from_numpy(dct_y_input2model).float().to(self.canvas.SR_model.device).unsqueeze(0)
-            self.chroma_input = self.canvas.SR_model.jpeg_extractor(torch.cat([color_DCT_2_16pix_block_DCT_tensor(dct_cb),color_DCT_2_16pix_block_DCT_tensor(dct_cr)],1))
-            self.loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),self.chroma_input],1)
+            self.var_L = torch.from_numpy(dct_y_input2model).float().to(self.canvas.model.device).unsqueeze(0)
+            self.uncompressed_chroma = self.canvas.model.JPEG['extractor'](torch.cat([color_DCT_2_16pix_block_DCT_tensor(dct_cb),color_DCT_2_16pix_block_DCT_tensor(dct_cr)],1))
+            self.loaded_image = torch.cat([self.canvas.model.JPEG['extractor_Y'](self.var_L),self.uncompressed_chroma],1)
         else:
             self.real_JPEG_image = True
             self.Assign_Q_Table()
@@ -2380,17 +2468,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 loaded_rgb = loaded_rgb[:, :, [2, 1, 0]]
             loaded_rgb *= 255
             loaded_YCbCr = rgb2ycbcr(1*loaded_rgb,only_y=False)
-            loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            loaded_YCbCr = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_YCbCr, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
             loaded_YCbCr = loaded_YCbCr[:,:,:loaded_YCbCr.size(2)//16*16,:loaded_YCbCr.size(3)//16*16]
-            self.var_L = self.canvas.SR_model.jpeg_compressor_Y(loaded_YCbCr[:,0,...].unsqueeze(1))
-            chroma_input = self.canvas.SR_model.jpeg_extractor(self.canvas.SR_model.jpeg_compressor(loaded_YCbCr))[:,1:,...]
-            loaded_image = torch.cat([self.canvas.SR_model.jpeg_extractor_Y(self.var_L),chroma_input],1)
+            self.var_L = self.canvas.model.JPEG['compressor_Y'](loaded_YCbCr[:,0,...].unsqueeze(1))
+            chroma_input = self.canvas.model.JPEG['extractor'](self.canvas.model.JPEG['compressor'](loaded_YCbCr))[:,1:,...]
+            loaded_image = torch.cat([self.canvas.model.JPEG['extractor_Y'](self.var_L),chroma_input],1)
             loaded_image = torch.clamp(util.Tensor_YCbCR2RGB(loaded_image),0,255).data[0].cpu().numpy().transpose((1,2,0))
             mean_jpeg_deciphering_error = np.abs(loaded_image-loaded_rgb).mean()
             self.statusBar.showMessage('Mean error %.3f gray-levels when deciphering JPEG coefficients'%(mean_jpeg_deciphering_error),INFO_MESSAGE_DURATION)
             loaded_image = rgb2ycbcr(loaded_image,only_y=False)
-            self.loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
-            self.chroma_input = self.loaded_image[:,1:,...]
+            self.loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
+            self.uncompressed_chroma = self.loaded_image[:,1:,...]
 
     def open_file(self,path=None,HR_image=False,canvas_pos=None):
         """
@@ -2413,20 +2501,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if HR_image:
             modulu_size = self.canvas.opt['scale']
             loaded_image = loaded_image[:loaded_image.shape[0]//modulu_size*modulu_size,:loaded_image.shape[1]//modulu_size*modulu_size,:] #Removing bottom right margins to make the image shape adequate to this SR factor
-            self.GT_HR = torch.from_numpy(np.transpose(loaded_image, (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            self.GT_HR = torch.from_numpy(np.transpose(loaded_image, (2, 0, 1))).float().to(self.canvas.model.device).unsqueeze(0)
             self.canvas.HR_size = list(self.GT_HR.size()[2:])
             if self.JPEG_GUI:
                 loaded_image = 255 * rgb2ycbcr(loaded_image, only_y=False)
-            loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            loaded_image = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
             if self.JPEG_GUI:
                 self.real_JPEG_image = False
-                self.QF_box.setValue(10)
-                self.Assign_Q_Table(10)
+                self.Assign_Q_Table(self.QF_box.value())
                 self.loaded_image = loaded_image
-                self.var_L = self.canvas.SR_model.jpeg_compressor_Y(self.loaded_image[:,0,...].unsqueeze(1))
-                self.chroma_input = self.loaded_image[:,1:,...]
+                self.var_L = self.canvas.model.JPEG['compressor_Y'](self.loaded_image[:,:1,...])
+                self.uncompressed_chroma = self.loaded_image[:,1:,...]
             else:
-                self.var_L = self.canvas.SR_model.netG.module.DownscaleOP(loaded_image)
+                self.var_L = self.canvas.model.netG.module.DownscaleOP(loaded_image)
                 self.LR_image = np.clip(255*self.var_L[0].data.cpu().numpy().transpose(1, 2, 0),0, 255).astype(np.uint8)
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(True)
         else:
@@ -2439,12 +2526,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.statusBar.showMessage('%s loading failed: %s' % (path.split('/')[-1], e), ERR_MESSAGE_DURATION)
                     print('%s loading failed: %s' % (path.split('/')[-1], e))
             else:
-                self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+                self.var_L = torch.from_numpy(np.ascontiguousarray(np.transpose(loaded_image, (2, 0, 1)))).float().to(self.canvas.model.device).unsqueeze(0)
                 self.LR_image = (255*loaded_image).astype(np.uint8)
                 self.canvas.HR_size = [self.opt['scale']*v for v in self.LR_image.shape[:2]]
             self.DisplayedImageSelection_button.model().item(self.GT_HR_index).setEnabled(False)
         if self.JPEG_GUI:
-            self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.SR_model.Return_Compressed(self.loaded_image)/255),0, 1)
+            self.input_image = torch.clamp(util.Tensor_YCbCR2RGB(self.canvas.model.Return_Compressed(self.loaded_image)/255),0, 1)
         else:
             self.input_image = torch.from_numpy(np.transpose(cv2.resize(self.LR_image, dsize=tuple(self.canvas.HR_size[::-1]),
                                       interpolation=cv2.INTER_NEAREST)/255,(2,0,1))).float().unsqueeze(0)
@@ -2473,7 +2560,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.canvas.HR_selected_mask = np.ones(self.canvas.HR_size)
         self.canvas.update_HR_mask_display_size()
         self.canvas.derived_controls_indicator = np.zeros(self.canvas.Z_size)
-        self.cur_Z = torch.zeros(size=[1,self.canvas.SR_model.num_latent_channels]+self.canvas.Z_size).to(self.canvas.SR_model.device)
+        self.cur_Z = torch.zeros(size=[1,self.canvas.model.num_latent_channels]+self.canvas.Z_size).to(self.canvas.model.device)
         self.canvas.random_Zs = self.cur_Z.repeat([self.num_random_Zs,1,1,1]).to(self.cur_Z.device)
         self.canvas.previous_sliders_values = \
             np.array([self.canvas.Z0_slider.value(),self.canvas.Z1_slider.value(),self.canvas.third_channel_slider.value()]).reshape([3,1,1])/100*np.ones([1]+self.canvas.Z_size)
@@ -2504,7 +2591,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.saved_outputs_counter = 0
         self.DisplayedImageSelection_button.setCurrentIndex(self.cur_Z_im_index)
         self.no_Z_image = torch.from_numpy(np.transpose(2 * (resize(image=data_util.read_img(None,
-            'icons/X.png')[:, :, ::-1], output_shape=self.canvas.HR_size) - 0.5), (2, 0, 1))).float().to(self.canvas.SR_model.device).unsqueeze(0)
+            'icons/X.png')[:, :, ::-1], output_shape=self.canvas.HR_size) - 0.5), (2, 0, 1))).float().to(self.canvas.model.device).unsqueeze(0)
         if 'current_scribble_mask' in self.canvas.__dict__.keys():
             del self.canvas.current_scribble_mask
         self.Clear_Z_Mask()
@@ -2569,7 +2656,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     Z_image = util.Z_64channels2image(Z_image)
                 imageio.imsave(path%('_Z'),Z_image)
             input_im_4_saving = self.input_image.squeeze(0).data.cpu().numpy().transpose((1, 2, 0))
-            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),input_im_4_saving)
+            imageio.imsave(path.replace('_%d'%(self.saved_outputs_counter),'') % ('_Comp' if self.JPEG_GUI else '_LR'),(255*input_im_4_saving).astype(np.uint8))
             SAVE_JPEG = self.JPEG_GUI and False
             if SAVE_JPEG:
                 input_im_4_saving = PIL_Image.fromarray((255*input_im_4_saving).astype(np.uint8))

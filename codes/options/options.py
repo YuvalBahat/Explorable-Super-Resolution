@@ -4,49 +4,85 @@ from datetime import datetime
 import json
 from socket import gethostname
 import numpy as np
+from deepdiff import DeepDiff
 try:
     import GPUtil
 except:
     pass
-import time
-
-
-# running_on_Technion = gethostname() in ['Yuval-Technion','tiras']
-# def Assign_GPU():
-#     excluded_IDs = []
-#     GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
-#     if len(GPU_2_use) == 0:
-#         print('No available GPUs. waiting...')
-#         while len(GPU_2_use) == 0:
-#             time.sleep(10)
-#             GPU_2_use = GPUtil.getAvailable(order='memory', excludeID=excluded_IDs)
-#     print('Using GPU #%d' % (GPU_2_use[0]))
-#     return GPU_2_use
-
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
-def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
-    # remove comments starting with '//'
+def print_config_change(dict,key):
+    print('%s:' % (key))
+    print('\tFrom: %s' % (dict[key]['old_value']))
+    print('\tTo: %s' % (dict[key]['new_value']))
+
+def parse(opt_path, is_train=True,batch_size_multiplier=None,**kwargs):
+    OVERRIDING_KEYS = [['train','resume'],['datasets','train','n_workers'],['train','val_running_avg_steps']]
+    opt = parse_conf(opt_path=opt_path,is_train=is_train,batch_size_multiplier=batch_size_multiplier,**kwargs)
+    if is_train and opt['train']['resume']:
+        saved_opt = parse_conf(opt_path=os.path.join(opt['path']['experiments_root'],'options.json'),is_train=is_train,batch_size_multiplier=batch_size_multiplier,**kwargs)
+        for key in OVERRIDING_KEYS:
+            cur_opt,cur_saved_opt = opt,saved_opt
+            for sub_key in key[:-1]:
+                cur_opt,cur_saved_opt = cur_opt[sub_key],cur_saved_opt[sub_key]
+            if key[-1] not in cur_opt: #For keys in OVERRIDING_KEYS that do not appear in the options.json file (added for the val_running_avg_steps key case)
+                continue
+            cur_saved_opt[key[-1]] = cur_opt[key[-1]]
+        saved_opt['train']['resume'] = opt['train']['resume']
+        opt_diff = DeepDiff(opt,saved_opt)
+        if len(opt_diff.keys())>0:
+            print('Using some saved configuration values that are different from the current ones. This means changing:')
+            if 'values_changed' in opt_diff.keys():
+                [print_config_change(opt_diff['values_changed'],key) for key in opt_diff['values_changed']]
+            if 'type_changes' in opt_diff.keys():
+                [print_config_change(opt_diff['type_changes'],key) for key in opt_diff['type_changes']]
+            if any([key not in ['values_changed','type_changes'] for key in opt_diff]):
+                print('More configuration keys added or removed...')
+        return saved_opt
+    return opt
+
+def dictionary_values_choice(dictionary,chosen_option):
+    while isinstance(dictionary,dict) and chosen_option in dictionary.keys():
+        dictionary = dictionary[chosen_option]
+        if dictionary=="None":
+            return None
+    if isinstance(dictionary,dict):
+        for key,value in dictionary.items():
+            dictionary[key] = dictionary_values_choice(value,chosen_option)
+    return dictionary
+
+def parse_conf(opt_path, is_train=True,batch_size_multiplier=None,**kwargs):
+    name = kwargs['name'] if 'name' in kwargs else None
+    JPEG_run = kwargs['JPEG'] if 'JPEG' in kwargs else False
+    if JPEG_run:
+        JPEG_chroma = kwargs['chroma'] if 'chroma' in kwargs else False
     json_str = ''
     with open(opt_path, 'r') as f:
         for line in f:
             line = line.split('//')[0] + '\n'
             json_str += line
     opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-    JPEG_run = name is not None and 'JPEG' in name
+    opt = dictionary_values_choice(opt,'PhaseInit' if 'initialization' in kwargs and kwargs['initialization'] else 'PhaseGAN')
     if JPEG_run:
-        if name=='JPEG_chroma':
+        opt = dictionary_values_choice(opt, 'ModelChroma' if JPEG_chroma else 'ModelY')
+        opt['input_downsampling'] = 1
+        if JPEG_chroma:
             opt['input_downsampling'] = 2#Curenntly assuming downsampling with factor 2 of the chroma channels
-            opt['name'] = 'chroma_'+opt['name']
             for dataset in opt['datasets'].keys():
-                opt['datasets'][dataset]['mode'] += '_chroma'
+                if opt['datasets'][dataset]['mode'][-len('_chroma'):]!='_chroma':
+                    opt['datasets'][dataset]['mode'] += '_chroma'
                 opt['datasets'][dataset]['input_downsampling'] = opt['input_downsampling']
-        else:
-            opt['input_downsampling'] = 1
-        opt['name'] = os.path.join('JPEG', opt['name'])
+            if opt['name'].split('/')[-1][:len('chroma_')]!='chroma_':
+                opt['name'] = os.path.join('/'.join(opt['name'].split('/')[:-1]),'chroma_'+opt['name'].split('/')[-1])
+        if opt['name'][:len('JPEG/')]!='JPEG/': #Accomodating the case where the name was already modified, in which case I shouldn't add another 'JPEG/' prefix:
+            opt['name'] = os.path.join('JPEG', opt['name'])
         opt['scale'] = 8*opt['input_downsampling']
+        if 'residual' not in opt['network_G']:
+            opt['network_G']['residual'] = 1
+        if is_train and 'input_type' not in opt['network_D']:
+            opt['network_D']['input_type'] = 'DCT_premult' if opt['network_D']['DCT_D'] else 'image'
     scale = opt['scale']
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
@@ -89,15 +125,27 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         opt['network_G']['latent_input'] = 'None'
     if opt['network_G']['latent_input']=='None':
         opt['network_G']['latent_channels'] = 0
+    if 'padding' not in opt['network_G'].keys():
+        opt['network_G']['padding'] = 1
     opt['path']['log'] = experiments_root
     if is_train:
         opt['path']['val_images'] = os.path.join(experiments_root, 'val_images')
+        # Legacy support:
+        if 'batch_size_per_GPU' not in opt['datasets']['train'].keys():
+            opt['datasets']['train']['batch_size_per_GPU'] = 1*opt['datasets']['train']['batch_size']
+        if 'D_update_measure' not in opt['train'].keys():
+            opt['train']['D_update_measure'] = 'post_train_D_diff'
+
+        opt['datasets']['train']['batch_size'] = 1*opt['datasets']['train']['batch_size_per_GPU']
         if batch_size_multiplier is not None:
             opt['datasets']['train']['batch_size'] *= batch_size_multiplier
             opt['datasets']['train']['n_workers'] *= batch_size_multiplier
         if 'batch_size_4_grads_G' not in opt['datasets']['train'].keys():
             opt['datasets']['train']['batch_size_4_grads_G'] = 1*opt['datasets']['train']['batch_size']
             opt['datasets']['train']['batch_size_4_grads_D'] = 1*opt['datasets']['train']['batch_size']
+        else:
+            assert opt['datasets']['train']['batch_size_4_grads_G']==opt['datasets']['train']['batch_size_4_grads_D']==opt['datasets']['train']['batch_size'] or\
+                   'FID_weight' not in opt['train'],'Currently not sure how to support multi-batch FID loss calculation'
         while np.mod(opt['datasets']['train']['batch_size_4_grads_G'],opt['datasets']['train']['batch_size'])!=0 or \
                 np.mod(opt['datasets']['train']['batch_size_4_grads_D'], opt['datasets']['train']['batch_size']) != 0:
             opt['datasets']['train']['batch_size'] -= 1
@@ -110,7 +158,7 @@ def parse(opt_path, is_train=True,batch_size_multiplier=None,name=None):
         # assert opt['network_G']['sigmoid_range_limit']==0 or opt['train']['range_weight'] ==0,'Reconsider using range penalty when using tanh range limiting of high frequencies'
         if 'network_D' in opt.keys():
             if opt['network_D']['which_model_D']=='PatchGAN':
-                assert opt['train']['gan_type'] in ['lsgan','wgan-gp']
+                assert opt['train']['gan_type'] in ['lsgan','wgan-gp','wgan-sn','wgan-sngp']
             else:
                 assert (opt['train']['gan_type']!='lsgan'),'lsgan GAN type should be used with Patch discriminator. For regular D, use vanilla type.'
     else:  # test
@@ -151,6 +199,6 @@ def Locally_Adapt_Path(org_path):
     path = org_path+''
     if 'tiras' in os.getcwd():
         path = '/home/tiras/datasets'
-    elif gethostname()=='Yuval-Technion':
+    elif gethostname()=='sipl-yuval.ef.technion.ac.il':
         path = '/media/ybahat/data/Datasets'
     return path

@@ -8,7 +8,8 @@ import torch
 import cv2
 import imagesize
 from tqdm import tqdm
-
+from glob import glob
+from re import search
 from skimage import io
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP','tif']
@@ -22,7 +23,7 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
 
-def _get_paths_from_images(path):
+def _get_paths_from_images(path,patch_size=None):
     assert os.path.isdir(path), '{:s} is not a valid directory'.format(path)
     images = []
     # Replaced the following code to prevent searching for images in subfolders, and use only images in this parent folder path.
@@ -34,14 +35,20 @@ def _get_paths_from_images(path):
             img_path = os.path.join(dirpath, fname)
             images.append(img_path)
         elif 'imagenet' in dirpath and os.path.isdir(os.path.join(dirpath, fname)): # Added for the case of ImageNet:
-            PATCH_SIZE = 256
+            # PATCH_SIZE = 256
             sub_dir = os.path.join(dirpath, fname)
-            if not os.path.isfile(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE))):
-                with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE)), 'w') as f:
+            assert patch_size is not None,'To use ImageNet, set the configuration patch_size field'
+            available_file_lists = glob(os.path.join(sub_dir, 'bigger_than_*.txt'))
+            corresponding_patch_sizes = [int(search('(?<=bigger_than_)(\d)+',p).group(0)) for p in available_file_lists]
+            if any([1.1*patch_size>p>=patch_size for p in corresponding_patch_sizes]):
+                patch_size = min([p for p in corresponding_patch_sizes if p>=patch_size])
+            else:
+            # if not os.path.isfile(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE))):
+                with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (patch_size)), 'w') as f:
                     for fname_ in os.listdir(sub_dir):
-                        if all(np.array(imagesize.get(os.path.join(sub_dir,fname_))) >= PATCH_SIZE):
+                        if all(np.array(imagesize.get(os.path.join(sub_dir,fname_))) >= patch_size):
                             f.write(os.path.join(sub_dir,fname_) + '\n')
-            with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (PATCH_SIZE)),'r') as f:
+            with open(os.path.join(sub_dir, 'bigger_than_%d.txt' % (patch_size)),'r') as f:
                 images += [p.replace('\n','') for p in f.readlines()]
 
     assert images, '{:s} has no valid image file'.format(path)
@@ -63,13 +70,13 @@ def _get_paths_from_lmdb(dataroot):
     return env, paths
 
 
-def get_image_paths(data_type, dataroot):
+def get_image_paths(data_type, dataroot,patch_size=None):
     env, paths = None, None
     if dataroot is not None:
         if data_type == 'lmdb':
             env, paths = _get_paths_from_lmdb(dataroot)
         elif data_type == 'img':
-            paths = sorted(_get_paths_from_images(dataroot))
+            paths = sorted(_get_paths_from_images(dataroot,patch_size=patch_size))
         else:
             raise NotImplementedError('data_type [{:s}] is not recognized.'.format(data_type))
     return env, paths

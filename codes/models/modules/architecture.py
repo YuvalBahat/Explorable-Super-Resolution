@@ -108,13 +108,13 @@ class Flatten(nn.Module):
 
 class DnCNN(nn.Module):
     def __init__(self, n_channels, depth, kernel_size = 3, in_nc=64, out_nc=64, norm_type='batch', act_type='leakyrelu',
-                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,pooling_no_FC=False):
+                 latent_input=None,num_latent_channels=None,discriminator=False,expected_input_size=None,chroma_generator=False,spectral_norm=False,pooling_no_FC=False,
+                 avoid_padding=None,output_layer=None):
         super(DnCNN, self).__init__()
         # assert in_nc in [64,128] and out_nc==64,'Currently only supporting 64 DCT channels'
         assert act_type=='leakyrelu'
         assert norm_type in ['batch','instance','layer',None]
-        # self.average_err_collection_counter = 0
-        # self.average_abs_err_estimates = np.zeros([8,8])
+        assert output_layer in ['Sigmoid','ReLU',None]
         self.discriminator_net = discriminator
         if discriminator:
             # Ideally I should not use padding for the discriminator model. I do use padding in the first layers if the input size is too small,
@@ -130,7 +130,12 @@ class DnCNN(nn.Module):
             self.block_size = np.sqrt(out_nc/2)
             assert self.block_size==np.round(self.block_size)
             self.block_size = int(self.block_size)
-        padding = kernel_size//2
+        if avoid_padding:# Used for generator only:
+            padding = 0
+            self.margins = kernel_size//2*depth
+        else:
+            padding = kernel_size//2
+            self.margins = 0
         self.latent_input = latent_input
         self.num_latent_channels = num_latent_channels
         # if latent_input is None or 'all_layers' not in latent_input or num_latent_channels is None:
@@ -169,62 +174,44 @@ class DnCNN(nn.Module):
         if spectral_norm:
             layers[-1] = SN.spectral_norm(layers[-1])
         if self.discriminator_net:
-            layers.append(Flatten())
             if not self.pooling_no_FC:
+                layers.append(Flatten())
                 layers.append(nn.Linear(in_features=out_nc*(expected_input_size**2),out_features=1))
                 if spectral_norm:
                     layers[-1] = SN.spectral_norm(layers[-1])
-                # layers.append(nn.Linear(in_features=64, out_features=1))
-        else:
+        if output_layer=='Sigmoid':
             layers.append(nn.Sigmoid())
-        if False and self.discriminator_net:
-            self.dncnn = nn.Sequential(*layers)
-        else:
-            self.dncnn = nn.ModuleList(layers)
+        elif output_layer=='ReLU':
+            layers.append(nn.ReLU())
+        self.dncnn = nn.ModuleList(layers)
 
     def forward(self, x):
-        if False and self.discriminator_net:
-            return self.dncnn(x)
+        if self.margins and not self.training:
+            x = F.pad(x,4*[self.margins],mode='replicate')
+        latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
+        x = 1*quantized_coeffs
+        for i, module in enumerate(self.dncnn):
+            if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
+                if self.discriminator_net and latent_input.size(2)!=x.size(2):
+                    x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
+                else:
+                    x = torch.cat([latent_input,x],dim=1)
+            x = module(x)
+        if self.discriminator_net:
+            return x
+            # return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
         else:
-            latent_input, quantized_coeffs = torch.split(x, split_size_or_sections=[self.num_latent_channels,x.size(1)-self.num_latent_channels], dim=1)
-            x = 1*quantized_coeffs
-            for i, module in enumerate(self.dncnn):
-                if self.num_latent_channels>0 and (self.latent_input=='all_layers' or (self.latent_input=='first_layer' and i==0)) and isinstance(module,nn.Conv2d):
-                # if self.num_latent_channels>0 and self.latent_input is not None and 'all_layers' in self.latent_input and isinstance(module,nn.Conv2d):
-                    if self.discriminator_net and latent_input.size(2)!=x.size(2):
-                        x = torch.cat([torch.nn.functional.interpolate(input=latent_input,size=x.size()[2:],mode='bilinear',align_corners=False),x],dim=1)
-                    else:
-                        x = torch.cat([latent_input,x],dim=1)
-                x = module(x)
-            if self.discriminator_net:
-                return torch.mean(x,dim=1,keepdim=True) # Averaging for the case of pooling instead of having a final FC layer. Otherwise it doesn't matter because x.shape[1]=1 anyway.
-            quantization_err_estimation = x-0.5
-            # quantization_err_estimation = self.dncnn(x)-0.5
-            # if not next(self.modules()).training:
-            #     self.average_err_collection_counter += 1
-            #     self.average_abs_err_estimates = ((self.average_err_collection_counter-1)*self.average_abs_err_estimates+
-            #         quantization_err_estimation.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())/self.average_err_collection_counter
+            if self.margins:
+                quantized_coeffs = quantized_coeffs[..., self.margins:-self.margins, self.margins:-self.margins]
+            quantization_err_estimation = x - 0.5
             if self.chroma_generator:
                 quantization_err_estimation = quantization_err_estimation.view(quantization_err_estimation.size(0),2,self.block_size//8,8,self.block_size//8,8,
                                                                                quantization_err_estimation.size(2),quantization_err_estimation.size(3))
-                quantized_coeffs = quantized_coeffs[:,self.block_size**2:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
+                quantized_coeffs = quantized_coeffs[:,256:,:,:].view(quantized_coeffs.size(0),2,8,8,quantized_coeffs.size(2),quantized_coeffs.size(3))
                 quantization_err_estimation[:,:,0,:,0,...] = quantization_err_estimation[:,:,0,:,0,...]+quantized_coeffs
                 return quantization_err_estimation.view(quantization_err_estimation.size(0),-1,quantization_err_estimation.size(6),quantization_err_estimation.size(7))
             else:
                 return quantized_coeffs+quantization_err_estimation
-
-    def return_collected_err_avg(self):
-        self.average_err_collection_counter = 0
-        natrix_2_return = 1*self.average_abs_err_estimates
-        self.average_abs_err_estimates = np.zeros([8,8])
-        return natrix_2_return
-
-    def save_estimated_errors_fig(self,quantization_err_batch):
-        import matplotlib.pyplot as plt
-        plt.clf()
-        plt.imshow(quantization_err_batch.abs().mean(-1).mean(-1).mean(0).view(8,8).data.cpu().numpy())
-        plt.colorbar()
-        plt.savefig('Est_quantization_errors_0iters_95Kiters.png')
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -242,8 +229,9 @@ class RRDBNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, gc=32, upscale=4, norm_type=None, \
             act_type='leakyrelu', mode='CNA', upsample_mode='upconv',latent_input=None,num_latent_channels=None):
         super(RRDBNet, self).__init__()
-        self.latent_input = latent_input
+        self.latent_input = None
         if num_latent_channels is not None and num_latent_channels>0:
+            self.latent_input = latent_input
             num_latent_channels_HR = 1 * num_latent_channels
             if 'HR_rearranged' in latent_input:
                 num_latent_channels *= upscale**2
@@ -275,7 +263,7 @@ class RRDBNet(nn.Module):
             upsampler = [upsample_block(nf, nf, act_type=act_type) for _ in range(n_upscale)]
         if latent_input is not None and 'all_layers' in latent_input:
             if 'LR' in latent_input:
-                self.latent_upsampler = nn.Upsample(scale_factor=upscale if upscale==3 else 2)
+                self.latent_upsampler = nn.functional.interpolate(scale_factor=upscale if upscale==3 else 2)
         HR_conv0 = B.conv_block(nf+num_latent_channels_HR, nf, kernel_size=3, norm_type=None, act_type=act_type,return_module_list=USE_MODULE_LISTS)
         HR_conv1 = B.conv_block(nf+num_latent_channels_HR, out_nc, kernel_size=3, norm_type=None, act_type=None,return_module_list=USE_MODULE_LISTS)
 
@@ -293,7 +281,7 @@ class RRDBNet(nn.Module):
                 # latent_input_HR = 1*self.Z
                 latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
                 latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.upscale*val for val in list(latent_input_HR.size()[2:])])
-                latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False)
+                latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False,recompute_scale_factor=False)
             else:
                 latent_input = 1*self.Z
             x = torch.cat([latent_input, x], dim=1)
@@ -357,13 +345,6 @@ class PatchGAN_Discriminator(nn.Module):
                 nn.Conv2d(ndf * nf_mult_prev+in_ch_addition, min(max_out_channels, ndf * nf_mult), kernel_size=kw,
                           stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
                           padding=padw, bias=use_bias), norm_layer(ndf * nf_mult), nn.LeakyReLU(0.2, True)]))
-            # if self.decomposed_input:
-            #     projected_component_sequences.append(
-            #         nn.Conv2d(input_nc,input_nc, kernel_size=kw,
-            #                   stride=2 if n > n_layers - self.DEFAULT_N_LAYERS else 1,
-            #                   padding=padw, bias=use_bias))
-
-        # nf_mult_prev = nf_mult
         nf_mult_prev = min(max_out_channels, ndf * nf_mult) // ndf
         nf_mult = min(2 ** n_layers, 8)
         sequences.append(nn.Sequential(*[
@@ -371,10 +352,6 @@ class PatchGAN_Discriminator(nn.Module):
                       padding=padw, bias=use_bias),
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)]))
-        # if self.decomposed_input:
-        #     projected_component_sequences.append(
-        #     nn.Conv2d(input_nc,input_nc, kernel_size=kw, stride=1,
-        #               padding=padw, bias=use_bias))
         sequences.append(nn.Sequential(*[
             nn.Conv2d(min(max_out_channels, ndf * nf_mult)+in_ch_addition, 1, kernel_size=kw, stride=1,
                       padding=padw)]))  # output 1 channel prediction map
@@ -511,7 +488,7 @@ class Discriminator_VGG_128(nn.Module):
         self.features = B.sequential(*([conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8,conv9][:nb]))
 
         self.last_FC_layers = self.num_2_strides==5 #Replacing the FC layers with convolutions, which means using a patch discriminator:
-        self.last_FC_layers = False
+        # self.last_FC_layers = False
         # classifier
         # FC_end_patch_size = input_patch_size//(2**self.num_2_strides)
         if self.last_FC_layers:
@@ -533,31 +510,31 @@ class Discriminator_VGG_128(nn.Module):
 
 # VGG style Discriminator with input size 128*128, Spectral Normalization
 class Discriminator_VGG_128_SN(nn.Module):
-    def __init__(self):
+    def __init__(self,in_nc,nf):
         super(Discriminator_VGG_128_SN, self).__init__()
         # features
         # hxw, c
         # 128, 64
         self.lrelu = nn.LeakyReLU(0.2, True)
 
-        self.conv0 = SN.spectral_norm(nn.Conv2d(3, 64, 3, 1, 1))
-        self.conv1 = SN.spectral_norm(nn.Conv2d(64, 64, 4, 2, 1))
+        self.conv0 = SN.spectral_norm(nn.Conv2d(in_nc, nf, 3, 1, 1))
+        self.conv1 = SN.spectral_norm(nn.Conv2d(nf, nf, 4, 2, 1))
         # 64, 64
-        self.conv2 = SN.spectral_norm(nn.Conv2d(64, 128, 3, 1, 1))
-        self.conv3 = SN.spectral_norm(nn.Conv2d(128, 128, 4, 2, 1))
+        self.conv2 = SN.spectral_norm(nn.Conv2d(nf, 2*nf, 3, 1, 1))
+        self.conv3 = SN.spectral_norm(nn.Conv2d(2*nf, 2*nf, 4, 2, 1))
         # 32, 128
-        self.conv4 = SN.spectral_norm(nn.Conv2d(128, 256, 3, 1, 1))
-        self.conv5 = SN.spectral_norm(nn.Conv2d(256, 256, 4, 2, 1))
+        self.conv4 = SN.spectral_norm(nn.Conv2d(2*nf, 4*nf, 3, 1, 1))
+        self.conv5 = SN.spectral_norm(nn.Conv2d(4*nf, 4*nf, 4, 2, 1))
         # 16, 256
-        self.conv6 = SN.spectral_norm(nn.Conv2d(256, 512, 3, 1, 1))
-        self.conv7 = SN.spectral_norm(nn.Conv2d(512, 512, 4, 2, 1))
+        self.conv6 = SN.spectral_norm(nn.Conv2d(4*nf, 8*nf, 3, 1, 1))
+        self.conv7 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 4, 2, 1))
         # 8, 512
-        self.conv8 = SN.spectral_norm(nn.Conv2d(512, 512, 3, 1, 1))
-        self.conv9 = SN.spectral_norm(nn.Conv2d(512, 512, 4, 2, 1))
+        self.conv8 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 3, 1, 1))
+        self.conv9 = SN.spectral_norm(nn.Conv2d(8*nf, 8*nf, 4, 2, 1))
         # 4, 512
 
         # classifier
-        self.linear0 = SN.spectral_norm(nn.Linear(512 * 4 * 4, 100))
+        self.linear0 = SN.spectral_norm(nn.Linear(8*nf * 4 * 4, 100))
         self.linear1 = SN.spectral_norm(nn.Linear(100, 1))
 
     def forward(self, x):
