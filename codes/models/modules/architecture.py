@@ -281,7 +281,7 @@ class RRDBNet(nn.Module):
                 # latent_input_HR = 1*self.Z
                 latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
                 latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.upscale*val for val in list(latent_input_HR.size()[2:])])
-                latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False)
+                latent_input = torch.nn.functional.interpolate(input=latent_input_HR,scale_factor=1/self.upscale,mode='bilinear',align_corners=False,recompute_scale_factor=False)
             else:
                 latent_input = 1*self.Z
             x = torch.cat([latent_input, x], dim=1)
