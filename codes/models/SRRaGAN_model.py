@@ -321,7 +321,7 @@ class SRRaGANModel(BaseModel):
             if first_dual_batch_step:
                 static_Z = self.GetLatent()
             if optimized_Z_step:
-                self.Z_optimizer.feed_data({'LR':self.var_L,'HR':self.var_H})
+                self.Z_optimizer.feed_data({'LR':self.var_L,'desired':self.var_H})
                 self.Z_optimizer.optimize()
             else:
                 self.Prepare_Input(LR_image=self.var_L, latent_input=static_Z)
@@ -436,9 +436,9 @@ class SRRaGANModel(BaseModel):
                 # if self.cri_highpass:  # pixel loss
                 #     l_g_highpass = self.cri_highpass(self.fake_H, self.var_H)
                 #     l_g_total += self.l_highpass_w * l_g_highpass/(self.grad_accumulation_steps_G*actual_dual_step_steps)
-                if self.cri_shift_invariant:  # Shift invariant loss
-                    l_g_shift_invariant = self.cri_shift_invariant(self.fake_H, self.var_H)
-                    l_g_total += self.l_shift_invariant_w * l_g_shift_invariant/(self.grad_accumulation_steps_G*actual_dual_step_steps)
+                # if self.cri_shift_invariant:  # Shift invariant loss
+                #     l_g_shift_invariant = self.cri_shift_invariant(self.fake_H, self.var_H)
+                #     l_g_total += self.l_shift_invariant_w * l_g_shift_invariant/(self.grad_accumulation_steps_G*actual_dual_step_steps)
                 if self.cri_fea:  # feature loss
                     if 'feature_domain' in self.opt['train'] and self.opt['train']['feature_domain']=='LR':
                         LR_size = list(self.var_L.size()[-2:])
@@ -483,8 +483,8 @@ class SRRaGANModel(BaseModel):
                     self.l_g_pix_grad_step.append(l_g_pix.item())
                 # if self.cri_highpass:
                 #     self.l_g_highpass_grad_step.append(l_g_highpass.item())
-                if self.cri_shift_invariant:
-                    self.l_g_shift_invariant_grad_step.append(l_g_shift_invariant.item())
+                # if self.cri_shift_invariant:
+                #     self.l_g_shift_invariant_grad_step.append(l_g_shift_invariant.item())
                 if self.cri_fea:
                     self.l_g_fea_grad_step.append(l_g_fea.item())
                 if self.cri_gan:
@@ -503,8 +503,8 @@ class SRRaGANModel(BaseModel):
                         self.log_dict['l_g_pix'].append((self.gradient_step_num,np.mean(self.l_g_pix_grad_step)))
                     # if self.cri_highpass:
                     #     self.log_dict['l_g_highpass'].append((self.gradient_step_num,np.mean(self.l_g_highpass_grad_step)))
-                    if self.cri_shift_invariant:
-                        self.log_dict['l_g_shift_invariant'].append((self.gradient_step_num,np.mean(self.l_g_shift_invariant_grad_step)))
+                    # if self.cri_shift_invariant:
+                    #     self.log_dict['l_g_shift_invariant'].append((self.gradient_step_num,np.mean(self.l_g_shift_invariant_grad_step)))
                     if self.cri_fea:
                         self.log_dict['l_g_fea'].append((self.gradient_step_num,np.mean(self.l_g_fea_grad_step)))
 
