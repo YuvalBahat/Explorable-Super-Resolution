@@ -284,7 +284,7 @@ class CEM_PyTorch(nn.Module):
         return_2_components = self.return_2_components and not self.pre_pad
         if self.using_SR_model:
             if self.pre_pad:
-                LR_Z = x.size(1) - 3 == self.generated_image_model.num_latent_channels
+                LR_Z = x.size(1) - 3 == getattr(self.generated_image_model,"num_latent_channels",0)
                 if x.size(1)!=3 and not LR_Z:
                     latent_input_HR,x = torch.split(x,split_size_or_sections=[x.size(1)-3,3],dim=1)
                     latent_input_HR = latent_input_HR.view([latent_input_HR.size(0)]+[-1]+[self.generated_image_model.upscale*val for val in list(latent_input_HR.size()[2:])])

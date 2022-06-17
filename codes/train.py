@@ -166,9 +166,9 @@ def main():
                     util.prune_old_files(cur_step=model.gradient_step_num, folder=model.opt['path']['val_images'],
                                          saving_freq=opt['train']['val_save_freq'],name_pattern='^(\d)+'+('_Z' if len(Z_latent)>1 else '')+'.*PSNR.*.png$')
                     print_rlt['psnr'] /= len(Z_latent)
-                    print_rlt['niqe'] /= len(Z_latent)
+                    # print_rlt['niqe'] /= len(Z_latent)
                     model.log_dict['psnr_val'].append((model.gradient_step_num,print_rlt['psnr']))
-                    model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
+                    # model.log_dict['niqe_val'].append((model.gradient_step_num,print_rlt['niqe']))
                     if len(Z_latent)>1:
                         print_rlt['per_pix_STD'] = np.mean(np.std(np.stack(model.im_collages, 0), 0))
                         model.log_dict['per_pix_STD_val'].append((model.gradient_step_num,print_rlt['per_pix_STD']))
