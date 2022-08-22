@@ -1,19 +1,18 @@
-An official PyTorch implementation of "Explorable Super Resolution" by Yuval Bahat and Tomer Michaeli (CVPR 2020).
+Official PyTorch implementations of "Explorable Super Resolution" and "What's in the Image? Explorable Decoding of Compressed Images", by Yuval Bahat and Tomer Michaeli (presented in CVPR 2020 and 2021, respectively). The methods described in these papers tackle very different problems, using machinery which was specifically tailored for each problem. However, since both methods sharew a similar goal, they have several components in common, like the user exploration interface. For this reason, the code for both methods is brought here in a shared repository.
 
 ## Table of Contents
-1. [Overview](#overview)
-1. [Dependencies](#dependencies)
-1. [Acknowledgement](#acknowledgement)
-1. [Running the GUI](#GUI_run)
-1. [Exploring with the GUI](#GUI_usage)
-1. [Training an explorable super-resolution network](#Training)
-1. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
+1. [Included in this repository](#repository_includes)
+2. [Dependencies](#dependencies)
+3. [Explorable Super Resolution](#SR)
+   1. [Overview](#overview_SR)
+   5. [Running the GUI](#GUI_run_SR)
+   6. [Exploring with the GUI](#GUI_usage)
+   7. [Training an explorable super-resolution network](#Training)
+   8. [Using the consistency enforcing module (CEM) for other purposes](./CEM)
+9. [Explorable Image Decoding](#JPEG)
+   1. [Overview](#overview_JPEG)
+   2. [Running the GUI](#GUI_run_JPEG)
 
-## Overview 
-The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
-<p align="center">
-   <img src="fig_framework_scheme_4_github.png">
-</p>
 
 ### This repository includes:<a name="repository_includes"></a>
 1. Code for a **Graphical User Interface (GUI)** allwoing a user to perform explorable super resoution and edit a low-resoultion image in real time. Pre-trained backend models for the 4x case are available for download, though our method supports any integer super-resolution factor.
@@ -33,10 +32,17 @@ Our CEM assumes the default bicubic downsampling kernel, but in needs access to 
 - NVIDIA GPU + [CUDA](https://developer.nvidia.com/cuda-downloads)
 <!--- Other Python packages: `pip install numpy opencv-python lmdb`-->
 
+# Explorable Super Resolution<a name="SR"></a>
 ## Acknowledgement
-Code architecture is based on an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+Code for the SR work is built upon an older version of [BasicSR](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
 
-## Running the explorable SR GUI<a name="GUI_run"></a>
+## Overview<a name="overview_SR"></a>
+The overall explorable super resolution framework is shown in the figure below. It consists of a super-resolution neural network, a consistency enforcing module (CEM) and a graphical user interface (GUI). 
+<p align="center">
+   <img src="fig_framework_scheme_4_github.png">
+</p>
+
+## Running the explorable SR GUI<a name="GUI_run_SR"></a>
 1. *Train or download a pre-trained explorable SR model:*  
 Our GUI enables exploration by utilizing a backend explorable SR network. Therefore to run it, you first need to either [train](#Training) or [download a pre-trained](https://drive.google.com/file/d/1UmF0Dy_c97CMiyMFG16goJxzXXwpQOUG/view?usp=sharing) model. The corresponding [pre-trained discriminator is available here](https://drive.google.com/file/d/1VsDX6dhQyszW1Lq3wUp5I19mBhuKg9O2/view?usp=sharing), in case you want to fine-tune the model.
 1. *(Optional) Download a pre-trained ESRGAN model:*  
@@ -65,4 +71,30 @@ Update the necessary (and optionally other) fields in the [`train_explorable_SR.
 1. *Train the model:*  
    ```
    python train.py -opt ./options/train/train_explorable_SR.json  
+   ```
+
+# Explorable Image Decoding<a name="JPEG"></a>
+## Acknowledgement
+For our automatic decoding exploration tool, we borrow a pre-trained SVHN classifier from [this](https://github.com/potterhsu/SVHNClassifier-PyTorch) repository.
+
+## Overview<a name="overview_JPEG"></a>
+Our explorable JPEG decoding framework is capable of decoding color images, by operating in the YCbCr color space, using seperate models for the Y (luminance) channel and Cb-Cr (chroma) channels. This is an overall sketch of our decoding network:
+<p align="center">
+   <img src="./webpage_resources/fig_color_framework_arch.png">
+</p>
+While the Y and chroma channel models have different input sizes and use a different number of channels, they share the same consistency preserving architecture, shown here:
+<p align="center">
+   <img src="./webpage_resources/fig_framework_arch.png">
+</p>
+
+Similar to our explorable SR framework, our explorable decoding framework consists of the consistent decoding network shown above, and a graphical user interface (GUI). 
+
+## Running the explorable JPEG decoding GUI<a name="GUI_run_JPEG"></a>
+1. *Train or download pre-trained explorable JPEG decoding models:*  
+Our GUI enables exploration by utilizing a backend explorable JPEG decoding network. Therefore to run it, you first need to either [train](#Training_JPEG) or download pre-trained [Y channel](https://drive.google.com/file/d/1TkCwqVyjksetGH2tMHYWvb0PWQInkSB_/view?usp=sharing) and [chroma channels](https://drive.google.com/file/d/1vdOc0y0-I3v-MV7-G5aDumPjcdUOWYk5/view?usp=sharing) models.
+1. *Update paths:*  
+Update the necessary fields in the [`GUI_JPEG.json`](./options/test/GUI_JPEG.json) file.
+1. *Run the GUI:*  
+   ```
+   python GUI.py JPEG -opt ./options/test/GUI_JPEG.json
    ```
